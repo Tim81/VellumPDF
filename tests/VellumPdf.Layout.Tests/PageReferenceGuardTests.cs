@@ -114,7 +114,7 @@ public sealed class PageReferenceGuardTests
         using var ms2 = new MemoryStream();
         var ex = Assert.Throws<InvalidOperationException>(() => renderer.Render(ms2));
         Assert.StartsWith("Pagination changed between", ex.Message, StringComparison.Ordinal);
-        Assert.EndsWith("so a renderer answered differently the later time.", ex.Message, StringComparison.Ordinal);
+        Assert.EndsWith("so a renderer answered differently the later time or a band was replaced.", ex.Message, StringComparison.Ordinal);
 
         // The same renderer does not render again.
         Assert.ThrowsAny<Exception>(() => renderer.Render(new MemoryStream()));

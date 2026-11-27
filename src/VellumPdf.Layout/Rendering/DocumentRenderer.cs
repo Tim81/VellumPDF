@@ -1148,15 +1148,13 @@ public sealed class DocumentRenderer
             ? string.Join("; ", parts) + more
             : "the page count read " + string.Join(", ", pageCounts);
         return new InvalidOperationException(
-            $"Pagination did not settle after {MaxMeasureRuns} layout passes: {cause}. " +
-            "A string that depends on where its target lands can change the layout and so move " +
-            "that target, and here the passes keep changing it instead of settling.");
+            $"Pagination did not settle after {MaxMeasureRuns} layout passes: {cause}.");
     }
 
     private static InvalidOperationException PaginationChanged() =>
         new("Pagination changed between the measuring and the drawing pass: the drawing pass " +
             "reported a placement that differs from the last measuring run's, so a renderer " +
-            "answered differently the later time.");
+            "answered differently the later time or a band was replaced.");
 
     // FreshPageArea is the area of the page a Nothing answer is retried on: the next page, or, for
     // the retry itself, the page it is already on. Under mirrored margins the two differ in x.

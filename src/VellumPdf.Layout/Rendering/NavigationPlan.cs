@@ -117,8 +117,8 @@ internal sealed class NavigationPlan
         return plan;
     }
 
-    // A style that links to an anchor. Skips a null style, which the layout refuses where it meets
-    // one that draws text, and so never reads a property of it.
+    // A style that links to an anchor. Skips a null style: an optional style left unset links
+    // nothing, and a null run style is refused by the layout where it draws text.
     private void NoteStyle(TextStyle? style, ElementSite site)
     {
         if (style?.LinkAnchor is not { } name) return;
@@ -191,11 +191,12 @@ internal sealed class NavigationPlan
         }
     }
 
-    // An item with a null text is refused where its text is read, with its own exception.
+    // The style of an item is checked whatever its text. An item with a null text has no runs, and
+    // is refused where its text is read, with its own exception.
     private void NoteItem(ListItem item, ElementSite site)
     {
-        if (item.HasNullText) return;
         NoteStyle(item.Style, site);
+        if (item.HasNullText) return;
         NoteRuns(item.OwnRuns, site);
     }
 
@@ -250,7 +251,7 @@ internal sealed class NavigationPlan
                 {
                     var below = pending.Pop();
                     Add(below.Anchor, LayoutElementKind.List, index, item, child, deeper: true);
-                    NoteItem(below, new ElementSite(LayoutElementKind.List, index, item, child));
+                    NoteItem(below, new ElementSite(LayoutElementKind.List, index, item, child, Deeper: true));
                     if (below.Children is null) continue;
                     foreach (var next in below.Children)
                         if (deep.Add(next)) pending.Push(next);

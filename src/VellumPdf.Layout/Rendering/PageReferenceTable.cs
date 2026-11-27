@@ -12,7 +12,8 @@ namespace VellumPdf.Layout.Rendering;
 /// <summary>Where a text style or a page reference sits among the elements, for
 /// a message.</summary>
 internal readonly record struct ElementSite(
-    LayoutElementKind Kind, int Index, int Item = -1, int Child = -1, int Row = -1, int Cell = -1)
+    LayoutElementKind Kind, int Index, int Item = -1, int Child = -1, int Row = -1, int Cell = -1,
+    bool Deeper = false)
 {
     public override string ToString()
     {
@@ -23,6 +24,7 @@ internal readonly record struct ElementSite(
         {
             text += $" (item {Item.ToString(CultureInfo.InvariantCulture)}";
             if (Child >= 0) text += $", child {Child.ToString(CultureInfo.InvariantCulture)}";
+            if (Deeper) text += ", below the second level";
             text += ")";
         }
 

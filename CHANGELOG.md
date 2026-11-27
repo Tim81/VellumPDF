@@ -536,8 +536,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
     is a `/Dest (name)` on the annotation, not a GoTo action. It works in a paragraph, a heading, a
     list item (the marker too, as `LinkUri` does), a string cell, a run of a cell built from runs
     and a running band. A name no element holds, a style that sets both links, and a `Preformatted`
-    with the property are refused: the first two from the save before any layout, the last from the
-    constructor with `ArgumentException`.
+    with the property are refused: the first two from the save before any layout (in a renderer of yours, where
+    the link registers, after the layout started), the last from the constructor with
+    `ArgumentException`.
   - `TextRun.PageReference(anchor, style)` prints the label of the page where the element holding
     `anchor` starts, as `{page}` prints it in a band: the decimal number, or the prefix and numeral
     of the page's label range. `Text` stays empty, so the label is in no `Paragraph.Text`, heading
@@ -548,7 +549,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
     refused once the layout has started: when the labels of a pass are those of a pass two or more
     back, or are still changing after five measuring passes.
   - A page reference or a link to an anchor under a PDF/UA-1 claim is refused before layout, naming
-    the element: the link would be untagged. PDF/A-2a and PDF/A-2u save it.
+    the element, or, in a renderer of yours, where it registers: the link would be untagged. PDF/A-2a and PDF/A-2u save it.
   - **Attention:** once a document holds a page reference, the drawing pass is compared with the
     last measuring run, which no document did before. A renderer of yours that answers differently
     the later time, or a `Header` or `Footer` replaced while the document renders, then makes the

@@ -213,7 +213,7 @@ public sealed class AnchorLinkTests
     [Theory]
     [InlineData(0, "List 0")]
     [InlineData(1, "List 0")]
-    [InlineData(2, "List 0 (item 0, child 0)")]
+    [InlineData(2, "List 0 (item 0, child 0, below the second level)")]
     [InlineData(3, "row 0, cell 0")]
     [InlineData(4, "Table 0")]
     public void AStyleTheLayoutDoesNotDraw_isRefusedForAnUnknownName_andForPdfUa1_andSavesForAKnownOne(int where, string site)
@@ -241,6 +241,45 @@ public sealed class AnchorLinkTests
         var refused = Assert.Throws<InvalidOperationException>(() => Save(ua));
         Assert.Contains("PDF/UA-1", refused.Message, StringComparison.Ordinal);
         Assert.Contains(site, refused.Message, StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData(0, "List 0 (item 0)")]
+    [InlineData(1, "List 0 (item 0, child 0)")]
+    [InlineData(2, "List 0 (item 0, child 0, below the second level)")]
+    public void TheStyleOfAnItemWithANullText_isCheckedBeforeItsTextIsRead(int level, string site)
+    {
+        ListItem Item(TextStyle style) => new(null!, style);
+
+        Document Build(TextStyle style)
+        {
+            var doc = ShortPage();
+            var top = level == 0 ? Item(style) : new ListItem("top");
+            if (level == 1) top.AddChild(Item(style));
+            if (level == 2)
+            {
+                var middle = new ListItem("middle");
+                middle.AddChild(Item(style));
+                var child = new ListItem("child");
+                child.AddChild(middle);
+                top.AddChild(child);
+            }
+
+            doc.Add(new ListElement().Add(top));
+            return doc;
+        }
+
+        var unknown = Assert.Throws<InvalidOperationException>(() => Save(Build(Style(anchor: "missing"))));
+        Assert.Contains(site, unknown.Message, StringComparison.Ordinal);
+        Assert.Contains("\"missing\"", unknown.Message, StringComparison.Ordinal);
+
+        var ua = Build(Go);
+        ua.Conformance = PdfConformance.PdfUA1;
+        ua.Tagged = true;
+        ua.Language = "en-US";
+        ua.Info.Title = "t";
+        AddTarget(ua);
+        Assert.Contains("PDF/UA-1", Assert.Throws<InvalidOperationException>(() => Save(ua)).Message, StringComparison.Ordinal);
     }
 
     [Fact]
