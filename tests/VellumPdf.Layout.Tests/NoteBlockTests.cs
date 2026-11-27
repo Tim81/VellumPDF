@@ -756,6 +756,26 @@ public sealed class NoteBlockTests
     }
 
     /// <summary>
+    /// A 30 pt line, then two 12 pt lines, with 80 above and below: the last 12 pt line moves, and the
+    /// first page keeps the 30 pt line and one 12 pt line, 122 tall with the top padding.
+    /// </summary>
+    [Fact]
+    public void TheLinesKeptOfTheLastParagraphKeepItsOwnLineHeight()
+    {
+        var tall = new TextStyle { Font = VellumPdf.Fonts.Standard14.Courier, FontSize = 25, Leading = 30 };
+        using var doc = NewDoc(300, 200);
+        doc.Add(new NoteBlock { Padding = new EdgeInsets(80, 0, 80, 0), Background = Tint }
+            .Add("B01", tall)
+            .Add(new Paragraph("L02\nL03", Courier10)));
+        var pages = PageContents(Save(doc));
+
+        Assert.Equal(["B01", "L02"], Shown(pages[0]));
+        Assert.Equal(["L03"], Shown(pages[1]));
+        Assert.Equal(["20 58 260 122"], Rects(pages[0]));
+        Assert.Equal(["20 88 260 92"], Rects(pages[1]));
+    }
+
+    /// <summary>
     /// 13 lines of 12 pt leave 4 pt of the 160. With 30 below them the lines above the padding are 10
     /// of 13, so L11 to L13 move; with 50 below, 9 of 13 stay and L10 to L13 move. The last page holds
     /// the lines that moved and the whole of the bottom padding.
