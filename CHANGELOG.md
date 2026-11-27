@@ -723,16 +723,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - **A web address or a path wider than its line was cut at a glyph, never after a slash or
   hyphen (#594).** A word wider than the line is now cut after the last `/`, `\` or `-` that leaves
   the line no wider than its width, so `https://example.org/a/b/c` ends a line at a segment and a
-  Windows path at a folder. It applies wherever text wraps: a paragraph, a heading, a list item,
-  and a table cell given as a string or as runs. A word with no such place that fits is cut at the
-  glyph as before, and a word that fits is never cut. No hyphen or other glyph is added at the cut.
+  Windows path at a folder. It applies to the text the document lays out itself: a paragraph, a
+  heading, a list item, and a table cell given as a string or as runs. Where text wraps as 2.3.3
+  did (the next entry) a word is cut at the glyph, as before. A word with no such place that fits
+  is cut at the glyph as before, and a word that fits is never cut. No hyphen or other glyph is
+  added at the cut.
   Following UAX #14, a `-` before a digit and a `/` or `\` before a digit that follows a digit
   (`1/2`) are cut at only when no other such place fits. `?`, `&`, `=`, `.`, `_` and `#` are not
   places. A link on the word gets one rectangle per piece, as for any wrapped link.
   - **Deliberate output change**, only for a document with a word wider than its line that holds a
     `/`, `\` or `-` before the point where the line is full: that word now ends its lines earlier,
-    so its lines, and the pages after it, can differ. A document with no such word saves to the
-    same bytes as before.
+    so its lines, and the pages after it, can differ. Apart from the changes the next entry lists,
+    a document with no such word saves to the same bytes as before.
   - Text extraction returns the pieces as written with the extractor's line separator between
     them. Reading a cut address back as one token needs marked content the library does not write
     yet (#588).
@@ -741,17 +743,32 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   (#687, #594).** Since #562 and #590 a paragraph, heading or list item could need more or fewer
   page continuations than on 2.3.3, so a text 2.3.3 saved could be refused at the limit of 50,000
   continuations and a multi-run text 2.3.3 refused could be saved. The cut after a solidus or
-  hyphen (#594) moves a table cell the same way. Where the current wrap and the 2.3.3 wrap would
-  give different verdicts, the element now lays out as 2.3.3 did, through the shared limit
-  decision: a text 2.3.3 saved saves again, and one it refused is refused again. 2.3.3's wrap
-  reads each run's words on their own, reads U+202F and U+2007 as spaces and cuts a word at the
-  glyph. A document far from the limit keeps the current wrap and the cut after a solidus, and
-  lays out nothing more.
-  - **Deliberate output change**, for a `ParagraphRenderer` that a renderer of yours lays out, a
-    list or heading the document lays out as its twin, and a `ParagraphRenderer` built with a
-    start line: such a renderer wraps as 2.3.3 did, so a word that continues over a run boundary
-    is two words, U+202F and U+2007 are spaces, and no word is cut after a solidus or hyphen. A
-    paragraph with tab stops or a page reference is not affected.
+  hyphen (#594) moves a table cell the same way. The element now lays out as 2.3.3 did where that
+  wrap and the current one reach the limit differently, through the shared limit decision: a text
+  2.3.3 saved saves again, and one it refused is refused again. A paragraph with a 2.3.3 wrap
+  reports to the decision whatever its text, and the decision lays the element out only where the
+  length of the text, which bounds the lines of either wrap, passes what the limit leaves, so a
+  document far from the limit lays out nothing more and keeps the current wrap.
+  - **Where text wraps as 2.3.3 did, and what that wrap is,** is stated once, in the remarks of
+    `IRenderer.Layout`: a paragraph that a renderer of yours lays out, one built with a start line,
+    the entries of a list laid out as its twin, the cells of a table that a renderer of yours
+    forwards to, and an element the limit decision gives the 2.3.3 wrap. Every sentence of the
+    #562, #590 and #594 entries and of the XML documentation that describes the current wrap is
+    read with that paragraph.
+  - **Deliberate output changes against 2.3.3's successors on main**, each only in those places.
+    A word that continues over a run boundary is two words, including the boundaries that hold
+    U+00A0 and an empty run. U+202F and U+2007 are spaces, so a Standard-14 font draws them as a
+    plain space where main drew U+00A0. A word wider than the line is cut at the glyph. A table
+    forwarded by a renderer of yours cuts at the glyph, and draws it so. A surrogate pair split
+    between two runs of one embedded-font style throws `ArgumentException` for a paragraph a
+    renderer of yours lays out, as it did on 2.3.3, where main saved it. The lists of a document
+    that holds a renderer of yours, an entry in a font the document cannot draw, or an element
+    after a list that can need about as many page continuations as one element may use are laid
+    out as their twins, so their entries wrap this way too, whatever the distance to the limit.
+    A paragraph with tab stops, a page reference or a run with no style is unaffected, because
+    2.3.3 had none of them.
+  - A renderer wraps once, in the mode of its first layout. One that a renderer of yours lays out
+    first and the document lays out later keeps the 2.3.3 wrap.
 
 - **A list indent that leaves an entry no text width kept the marker and discarded the text
   (#476).** `ParagraphRenderer` drops a paragraph whose width is zero or less, while the marker's
@@ -1491,7 +1508,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - **A paragraph no longer wraps at U+202F NARROW NO-BREAK SPACE or U+2007 FIGURE SPACE (#562).**
   With U+00A0 these are the white-space characters in UAX #14's GL class, but only U+00A0 was kept,
   so `Pourquoi ?` could wrap before the `?`. Paragraphs, headings and list items now treat all three
-  as part of a word; tables are unchanged. This is a deliberate output change: standard-14 text
+  as part of a word, except where text wraps as 2.3.3 did (#687); tables are unchanged. This is a deliberate output change: standard-14 text
   shows U+202F and U+2007 as a U+00A0 space with no `TextEncodingWarning`, where it drew `?` with
   one, in paragraphs, table cells and bands, and an embedded font that lacks the glyph for U+202F
   falls back to the glyph of U+00A0, then of a plain space, instead of glyph 0, the missing-glyph
@@ -1824,7 +1841,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   a space only where the text has one: a space, tab, line break or other white-space character,
   except the three no-break spaces U+00A0, U+202F and U+2007, at the end of one run or the start of
   the next. Without one, the runs hold one word, drawn with nothing between the pieces, wrapped as
-  a unit, and cut at a character when it is wider than the line. The no-break spaces are characters
+  a unit, and cut at a character when it is wider than the line, except where text wraps as 2.3.3
+  did (#687), where each run's words are its own. The no-break spaces are characters
   of the word, so a run ending in U+00A0 followed by a run starting with `b` is one word. An empty
   run adds nothing, so it no longer separates its neighbours. Line breaks are still read per run: a
   carriage return ending one run and a line feed starting the next are two breaks, as before. The
@@ -1834,7 +1852,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   match. A link run inside a word covers its own text, without the space it used to take. A
   surrogate pair split between two runs that share one style instance is joined and saves, where
   2.3.3 threw `ArgumentException` for an embedded font; a pair split between runs of different
-  instances still throws. Deliberate output change: a document changes only if it holds a paragraph
+  instances still throws, and so does a pair split between runs of one instance where text wraps as
+  2.3.3 did (#687). Deliberate output change: a document changes only if it holds a paragraph
   with at least one such boundary, which only a caller building a paragraph from two or more runs can
   produce. In a changed document the paragraph can take another number of lines, so what follows it
   can move, including to another page. Headings, list items, table cells and single-run paragraphs
