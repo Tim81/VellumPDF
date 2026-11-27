@@ -119,69 +119,15 @@ public sealed class NoteBlockTests
 
     // Page 300 x 200, margin 20: 160 pt of content, 13 lines of 12 pt, with 4 pt over.
     // Padding top 10, bottom 14, border 2: the top takes 12 and the bottom 16.
-    private static NoteBlock Frame(int lines) => new NoteBlock
+    private static NoteBlock Box() => new()
     {
         Background = Tint,
         BorderWidth = 2,
         BorderColor = Red,
         Padding = new EdgeInsets(10, 12, 14, 16),
-    }.Add(new Paragraph(Lines(lines), Courier10));
+    };
 
-    /// <summary>
-    /// 30 lines. Page 1 holds (160 - 12) / 12 = 12 of them, page 2 holds 13, page 3 holds 5 and the
-    /// bottom border and padding. The fill and the left and right border run on every page, the top
-    /// border and padding are on page 1 only, and the bottom ones on page 3 only.
-    /// </summary>
-    [Fact]
-    public void ABlockOverThreePagesKeepsItsFillAndSidesAndHasOneTopAndOneBottom()
-    {
-        using var doc = NewDoc(300, 200);
-        doc.Add(Frame(30));
-        var pdf = Save(doc);
-        var pages = PageContents(pdf);
-
-        Assert.Equal(3, pages.Count);
-
-        // Page 1: the box is 20..176, 156 tall, so PDF y 24. The top bar is there, the bottom is not.
-        Assert.Equal(["20 24 260 156", "20 24 2 156", "278 24 2 156", "22 178 256 2"], Rects(pages[0]));
-        Assert.Equal("38 158", TmPositions(pages[0])[0]);
-        Assert.Equal(Enumerable.Range(1, 12).Select(i => "L" + i.ToString("00", System.Globalization.CultureInfo.InvariantCulture)), Shown(pages[0]));
-
-        // Page 2: no top padding, so the text starts at the top of the content box, and the sides
-        // continue. There is neither a top nor a bottom bar.
-        Assert.Equal(["20 24 260 156", "20 24 2 156", "278 24 2 156"], Rects(pages[1]));
-        Assert.Equal("38 170", TmPositions(pages[1])[0]);
-        Assert.Equal(13, Shown(pages[1]).Count);
-
-        // Page 3: five lines (60) and then the bottom padding and border (16): the box is 76 tall
-        // and ends at 96, PDF y 104. The bottom bar is at y 94 in layout space.
-        Assert.Equal(["20 104 260 76", "20 104 2 76", "278 104 2 76", "22 104 256 2"], Rects(pages[2]));
-        Assert.Equal("38 170", TmPositions(pages[2])[0]);
-        Assert.Equal(["L26", "L27", "L28", "L29", "L30"], Shown(pages[2]));
-    }
-
-    /// <summary>
-    /// 38 lines: page 3 could hold the last 13 without the bottom padding, but not with it. The last
-    /// line moves to a fourth page with the padding, so no page holds padding alone.
-    /// </summary>
-    [Fact]
-    public void TheClosingLineMovesWithTheBottomPaddingInsteadOfLeavingItAlone()
-    {
-        using var doc = NewDoc(300, 200);
-        doc.Add(Frame(38));
-        var pages = PageContents(Save(doc));
-
-        Assert.Equal(4, pages.Count);
-        Assert.Equal(12, Shown(pages[2]).Count);
-        Assert.Equal(["L38"], Shown(pages[3]));
-
-        // Page 3 is not the last page, so it has the sides and nothing else: 12 lines, 144 tall,
-        // ending at 164, PDF y 36.
-        Assert.Equal(["20 36 260 144", "20 36 2 144", "278 36 2 144"], Rects(pages[2]));
-
-        // Page 4: one line and the bottom, 12 + 16 = 28 tall, PDF y 200 - 48 = 152.
-        Assert.Equal(["20 152 260 28", "20 152 2 28", "278 152 2 28", "22 152 256 2"], Rects(pages[3]));
-    }
+    private static NoteBlock Frame(int lines) => Box().Add(new Paragraph(Lines(lines), Courier10));
 
     /// <summary>A block that ends exactly where a page does adds no page.</summary>
     [Fact]
@@ -208,10 +154,10 @@ public sealed class NoteBlockTests
         var pages = PageContents(Save(doc));
         Assert.Equal(2, pages.Count);
 
-        // Page 2 holds two lines (L13, L14) and the bottom: 24 + 16 = 40, so the box ends at 60 and
-        // the next paragraph's first baseline is 60 + 10 below the top.
-        Assert.Equal(["L13", "L14"], Shown(pages[1]).Take(2));
-        Assert.Equal("20 130", TmPositions(pages[1])[^1]);
+        // Page 1 holds 11 lines (the room is 160 - 12 - 16 = 132). Page 2 holds three, in a whole box:
+        // 12 + 36 + 16 = 64, so the box ends at 84 and the next paragraph's baseline is 10 below that.
+        Assert.Equal(["L12", "L13", "L14"], Shown(pages[1]).Take(3));
+        Assert.Equal("20 106", TmPositions(pages[1])[^1]);
     }
 
     // ── Runs ─────────────────────────────────────────────────────────────────
@@ -429,7 +375,9 @@ public sealed class NoteBlockTests
     [InlineData("MinLinesAfterBreak")]
     [InlineData("Margins.Top")]
     [InlineData("Margins.Bottom")]
-    public void AParagraphThatSetsAKeepRequestALineCountOrAVerticalMarginIsRefusedWhereItIsAdded(string property)
+    [InlineData("Margins.Left")]
+    [InlineData("Margins.Right")]
+    public void AParagraphThatSetsAKeepRequestALineCountOrAMarginIsRefusedWhereItIsAdded(string property)
     {
         var paragraph = property switch
         {
@@ -439,6 +387,8 @@ public sealed class NoteBlockTests
             "MinLinesBeforeBreak" => new Paragraph("a") { MinLinesBeforeBreak = 2 },
             "Margins.Top" => new Paragraph("a") { Margins = new EdgeInsets(7, 0, 0, 0) },
             "Margins.Bottom" => new Paragraph("a") { Margins = new EdgeInsets(0, 0, 7, 0) },
+            "Margins.Left" => new Paragraph("a") { Margins = new EdgeInsets(0, 0, 0, 7) },
+            "Margins.Right" => new Paragraph("a") { Margins = new EdgeInsets(0, 7, 0, 0) },
             _ => new Paragraph("a") { MinLinesAfterBreak = 3 },
         };
 
@@ -450,31 +400,6 @@ public sealed class NoteBlockTests
         // The defaults are accepted: a count of 1 asks for nothing.
         var accepted = new NoteBlock().Add(new Paragraph("a") { MinLinesBeforeBreak = 1, MinLinesAfterBreak = 1 });
         Assert.Single(accepted.Paragraphs);
-    }
-
-    [Fact]
-    public void ALeftAndRightMarginIsKeptAndNarrowsOnlyThatParagraph()
-    {
-        using var doc = NewDoc(300, 200);
-        doc.Add(new NoteBlock { Padding = new EdgeInsets(4) }
-            .Add(new Paragraph("a", Courier10) { Margins = new EdgeInsets(0, 8, 0, 12) })
-            .Add(new Paragraph("b", Courier10)));
-        var content = Assert.Single(PageContents(Save(doc)));
-
-        // 20 + padding 4 + the 12 pt left margin, and 20 + 4 for the paragraph with none.
-        Assert.Equal(["36 166", "24 154"], TmPositions(content));
-    }
-
-    [Theory]
-    [InlineData("")]
-    public void AParagraphWithNoTextIsRefusedWhereItIsAdded(string text)
-    {
-        var empty = new Paragraph(text, Courier10);
-        var one = Assert.Throws<ArgumentException>("paragraph", () => new NoteBlock().Add(empty));
-        Assert.Contains("text", one.Message, StringComparison.Ordinal);
-        Assert.Throws<ArgumentException>("paragraphs", () => new NoteBlock([new Paragraph("ok"), empty]));
-        Assert.Throws<ArgumentException>("paragraph", () => new NoteBlock().Add(new Paragraph([new TextRun("", Courier10), new TextRun("", Courier10)])));
-        Assert.Single(new NoteBlock().Add(" ", Courier10).Paragraphs);
     }
 
     [Fact]
@@ -646,6 +571,62 @@ public sealed class NoteBlockTests
         Assert.Contains("NoteBlock 1", ex.Message, StringComparison.Ordinal);
     }
 
+    // ── What the paragraphs inside keep ──────────────────────────────────────
+
+    /// <summary>
+    /// A paragraph's language is written on each piece of it, also when it is split over pages: three
+    /// pieces of the first paragraph, one of the second.
+    /// </summary>
+    [Fact]
+    public void AParagraphsLanguageIsWrittenOnEachPieceOfIt()
+    {
+        using var doc = NewDoc(300, 200);
+        doc.Tagged = true;
+        doc.Language = "en-US";
+        doc.Info.Title = "t";
+        doc.Add(Box()
+            .Add(new Paragraph(Lines(30), Courier10) { Language = "nl-NL" })
+            .Add(new Paragraph("end", Courier10) { Language = "fr-FR" }));
+        var pdf = Save(doc);
+        var text = Encoding.Latin1.GetString(pdf);
+
+        Assert.Equal(3, PageContents(pdf).Count);
+        Assert.Equal("Document(Div(P,P,P,P))", StructTree(pdf));
+        Assert.Equal(3, LangCount(text, "nl-NL"));
+        Assert.Equal(1, LangCount(text, "fr-FR"));
+    }
+
+    // How many structure elements carry /Lang with this value. The value is a text string, which
+    // the writer gives as UTF-16BE behind a byte order mark, so the file text holds a NUL before
+    // each character when it is read as Latin-1.
+    private static int LangCount(string text, string lang)
+    {
+        var needle = "/Lang (þÿ" + string.Concat(lang.Select(c => " " + c)) + ")";
+        var count = 0;
+        for (var at = text.IndexOf(needle, StringComparison.Ordinal); at >= 0; at = text.IndexOf(needle, at + 1, StringComparison.Ordinal))
+            count++;
+        return count;
+    }
+
+    /// <summary>
+    /// Runs with a null style that yield no text are reported once for the block, counted for every
+    /// run, also in a paragraph that splits over pages.
+    /// </summary>
+    [Fact]
+    public void RunsWithANullStyleAreCountedOnceForTheBlockEvenWhenAParagraphSplits()
+    {
+        using var doc = NewDoc(300, 200);
+        doc.Add(Box()
+            .Add(new Paragraph([new TextRun("  ", null!), new TextRun("  ", null!), new TextRun(Lines(30), Courier10)]))
+            .Add(new Paragraph([new TextRun("  ", null!), new TextRun("x", Courier10)])));
+        Assert.True(PageContents(Save(doc)).Count >= 3);
+
+        var item = Assert.Single(doc.Diagnostics, d => d.Code == LayoutDiagnosticCode.NullTextRunStyle);
+        Assert.Equal(LayoutElementKind.NoteBlock, item.ElementKind);
+        Assert.Equal(0, item.ElementIndex);
+        Assert.Equal(3, item.Count);
+    }
+
     // ── What the block does between lines ────────────────────────────────────
 
     /// <summary>
@@ -665,7 +646,149 @@ public sealed class NoteBlockTests
         Assert.Equal(["L23"], Shown(pages[1]));
     }
 
-    // ── Which blocks a page can hold ─────────────────────────────────────────
+    // ── Splitting: every page holds a whole box ──────────────────────────────
+
+    /// <summary>
+    /// 30 lines in Frame (top 12, bottom 16): the room on each page is 160 - 28 = 132, which is 11
+    /// lines, so the pages hold 11, 11 and 8. Every page has the fill, the left and right border and
+    /// both the top and the bottom border, and the text starts below the top padding on every page.
+    /// </summary>
+    [Fact]
+    public void ABlockOverThreePagesHoldsAWholeBoxOnEachPage()
+    {
+        using var doc = NewDoc(300, 200);
+        doc.Add(Frame(30));
+        var pdf = Save(doc);
+        var pages = PageContents(pdf);
+
+        Assert.Equal(3, pages.Count);
+
+        // Pages 1 and 2: the box is 12 + 132 + 16 = 160 tall, PDF y 20.
+        foreach (var page in pages.Take(2))
+        {
+            Assert.Equal(["20 20 260 160", "20 20 2 160", "278 20 2 160", "22 178 256 2", "22 20 256 2"], Rects(page));
+            Assert.Equal("38 158", TmPositions(page)[0]);
+            Assert.Equal(11, Shown(page).Count);
+        }
+
+        // Page 3: eight lines, 12 + 96 + 16 = 124 tall, ending at 144, PDF y 56.
+        Assert.Equal(["20 56 260 124", "20 56 2 124", "278 56 2 124", "22 178 256 2", "22 56 256 2"], Rects(pages[2]));
+        Assert.Equal("38 158", TmPositions(pages[2])[0]);
+        Assert.Equal(["L23", "L24", "L25", "L26", "L27", "L28", "L29", "L30"], Shown(pages[2]));
+    }
+
+    /// <summary>12 lines in a room of 11: the twelfth is alone on a second page, in a whole box.</summary>
+    [Fact]
+    public void ALineThatDoesNotFitStartsAnotherWholeBox()
+    {
+        using var doc = NewDoc(300, 200);
+        doc.Add(Frame(12));
+        var pages = PageContents(Save(doc));
+
+        Assert.Equal(2, pages.Count);
+        Assert.Equal(["L12"], Shown(pages[1]));
+
+        // 12 + 12 + 16 = 40 tall, PDF y 200 - 60.
+        Assert.Equal(["20 140 260 40", "20 140 2 40", "278 140 2 40", "22 178 256 2", "22 140 256 2"], Rects(pages[1]));
+    }
+
+    /// <summary>
+    /// With 30 below the lines, 13 lines of 12 pt leave a room of 130 on each page: 10 lines, then 3,
+    /// each page a whole box. With 50 below, 9 and 4.
+    /// </summary>
+    [Theory]
+    [InlineData(30, 10)]
+    [InlineData(50, 9)]
+    public void ABottomPaddingTakesItsRoomOnEveryPage(double padding, int first)
+    {
+        using var doc = NewDoc(300, 200);
+        doc.Add(new NoteBlock { Padding = new EdgeInsets(0, 0, padding, 0), Background = Tint }
+            .Add(new Paragraph(Lines(13), Courier10)));
+        var pages = PageContents(Save(doc));
+
+        Assert.Equal(2, pages.Count);
+        Assert.Equal(first, Shown(pages[0]).Count);
+        Assert.Equal(13 - first, Shown(pages[1]).Count);
+
+        var heights = new[] { first * 12 + padding, (13 - first) * 12 + padding };
+        Assert.Equal([$"20 {200 - 20 - heights[0]} 260 {heights[0]}"], Rects(pages[0]));
+        Assert.Equal([$"20 {200 - 20 - heights[1]} 260 {heights[1]}"], Rects(pages[1]));
+    }
+
+    /// <summary>
+    /// Lines of 30 pt and 12 pt in a room of 50 (padding 55 above and below): the 30 pt line and one
+    /// 12 pt line fill the first page, and the second 12 pt line has a page of its own.
+    /// </summary>
+    [Fact]
+    public void LinesOfDifferentHeightsFillTheRoomEachAtItsOwnParagraphsHeight()
+    {
+        var tall = new TextStyle { Font = VellumPdf.Fonts.Standard14.Courier, FontSize = 25, Leading = 30 };
+        using var doc = NewDoc(300, 200);
+        doc.Add(new NoteBlock { Padding = new EdgeInsets(55, 0, 55, 0), Background = Tint }
+            .Add("B01", tall)
+            .Add(new Paragraph("L02\nL03", Courier10)));
+        var pages = PageContents(Save(doc));
+
+        Assert.Equal(["B01", "L02"], Shown(pages[0]));
+        Assert.Equal(["L03"], Shown(pages[1]));
+        Assert.Equal(["20 28 260 152"], Rects(pages[0]));
+        Assert.Equal(["20 58 260 122"], Rects(pages[1]));
+    }
+
+    /// <summary>
+    /// A block is refused as too tall only where an empty page cannot hold the two insets and one
+    /// line of the tallest line the block holds. The room is 160 - 2 x padding: 30 pt lines need
+    /// padding 65 at most, and the 12 pt lines of the same block do not matter.
+    /// </summary>
+    [Theory]
+    [InlineData(65, true)]
+    [InlineData(66, false)]
+    [InlineData(80, false)]
+    public void ABlockIsRefusedOnlyWhereTheRoomHoldsNotEvenItsTallestLine(double padding, bool saved)
+    {
+        var tall = new TextStyle { Font = VellumPdf.Fonts.Standard14.Courier, FontSize = 25, Leading = 30 };
+        using var doc = NewDoc(300, 200);
+        doc.Add(new NoteBlock { Padding = new EdgeInsets(padding, 0, padding, 0) }
+            .Add("L01", Courier10)
+            .Add("B02", tall));
+        if (saved)
+        {
+            Assert.NotEmpty(PageContents(Save(doc)));
+            return;
+        }
+
+        var ex = Assert.Throws<InvalidOperationException>(() => Save(doc));
+        Assert.Contains("too tall", ex.Message, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// A blank paragraph is a blank line, as at the top level: it takes a line of the room and draws
+    /// nothing, and a page that ends after it carries a whole box.
+    /// </summary>
+    [Fact]
+    public void ABlankLineIsALineAcrossAPageBreak()
+    {
+        // Room 24: two lines a page.
+        using var doc = NewDoc(300, 200);
+        doc.Add(new NoteBlock { Padding = new EdgeInsets(68, 0, 68, 0), Background = Tint }
+            .Add(new Paragraph("L01\n\nL02", Courier10)));
+        var pages = PageContents(Save(doc));
+
+        Assert.Equal(2, pages.Count);
+        Assert.Equal(["L01"], Shown(pages[0]));
+        Assert.Equal(["L02"], Shown(pages[1]));
+        Assert.Equal(["20 20 260 160"], Rects(pages[0]));
+        Assert.Equal(["20 32 260 148"], Rects(pages[1]));
+
+        // A paragraph with no text at all is a blank line too.
+        using var blank = NewDoc(300, 200);
+        blank.Add(new NoteBlock().Add("L01", Courier10).Add("", Courier10).Add("L03", Courier10));
+        var blankPage = Assert.Single(PageContents(Save(blank)));
+        Assert.Equal(["L01", "L03"], Shown(blankPage));
+        Assert.Equal(["20 170", "20 143.6"], TmPositions(blankPage));
+    }
+
+    // ── Rounding, and the fuzz ──────────────────────────────────────────────
 
     private static (int Pages, string Verdict) Place(double pageHeight, NoteBlock block, int leadLines = 0)
     {
@@ -681,197 +804,6 @@ public sealed class NoteBlockTests
         {
             return (0, "refused");
         }
-    }
-
-    /// <summary>
-    /// A page of 160 pt cannot hold top padding 80, one line and bottom padding 80 (172) but holds
-    /// each of the two insets with one line (92), so two lines split between two pages, at the top
-    /// of a page and below a lead paragraph. A single line between both insets is refused.
-    /// </summary>
-    [Theory]
-    [InlineData(0)]
-    [InlineData(3)]
-    public void ABlockThatTwoPagesCanHoldIsNotRefusedAsTooTall(int leadLines)
-    {
-        NoteBlock Block(string text) => new NoteBlock { Padding = new EdgeInsets(80, 0, 80, 0), Background = Tint }.Add(text, Courier10);
-
-        Assert.Equal((2, "saved"), Place(200, Block("L1\nL2"), leadLines));
-        Assert.Equal((2, "saved"), Place(200, new NoteBlock { Padding = new EdgeInsets(80, 0, 80, 0) }.Add("L1", Courier10).Add("L2", Courier10), leadLines));
-        Assert.Equal("saved", Place(200, Block(Lines(5)), leadLines).Verdict);
-        Assert.Equal((0, "refused"), Place(200, Block("L1"), leadLines));
-    }
-
-    /// <summary>
-    /// The first piece of the 80/80 block holds the top padding and the first line, the last piece
-    /// the last line and the bottom padding, and no line is lost or repeated.
-    /// </summary>
-    [Fact]
-    public void TheLastLineAndTheBottomPaddingShareTheLastPage()
-    {
-        using var doc = NewDoc(300, 200);
-        doc.Add(new NoteBlock { Padding = new EdgeInsets(80, 0, 80, 0), Background = Tint }.Add("L1\nL2", Courier10));
-        var pages = PageContents(Save(doc));
-        Assert.Equal(2, pages.Count);
-        Assert.Equal(["L1"], Shown(pages[0]));
-        Assert.Equal(["L2"], Shown(pages[1]));
-
-        // Page 1: padding 80 and one line, 92 tall, y 200 - 112. Page 2: the line and 80 below it.
-        Assert.Equal(["20 88 260 92"], Rects(pages[0]));
-        Assert.Equal(["20 88 260 92"], Rects(pages[1]));
-        Assert.Equal(["20 90"], TmPositions(pages[0]));
-        Assert.Equal(["20 170"], TmPositions(pages[1]));
-    }
-
-    /// <summary>
-    /// A 30 pt line and then a 12 pt line, with 80 above and below: the last page holds the 12 pt line
-    /// and the bottom padding, the first the 30 pt line and the top padding. The line that moves is
-    /// the last paragraph's, whatever height another paragraph gives its lines.
-    /// </summary>
-    [Fact]
-    public void TheLineThatMovesIsMeasuredAtItsOwnParagraphsLineHeight()
-    {
-        var tall = new TextStyle { Font = VellumPdf.Fonts.Standard14.Courier, FontSize = 25, Leading = 30 };
-        using var doc = NewDoc(300, 200);
-        doc.Add(new NoteBlock { Padding = new EdgeInsets(80, 0, 80, 0), Background = Tint }
-            .Add("B01", tall)
-            .Add("L02", Courier10));
-        var pages = PageContents(Save(doc));
-
-        Assert.Equal(2, pages.Count);
-        Assert.Equal(["B01"], Shown(pages[0]));
-        Assert.Equal(["L02"], Shown(pages[1]));
-
-        // Page 1: 80 + 30, PDF y 200 - 130. Page 2: 12 + 80, PDF y 200 - 112.
-        Assert.Equal(["20 70 260 110"], Rects(pages[0]));
-        Assert.Equal(["20 88 260 92"], Rects(pages[1]));
-
-        // Swapped, the 12 pt line is first and the 30 pt line moves.
-        using var swapped = NewDoc(300, 200);
-        swapped.Add(new NoteBlock { Padding = new EdgeInsets(80, 0, 80, 0), Background = Tint }
-            .Add("L02", Courier10)
-            .Add("B01", tall));
-        var swappedPages = PageContents(Save(swapped));
-        Assert.Equal(["20 88 260 92"], Rects(swappedPages[0]));
-        Assert.Equal(["20 70 260 110"], Rects(swappedPages[1]));
-    }
-
-    /// <summary>
-    /// A 30 pt line, then two 12 pt lines, with 80 above and below: the last 12 pt line moves, and the
-    /// first page keeps the 30 pt line and one 12 pt line, 122 tall with the top padding.
-    /// </summary>
-    [Fact]
-    public void TheLinesKeptOfTheLastParagraphKeepItsOwnLineHeight()
-    {
-        var tall = new TextStyle { Font = VellumPdf.Fonts.Standard14.Courier, FontSize = 25, Leading = 30 };
-        using var doc = NewDoc(300, 200);
-        doc.Add(new NoteBlock { Padding = new EdgeInsets(80, 0, 80, 0), Background = Tint }
-            .Add("B01", tall)
-            .Add(new Paragraph("L02\nL03", Courier10)));
-        var pages = PageContents(Save(doc));
-
-        Assert.Equal(["B01", "L02"], Shown(pages[0]));
-        Assert.Equal(["L03"], Shown(pages[1]));
-        Assert.Equal(["20 58 260 122"], Rects(pages[0]));
-        Assert.Equal(["20 88 260 92"], Rects(pages[1]));
-    }
-
-    /// <summary>
-    /// 13 lines of 12 pt leave 4 pt of the 160. With 30 below them the lines above the padding are 10
-    /// of 13, so L11 to L13 move; with 50 below, 9 of 13 stay and L10 to L13 move. The last page holds
-    /// the lines that moved and the whole of the bottom padding.
-    /// </summary>
-    [Theory]
-    [InlineData(30, 10)]
-    [InlineData(50, 9)]
-    public void TheLinesThatDoNotFitAboveTheBottomPaddingMoveWithIt(double padding, int stay)
-    {
-        using var doc = NewDoc(300, 200);
-        doc.Add(new NoteBlock { Padding = new EdgeInsets(0, 0, padding, 0), Background = Tint }
-            .Add(new Paragraph(Lines(13), Courier10)));
-        var pages = PageContents(Save(doc));
-
-        Assert.Equal(2, pages.Count);
-        Assert.Equal(stay, Shown(pages[0]).Count);
-        Assert.Equal(13 - stay, Shown(pages[1]).Count);
-        Assert.Equal("L" + (stay + 1).ToString("00", System.Globalization.CultureInfo.InvariantCulture), Shown(pages[1])[0]);
-
-        // The last page: the moved lines, then the padding below them.
-        var moved = 13 - stay;
-        var height = moved * 12 + padding;
-        Assert.Equal([$"20 {200 - 20 - height} 260 {height}"], Rects(pages[1]));
-    }
-
-    /// <summary>
-    /// Random geometry, paragraphs and page positions. Whatever is saved draws each line once and
-    /// in order, holds no blank page, has the top bar on its first page and the bottom bar on its
-    /// last only; and a block is refused only where an empty page cannot hold the top inset and the
-    /// first line, the last line and the bottom inset, or a single line between both.
-    /// </summary>
-    [Fact]
-    public void FuzzedBlocksLoseNoLineLeaveNoBlankPageAndAreRefusedOnlyWhereTheTypeSays()
-    {
-        var rng = new Random(20261127);
-        var saved = 0;
-        var refused = 0;
-        for (var n = 0; n < 1500; n++)
-        {
-            var page = 60 + rng.Next(0, 18) * 12 + rng.Next(0, 12);
-            var border = new[] { 0.0, 0.5, 1.0, 2.0 }[rng.Next(4)];
-            var top = new[] { 0, 5, 20, 40, 60, 80, 100 }[rng.Next(7)] + rng.Next(0, 12) + (rng.Next(3) == 0 ? 0.5 : 0);
-            var bottom = new[] { 0, 5, 20, 40, 60, 80, 100 }[rng.Next(7)] + rng.Next(0, 12) + (rng.Next(3) == 0 ? 0.25 : 0);
-            var lead = rng.Next(0, 6);
-            var counts = Enumerable.Range(0, rng.Next(1, 5)).Select(_ => rng.Next(1, 14)).ToArray();
-            var heights = counts.Select(_ => new[] { 6.0, 12.0, 24.0 }[rng.Next(3)]).ToArray();
-
-            var block = new NoteBlock { BorderWidth = border, Background = Tint, Padding = new EdgeInsets(top, 4, bottom, 4) };
-            var next = 1;
-            for (var k = 0; k < counts.Length; k++)
-            {
-                var style = new TextStyle { Font = Standard14.Courier, FontSize = heights[k] / 1.2, Leading = heights[k] };
-                block.Add(new Paragraph(Lines(counts[k], next), style) { SpaceAfter = rng.Next(3) == 0 ? rng.Next(0, 9) : 0 });
-                next += counts[k];
-            }
-
-            var total = next - 1;
-            var contentHeight = page - 40.0;
-            var firstFits = border + top + heights[0] <= contentHeight;
-            var lastFits = heights[^1] + border + bottom <= contentHeight;
-            var singleFits = total > 1 || border + top + heights[0] + border + bottom <= contentHeight;
-            var everyLineFits = heights.All(h => h <= contentHeight);
-            var expectSaved = everyLineFits && firstFits && lastFits && singleFits;
-
-            using var doc = NewDoc(300, page);
-            if (lead > 0) doc.Add(new Paragraph(Lines(lead, 900), Courier10));
-            doc.Add(block);
-            byte[] pdf;
-            try
-            {
-                pdf = Save(doc);
-            }
-            catch (InvalidOperationException ex) when (ex.Message.Contains("too tall", StringComparison.Ordinal))
-            {
-                Assert.False(expectSaved, $"case {n}: refused where the type says a page can hold it (page {page}, border {border}, top {top}, bottom {bottom}, lines {string.Join('+', counts)}): {ex.Message}");
-                refused++;
-                continue;
-            }
-
-            Assert.True(expectSaved, $"case {n}: saved where the type says it is refused");
-            saved++;
-            var pages = PageContents(pdf);
-            var shown = pages.SelectMany(Shown).Where(t => t.StartsWith('L') && t.Length == 3).Where(t => int.Parse(t[1..], System.Globalization.CultureInfo.InvariantCulture) < 900).ToList();
-            Assert.Equal(Enumerable.Range(1, total).Select(i => "L" + i.ToString("00", System.Globalization.CultureInfo.InvariantCulture)), shown);
-            Assert.All(pages, p => Assert.NotEmpty(Shown(p)));
-
-            // The top bar (a bar as wide as the box less two borders, at the top) only on the page
-            // the block starts on, the bottom bar only on the page it ends on.
-            if (border > 0)
-            {
-                var wide = pages.Select(p => Rects(p).Count(r => r.Split(' ')[2] == (260 - 2 * border).ToString("0.#####", System.Globalization.CultureInfo.InvariantCulture))).ToList();
-                Assert.Equal(2, wide.Sum());
-            }
-        }
-
-        Assert.True(saved > 400 && refused > 100, $"saved {saved}, refused {refused}");
     }
 
     /// <summary>
@@ -910,5 +842,124 @@ public sealed class NoteBlockTests
         }
 
         Assert.True(fitted > 1000, $"only {fitted} geometries fit as a paragraph");
+    }
+
+    /// <summary>
+    /// Random geometry, paragraphs, blank lines, gaps, page positions, footers and page references.
+    /// Whatever is saved draws each line once and in order, holds no page without text, gives every
+    /// page the block reaches a whole box at exact coordinates (the fill, the two sides, the top and
+    /// the bottom bar), prints the right page for a reference to what follows the block and the
+    /// right footer on every page; and a block is refused exactly where the room an empty page leaves
+    /// after both insets holds none of the tallest line.
+    /// </summary>
+    [Fact]
+    public void FuzzedBlocksLoseNoLineHoldWholeBoxesAndAreRefusedOnlyWhereTheTypeSays()
+    {
+        var rng = new Random(20261127);
+        var saved = 0;
+        var refused = 0;
+        var references = 0;
+        for (var n = 0; n < 2000; n++)
+        {
+            var page = 60 + rng.Next(0, 18) * 12 + rng.Next(0, 12);
+            var border = new[] { 0.0, 0.5, 1.0, 2.0 }[rng.Next(4)];
+            var top = new[] { 0, 5, 20, 40, 60, 80, 100 }[rng.Next(7)] + rng.Next(0, 12) + (rng.Next(3) == 0 ? 0.5 : 0);
+            var bottom = new[] { 0, 5, 20, 40, 60, 80, 100 }[rng.Next(7)] + rng.Next(0, 12) + (rng.Next(3) == 0 ? 0.25 : 0);
+            var lead = rng.Next(0, 6);
+            var withReference = rng.Next(3) == 0;
+            var withFooter = rng.Next(4) == 0;
+            var counts = Enumerable.Range(0, rng.Next(1, 5)).Select(_ => rng.Next(1, 14)).ToArray();
+            var heights = counts.Select(_ => new[] { 6.0, 12.0, 24.0 }[rng.Next(3)]).ToArray();
+
+            var block = new NoteBlock { BorderWidth = border, Background = Tint, Padding = new EdgeInsets(top, 4, bottom, 4) };
+            var next = 1;
+            var tokens = new List<string>();
+            for (var k = 0; k < counts.Length; k++)
+            {
+                var style = new TextStyle { Font = Standard14.Courier, FontSize = heights[k] / 1.2, Leading = heights[k] };
+                var text = new System.Text.StringBuilder();
+                for (var j = 0; j < counts[k]; j++)
+                {
+                    if (j > 0) text.Append(rng.Next(6) == 0 ? "\n\n" : "\n");
+                    var token = "L" + (next + j).ToString("00", System.Globalization.CultureInfo.InvariantCulture);
+                    tokens.Add(token);
+                    text.Append(token);
+                }
+
+                block.Add(new Paragraph(text.ToString(), style) { SpaceAfter = rng.Next(3) == 0 ? rng.Next(0, 9) : 0 });
+                next += counts[k];
+            }
+
+            if (withReference)
+            {
+                var small = new TextStyle { Font = Standard14.Courier, FontSize = 5, Leading = 6 };
+                block.Add(new Paragraph([new TextRun("see ", small), TextRun.PageReference("tgt", small)]));
+                heights = [.. heights, 6.0];
+            }
+
+            var footer = withFooter ? new RunningBand("{page} of {pages}") : null;
+            var contentHeight = page - 40.0 - (footer?.EffectiveHeight ?? 0);
+            var room = contentHeight - (border + top) - (border + bottom);
+            var expectSaved = room >= heights.Max();
+
+            using var doc = NewDoc(300, page);
+            if (footer is not null) doc.Footer = footer;
+            if (lead > 0) doc.Add(new Paragraph(Lines(lead, 900), Courier10));
+            doc.Add(block);
+            if (withReference) doc.Add(new Paragraph("tgt", Courier10) { Anchor = "tgt" });
+            byte[] pdf;
+            try
+            {
+                pdf = Save(doc);
+            }
+            catch (InvalidOperationException ex) when (ex.Message.Contains("too tall", StringComparison.Ordinal))
+            {
+                Assert.False(expectSaved, $"case {n}: refused where the type says a page can hold it (page {page}, border {border}, top {top}, bottom {bottom}, lines {string.Join('+', counts)}): {ex.Message}");
+                refused++;
+                continue;
+            }
+
+            Assert.True(expectSaved, $"case {n}: saved where the type says it is refused");
+            saved++;
+            var pages = PageContents(pdf);
+            var all = pages.Select(Shown).ToList();
+            var shown = all.SelectMany(x => x).Where(t => t.Length == 3 && t[0] == 'L' && int.Parse(t[1..], System.Globalization.CultureInfo.InvariantCulture) < 900).ToList();
+            Assert.True(tokens.SequenceEqual(shown), $"case {n}: lines lost, repeated or out of order");
+            Assert.All(pages, c => Assert.True(Shown(c).Count > 0 || c.Contains("0.9 0.95 1 rg", StringComparison.Ordinal), $"case {n}: a page with neither text nor a box"));
+
+            // Each page that holds a piece has the fill, the two sides and the top and bottom bar.
+            var inner = (260 - 2 * border).ToString("0.#####", System.Globalization.CultureInfo.InvariantCulture);
+            foreach (var content in pages.Where(c => c.Contains("0.9 0.95 1 rg", StringComparison.Ordinal)))
+            {
+                var rects = Rects(content);
+                Assert.Equal("20", rects[0].Split(' ')[0]);
+                Assert.Equal("260", rects[0].Split(' ')[2]);
+                if (border > 0)
+                {
+                    Assert.Equal(5, rects.Count);
+                    var box = rects[0].Split(' ');
+                    var y = double.Parse(box[1], System.Globalization.CultureInfo.InvariantCulture);
+                    var h = double.Parse(box[3], System.Globalization.CultureInfo.InvariantCulture);
+                    Assert.Equal(2, rects.Count(r => r.Split(' ')[2] == inner));
+                    static double Y(string r) => double.Parse(r.Split(' ')[1], System.Globalization.CultureInfo.InvariantCulture);
+                    Assert.Contains(rects, r => r.Split(' ')[2] == inner && Math.Abs(Y(r) - y) < 1e-4);
+                    Assert.Contains(rects, r => r.Split(' ')[2] == inner && Math.Abs(Y(r) - (y + h - border)) < 1e-4);
+                }
+            }
+
+            if (withFooter)
+                for (var i = 0; i < pages.Count; i++)
+                    Assert.Contains($"{i + 1} of {pages.Count}", all[i]);
+
+            if (withReference)
+            {
+                var dest = Dests(pdf)["tgt"];
+                var label = (dest.Page + 1).ToString(System.Globalization.CultureInfo.InvariantCulture);
+                Assert.Equal(1, all.SelectMany(x => x).Count(t => t == label));
+                references++;
+            }
+        }
+
+        Assert.True(saved > 600 && refused > 100 && references > 100, $"saved {saved}, refused {refused}, references {references}");
     }
 }

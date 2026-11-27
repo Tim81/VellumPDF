@@ -58,7 +58,6 @@ internal sealed class NoteBlockRenderer : IRenderer, IPageBreakSource, IKeepSour
     // Set by Layout, and read by Draw and ReportPlacements of the instance Layout answered for.
     private List<Placed> _placed = [];
     private LayoutBox _occupied;
-    private bool _isLast;
 
     internal NoteBlockRenderer(NoteBlock block)
     {
@@ -123,7 +122,7 @@ internal sealed class NoteBlockRenderer : IRenderer, IPageBreakSource, IKeepSour
         {
             if (paragraph.TabStops is not { Count: > 0 })
                 continue;
-            LayoutValidation.ValidateTabStops(paragraph, width - paragraph.Margins.Horizontal);
+            LayoutValidation.ValidateTabStops(paragraph, width);
             LayoutValidation.ValidateLeaderSizes(paragraph);
         }
     }
@@ -149,46 +148,21 @@ internal sealed class NoteBlockRenderer : IRenderer, IPageBreakSource, IKeepSour
             return LayoutResult.Nothing(
                 "The note block's border and padding leave its paragraphs no width.");
 
-        // Filling the piece without the bottom border and padding gives the most the page can hold.
-        // When that holds every paragraph, the piece may be the last one and must then carry the
-        // bottom border and padding, so it is filled again with them reserved: the lines that do
-        // not fit above the padding move to the next page with it, rather than leave a piece of
-        // padding alone. When not even the first line fits with the padding reserved, the fewest
-        // trailing lines move instead: the last line, which is the last paragraph's last line at
-        // that paragraph's own line height. A piece that does not complete without the reserve is
-        // not the last one and needs none. The paragraphs hold the placement of the fill that ran
-        // last, and each piece keeps the placement of its own, so a fill that is not used leaves
-        // nothing behind.
-        var piece = Fill(context, children, width, reserveBottom: false);
+        // Every piece is a whole box: the page's room less the top and the bottom border and
+        // padding is what its paragraphs get, and they split wherever that room ends.
+        var piece = Fill(context, children, width);
         if (piece.Placed.Count == 0)
             return LayoutResult.Nothing(
-                "The note block's top border and padding and its first line do not fit on an empty page.");
+                "The note block's top and bottom border and padding and its tallest line do not fit on an empty page.");
 
-        if (piece.Complete)
-        {
-            var unreserved = piece;
-            piece = Fill(context, children, width, reserveBottom: true);
-            if (piece.Placed.Count == 0)
-            {
-                piece = HoldBackLastLine(unreserved, children);
-                if (piece is null)
-                    return LayoutResult.Nothing(
-                        "The note block's last line and its bottom border and padding do not fit on an empty page, " +
-                        "or the block is one line that does not fit between its top and bottom insets.");
-            }
-        }
-
-        var block = _block;
         var area = context.Area;
-        var bottomInset = block.BorderWidth + block.Padding.Bottom;
-        var bottom = piece.Complete ? piece.Bottom + bottomInset : piece.Bottom;
-        var occupied = new LayoutBox(area.X, area.Y, area.Width, bottom - area.Y);
+        var bottomInset = _block.BorderWidth + _block.Padding.Bottom;
+        var occupied = new LayoutBox(area.X, area.Y, area.Width, piece.Bottom + bottomInset - area.Y);
 
         if (piece.Complete)
         {
             _placed = piece.Placed;
             _occupied = occupied;
-            _isLast = true;
             return LayoutResult.Full(occupied);
         }
 
@@ -196,67 +170,27 @@ internal sealed class NoteBlockRenderer : IRenderer, IPageBreakSource, IKeepSour
         {
             _placed = piece.Placed,
             _occupied = occupied,
-            _isLast = false,
         };
         var overflow = new NoteBlockRenderer(_block, _shared, piece.NextIndex, piece.NextCarried, isFirst: false);
         return LayoutResult.Partial(occupied, split, overflow);
     }
 
-    // The piece that ends before the last line of the unreserved piece, which must have placed
-    // every paragraph; null when there is no line to keep. The last line is the last paragraph's,
-    // so
-    // the kept lines of that paragraph keep its own line height; a last paragraph of one line
-    // leaves
-    // the piece before it. The lines held back start the next piece, which holds them and the
-    // bottom
-    // border and padding or is refused by its own layout.
-    private Attempt? HoldBackLastLine(Attempt unreserved, ParagraphRenderer[] children)
-    {
-        var placed = unreserved.Placed;
-        var last = placed[^1];
-        last.Renderer.RestorePlacement(last.Placement);
-        var lastIndex = _startIndex + placed.Count - 1;
-        var kept = new List<Placed>(placed);
-        var held = new Attempt { Complete = false };
-        if (last.Renderer.PlacedLines >= 2)
-        {
-            var (head, rest) = last.Renderer.SplitOffTrailingLines(1);
-            var box = head.Placement.Occupied;
-            kept[^1] = new Placed(head, box, head.Placement);
-            held.NextIndex = lastIndex;
-            held.NextCarried = rest;
-            held.Bottom = box.Bottom;
-        }
-        else
-        {
-            if (placed.Count == 1)
-                return null;
-            kept.RemoveAt(kept.Count - 1);
-            held.NextIndex = lastIndex;
-            held.NextCarried = lastIndex == _startIndex ? _carried : null;
-            held.Bottom = kept[^1].Box.Bottom;
-        }
-
-        held.Placed.AddRange(kept);
-        return held;
-    }
-
-    // The height left for the next paragraph. The room is the area's height less what is used,
-    // less the reserve, in that order, which is how a paragraph with the same top and bottom
-    // margins forms its own, so a block fits wherever that paragraph fits.
+    // The height left for the next paragraph: the area's height less what is used and less the
+    // bottom inset, in that order, which is how a paragraph with the same top and bottom margins
+    // forms its own room, so a block fits wherever that paragraph fits.
     private static double Room(double height, double used, double reserve) =>
         height - used - reserve;
 
     // Lays the paragraphs of this piece out from its first one until one does not fit whole.
     // Paragraphs are placed in order and a piece ends between any two lines: a block has no keep
-    // rules of its own among them, and its paragraphs have no vertical margins.
-    private Attempt Fill(LayoutContext context, ParagraphRenderer[] children, double width, bool reserveBottom)
+    // rules of its own among them, and its paragraphs have no margins.
+    private Attempt Fill(LayoutContext context, ParagraphRenderer[] children, double width)
     {
         var block = _block;
         var area = context.Area;
         var left = area.X + block.BorderWidth + block.Padding.Left;
-        var topInset = _isFirst ? block.BorderWidth + block.Padding.Top : 0;
-        var reserve = reserveBottom ? block.BorderWidth + block.Padding.Bottom : 0;
+        var topInset = block.BorderWidth + block.Padding.Top;
+        var reserve = block.BorderWidth + block.Padding.Bottom;
 
         var result = new Attempt();
         var used = topInset;
@@ -385,10 +319,8 @@ internal sealed class NoteBlockRenderer : IRenderer, IPageBreakSource, IKeepSour
             canvas.SetFillColorRgb(color.R, color.G, color.B);
             Bar(ctx, new LayoutBox(box.X, box.Y, b, box.Height));
             Bar(ctx, new LayoutBox(box.Right - b, box.Y, b, box.Height));
-            if (_isFirst)
-                Bar(ctx, new LayoutBox(box.X + b, box.Y, box.Width - 2 * b, b));
-            if (_isLast)
-                Bar(ctx, new LayoutBox(box.X + b, box.Bottom - b, box.Width - 2 * b, b));
+            Bar(ctx, new LayoutBox(box.X + b, box.Y, box.Width - 2 * b, b));
+            Bar(ctx, new LayoutBox(box.X + b, box.Bottom - b, box.Width - 2 * b, b));
             canvas.Fill();
         }
 

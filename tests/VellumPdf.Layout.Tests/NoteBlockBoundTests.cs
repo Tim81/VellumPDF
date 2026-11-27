@@ -173,6 +173,28 @@ public sealed class NoteBlockBoundTests
         Assert.Equal(AfterAList(large, twin: true), AfterAList(large, twin: false));
     }
 
+    /// <summary>
+    /// A page reference counts as the longest label the document can print, wherever the block sits:
+    /// with a label bound of 40 a block of "ab" and a reference counts 2 + (1 + 2 + 40).
+    /// </summary>
+    [Fact]
+    public void AReferenceInABlockCountsAsTheLongestLabel()
+    {
+        var block = new NoteBlock().Add(new Paragraph([new TextRun("ab", H(10)), TextRun.PageReference("t", H(10))]));
+        var run = ListLayoutRun.Begin(new PdfDocument(), out var previous);
+        try
+        {
+            run.References = new PageReferenceTable { LabelBound = 40 };
+            Assert.Equal(2 + (1 + 2 + 40), BoundOf(block));
+        }
+        finally
+        {
+            ListLayoutRun.End(previous);
+        }
+
+        Assert.Equal(2 + (1 + 2), BoundOf(block));
+    }
+
     /// <summary>The count of a block is two, plus one and the characters of each paragraph.</summary>
     [Fact]
     public void TheBoundIsTwoPlusOneAndTheCharactersOfEachParagraph()

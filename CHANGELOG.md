@@ -13,27 +13,24 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   `NoteBlock` holds paragraphs, so a bold lead-in run, a link and a page reference work in it as
   they do in a paragraph, and `Document.Add(NoteBlock)` places it. `Background`, `BorderColor`,
   `BorderWidth` and `Padding` draw the box, inside the content width, with the text starting at
-  the left edge plus the border plus the left padding. A block that splits across pages keeps its
-  background and its left and right border on every page. The top border and padding are on the
-  first page and the bottom ones on the last, so the frame is open at a page break. The last page
-  always holds a line of text with the bottom padding, never padding alone: when the lines would
-  fit but the bottom padding would not fit after them, the fewest last lines needed move to the
-  next page with the padding. The save refuses a block as too tall only when a line is taller than
-  a page, when the top border and padding and the first line, or the last line and the bottom
-  border and padding, do not fit an empty page, when a block of one line does not fit between
-  both, or when the border and padding leave no width. `BreakBefore`, `KeepWithNext`,
+  the left edge plus the border plus the left padding. A block that splits across pages holds a
+  whole box on every page it reaches: the background, all four borders and the top and bottom
+  padding. The paragraphs are laid out line by line in the page's room less those insets and split
+  wherever it ends, so a tall padding leaves little room on each page. The save refuses a block as
+  too tall only when an empty page cannot hold the two insets plus one line of the tallest line
+  the block holds, or when the border and padding leave no width. `BreakBefore`, `KeepWithNext`,
   `KeepTogether`, `Anchor` and `SpaceAfter` read as on the other elements. A paragraph inside
-  keeps its own `SpaceAfter`, which spaces the paragraphs, its anchor and its left and right
-  margins. It sets no page break, keep request, line count or top or bottom margin and holds some
-  text: the block splits between any two lines, and a paragraph that breaks one of these rules is
-  refused when it is added, with an `ArgumentException` naming the property. In a tagged document
-  the block is one `Div` structure element in every file, with the paragraphs as its children;
-  the background and border are an artifact. It is never tagged as a table or as `Note`. A
-  negative or non-finite `BorderWidth` or padding edge, and a colour channel that is not a finite
-  number from 0 to 1, throw `ArgumentOutOfRangeException` from the setter, and a null paragraph
-  throws `ArgumentNullException`. A block with no paragraph is refused by the save before any
-  layout. Lists, tables, headings and preformatted text cannot be added to a block. A document
-  that does not use the block saves to the same bytes as before.
+  keeps its own `SpaceAfter`, which spaces the paragraphs, its anchor and its language. It sets no
+  page break, keep request, line count or margin, and the block's padding does the indenting: a
+  paragraph that sets one of them is refused when it is added, with an `ArgumentException` naming
+  the property. A paragraph with no text is a blank line. In a tagged document the block is one
+  `Div` structure element in every file, with the paragraphs as its children; the background and
+  border are an artifact. It is never tagged as a table or as `Note`. A negative or non-finite
+  `BorderWidth` or padding edge, and a colour channel that is not a finite number from 0 to 1,
+  throw `ArgumentOutOfRangeException` from the setter, and a null paragraph throws
+  `ArgumentNullException`. A block with no paragraph is refused by the save before any layout.
+  Lists, tables, headings and preformatted text cannot be added to a block. A document that does
+  not use the block saves to the same bytes as before.
 
 - **`SpaceAfter` sets the gap after a block element (#700).** `Paragraph`, `Heading`,
   `ListElement`, `Preformatted`, `TableElement`, `LayoutImage`, `LineSeparator` and `PieChart` take

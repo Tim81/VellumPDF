@@ -88,7 +88,8 @@ public sealed class Paragraph
     /// about something else, re-wrap, move or mirror the content, or leave the element off the page. The bottom edge
     /// only limits that box: it adds no space before the next element; <see cref="SpaceAfter"/>
     /// adds that. A negative top edge can also move the elements placed after this one.</para>
-    /// <para>Do not pass a negative edge. 3.0 will refuse it.</para>
+    /// <para>Do not pass a negative edge. 3.0 will refuse it. A <see cref="NoteBlock"/> refuses a
+    /// paragraph with an edge other than 0, when the paragraph is added; its padding indents.</para>
     /// </remarks>
     /// <exception cref="InvalidOperationException">
     /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not

@@ -246,49 +246,6 @@ public sealed partial class ParagraphRenderer : IRenderer, IPageBreakSource, IKe
     // for the page of its own it lays each entry out on). Removed in 3.0 (#688) with that analysis.
     internal (int EndLine, LayoutBox Occupied) Placement => (_endLine, _occupied);
 
-    /// <summary>The height of one line of this paragraph, known once it has been laid out.</summary>
-    internal double LineHeight => _lineHeight;
-
-    /// <summary>How many lines the last layout placed.</summary>
-    internal int PlacedLines => _endLine - _startLine;
-
-    // Splits the lines the last layout placed into all but the last count of them and those last
-    // lines. The note block uses it to move the fewest trailing lines to the next page, each at the
-    // height this paragraph gives its lines; the kept piece is as tall as the lines it keeps.
-    internal (ParagraphRenderer Kept, ParagraphRenderer Remainder) SplitOffTrailingLines(int count)
-    {
-        var keptEnd = _endLine - count;
-        var kept = new ParagraphRenderer(_para, _startLine)
-        {
-            _lines = _lines,
-            _lineEnds = _lineEnds,
-            _endLine = keptEnd,
-            _lineHeight = _lineHeight,
-            _lineHeightTaken = true,
-            _occupied = _occupied.WithHeight((keptEnd - _startLine) * _lineHeight),
-            _nullStyleRuns = _nullStyleRuns,
-            _tabStopsBeyond = _tabStopsBeyond,
-            StructType = StructType,
-            ParentStructElem = ParentStructElem,
-            ElementLanguage = ElementLanguage,
-            RunOwner = RunOwner,
-        };
-        var rest = new ParagraphRenderer(_para, keptEnd)
-        {
-            _lines = _lines,
-            _lineEnds = _lineEnds,
-            _lineHeight = _lineHeight,
-            _lineHeightTaken = true,
-            _nullStyleRuns = _nullStyleRuns,
-            _tabStopsBeyond = _tabStopsBeyond,
-            StructType = StructType,
-            ParentStructElem = ParentStructElem,
-            ElementLanguage = ElementLanguage,
-            RunOwner = RunOwner,
-        };
-        return (kept, rest);
-    }
-
     internal void RestorePlacement((int EndLine, LayoutBox Occupied) placement) =>
         (_endLine, _occupied) = placement;
 
