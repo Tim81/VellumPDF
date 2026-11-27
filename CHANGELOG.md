@@ -1878,6 +1878,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Documentation
 
+- **`Jbig2ImageLoader.Load` and `JpxImageLoader.Load` say they never read `BitDepth` (#291).** Both
+  overloads taking `ImageLoadOptions` read `DecodeMode` only, so `ReduceToEight` is accepted and
+  changes nothing. Neither carried a remarks element before. No code changed.
+
 - **The Conformance package says which rules were checked against veraPDF's profiles, and no
   longer says they were derived from the standards' text (#675).** Two audits on 2026-11-21 (#418
   for ISO 19005-2, #428 for ISO 14289-1) found that most of the PDF/A-2 and PDF/UA-1 rules were

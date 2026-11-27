@@ -106,6 +106,12 @@ public static class JpxImageLoader
     /// Full JPEG 2000 decode (DWT + EBCOT + MQ arithmetic) is not yet supported; use
     /// <see cref="ImageDecodeMode.Passthrough"/> instead.
     /// </exception>
+    /// <remarks>
+    /// This loader reads <see cref="ImageLoadOptions.DecodeMode"/> and never reads
+    /// <see cref="ImageLoadOptions.BitDepth"/>. Asking for <see cref="ImageBitDepth.ReduceToEight"/>
+    /// is accepted and changes nothing: the output is the one the default options give, and the
+    /// bit depth the codestream declares is kept.
+    /// </remarks>
     public static PdfImageXObject Load(byte[] jpx, ImageLoadOptions options)
     {
         ArgumentNullException.ThrowIfNull(jpx);

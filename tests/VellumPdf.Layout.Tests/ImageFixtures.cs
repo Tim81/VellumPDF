@@ -32,6 +32,26 @@ internal static class ImageFixtures
         return ms.ToArray();
     }
 
+    /// <summary>
+    /// The 2 by 2 PNG with a tEXt chunk of <paramref name="extra"/> pattern bytes after the header,
+    /// which a PNG reader skips (PNG 3rd edition, 5.4, ancillary chunks), so the file is large and
+    /// loads to the same image.
+    /// </summary>
+    public static byte[] PngWithTextChunk(int extra)
+    {
+        var png = Png();
+        var text = new byte[extra];
+        for (var i = 0; i < text.Length; i++)
+            text[i] = (byte)(i * 31 + (i >> 8) + 1);
+        text[0] = (byte)'k';
+        text[1] = 0;
+        using var ms = new MemoryStream();
+        ms.Write(png, 0, 8 + 25);                  // signature and the 25-byte IHDR chunk
+        PngChunk(ms, "tEXt", text);
+        ms.Write(png, 8 + 25, png.Length - 8 - 25);
+        return ms.ToArray();
+    }
+
     /// <summary>A 3-component baseline JPEG header: start of image, SOF0, end of image.</summary>
     public static byte[] Jpeg(int width = 8, int height = 4)
     {

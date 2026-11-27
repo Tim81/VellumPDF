@@ -353,7 +353,7 @@ public sealed class LayoutImageFactoryTests : IDisposable
     }
 
     [Fact]
-    public void AJp2WhoseSignatureBoxLengthIsNotTwelve_IsRefusedHere_AlthoughTheLoaderReadsIt()
+    public void AJp2WhoseSignatureBoxIsLongerThanTwelveAndHoldsItsBytes_IsRefusedHere_AlthoughTheLoaderReadsIt()
     {
         var jp2 = ImageFixtures.Jp2(signatureBoxLength: 0x0D);
 
@@ -444,6 +444,15 @@ public sealed class LayoutImageFactoryTests : IDisposable
         var ex = Assert.Throws<InvalidDataException>(() => LayoutImage.FromBytes([0xDE, 0xAD, 0xBE]));
 
         Assert.Contains("it begins DE AD BE.", ex.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void UnknownSignature_IsRefusedBeforeAnUndefinedEnumValueIsLookedAt()
+    {
+        var ex = Assert.Throws<InvalidDataException>(() => LayoutImage.FromBytes(
+            [1, 2, 3], new ImageLoadOptions { BitDepth = (ImageBitDepth)7 }));
+
+        Assert.Contains("it begins 01 02 03.", ex.Message, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -787,20 +796,95 @@ public sealed class LayoutImageFactoryTests : IDisposable
         Assert.Equal(bound + 1, s.Produced);
     }
 
+    // Non-zero, position-dependent bytes: a read that reorders, drops or overwrites a chunk
+    // changes them, where an array of zeros reassembles to zeros in any order.
+    internal static byte[] Pattern(int length)
+    {
+        var data = new byte[length];
+        for (var i = 0; i < data.Length; i++)
+            data[i] = (byte)(i * 31 + (i >> 8) + 1);
+        return data;
+    }
+
     [Theory]
     [InlineData(100)]
     [InlineData(81_920)]
     [InlineData(81_921)]
+    [InlineData(300_000)]
     public void AStreamOfExactlyTheBound_IsRead_AndOneByteMoreIsRefused(int bound)
     {
-        var exact = new byte[bound];
+        var exact = Pattern(bound);
 
         Assert.Equal(exact, ImageSource.ReadAll(new NonSeekableStream(exact), bound, "stream", "stream"));
         Assert.Equal(exact, ImageSource.ReadAll(new MemoryStream(exact), bound, "stream", "stream"));
+        Assert.Equal(exact, ImageSource.ReadAll(new ShortReadStream(exact, false, 1), bound, "stream", "stream"));
         Assert.Throws<InvalidDataException>(
-            () => ImageSource.ReadAll(new NonSeekableStream(new byte[bound + 1]), bound, "stream", "stream"));
+            () => ImageSource.ReadAll(new NonSeekableStream(Pattern(bound + 1)), bound, "stream", "stream"));
         Assert.Throws<InvalidDataException>(
-            () => ImageSource.ReadAll(new MemoryStream(new byte[bound + 1]), bound, "stream", "stream"));
+            () => ImageSource.ReadAll(new MemoryStream(Pattern(bound + 1)), bound, "stream", "stream"));
+    }
+
+    // Returns between 1 and 70,000 bytes per call, from a seeded sequence.
+    private sealed class ShortReadStream(byte[] data, bool seekable, int seed) : Stream
+    {
+        private readonly MemoryStream _inner = new(data);
+        private readonly Random _random = new(seed);
+        public override bool CanRead => true;
+        public override bool CanSeek => seekable;
+        public override bool CanWrite => false;
+        public override long Length => seekable ? _inner.Length : throw new NotSupportedException();
+        public override long Position
+        {
+            get => seekable ? _inner.Position : throw new NotSupportedException();
+            set => throw new NotSupportedException();
+        }
+        public override void Flush() { }
+        public override int Read(byte[] buffer, int offset, int count) =>
+            count == 0 ? 0 : _inner.Read(buffer, offset, Math.Min(count, _random.Next(1, 70_001)));
+        public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
+        public override void SetLength(long value) => throw new NotSupportedException();
+        public override void Write(byte[] buffer, int offset, int count) => throw new NotSupportedException();
+    }
+
+    // The chunks grow 64 KiB, 128 KiB, 256 KiB, 512 KiB, then 1 MiB each, so the sums below are
+    // where one chunk ends and the next begins.
+    public static TheoryData<int> ChunkSteps()
+    {
+        var data = new TheoryData<int>();
+        foreach (var step in new[] { 65_536, 196_608, 458_752, 983_040, 2_031_616, 3_080_192 })
+            foreach (var delta in new[] { -1, 0, 1 })
+                data.Add(step + delta);
+        return data;
+    }
+
+    [Theory]
+    [MemberData(nameof(ChunkSteps))]
+    public void AStreamOfASizeNearEveryChunkStep_ReassemblesExactly_WhateverTheReadSizes(int size)
+    {
+        var expected = Pattern(size);
+
+        Assert.Equal(expected, ImageSource.ReadAll(
+            new ShortReadStream(expected, false, size), ImageSource.MaxBytes, "stream", "stream"));
+        Assert.Equal(expected, ImageSource.ReadAll(
+            new ShortReadStream(expected, true, size + 1), ImageSource.MaxBytes, "stream", "stream"));
+        Assert.Equal(expected, ImageSource.ReadAll(
+            new MemoryStream(expected), ImageSource.MaxBytes, "stream", "stream"));
+    }
+
+    [Theory]
+    [InlineData(300_000)]
+    [InlineData(2_500_000)]
+    public void AnImageLargerThanTheFirstChunk_LoadsToTheExplicitBytes_ThroughEveryReader(int extra)
+    {
+        var png = ImageFixtures.PngWithTextChunk(extra);
+        Assert.True(png.Length > 65_536);
+        var expected = Save(new LayoutImage(PngImageLoader.Load(png)));
+
+        Assert.Equal(expected, Save(LayoutImage.FromBytes(png)));
+        Assert.Equal(expected, Save(LayoutImage.FromStream(new MemoryStream(png))));
+        Assert.Equal(expected, Save(LayoutImage.FromStream(new ShortReadStream(png, false, 7))));
+        Assert.Equal(expected, Save(LayoutImage.FromStream(new ShortReadStream(png, true, 8))));
+        Assert.Equal(expected, Save(LayoutImage.FromFile(Write(png))));
     }
 
     [Fact]
@@ -946,6 +1030,15 @@ public sealed class LayoutImageFactoryTests : IDisposable
         var ex = Assert.Throws<ArgumentException>(() => LayoutImage.FromFile(""));
 
         Assert.Equal("path", ex.ParamName);
+    }
+
+    [Fact]
+    public void AFileAnotherReaderHasOpen_IsStillRead()
+    {
+        var path = Write(ImageFixtures.Png());
+        using var reader = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
+
+        Assert.Equal(2, LayoutImage.FromFile(path).Image.Width);
     }
 
     [Fact]

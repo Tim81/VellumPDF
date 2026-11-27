@@ -293,9 +293,9 @@ public sealed class LayoutImage
     /// <c>II</c> or <c>MM</c> followed by 42 for TIFF, <c>BM</c>, <c>GIF87a</c> and <c>GIF89a</c>,
     /// the JBIG2 file ID string, and for JPEG 2000 the 12-byte JP2 signature box or the
     /// start-of-codestream marker. The box is matched whole, length field included, so a JP2 file
-    /// whose signature box declares another length is refused here although
-    /// <see cref="JpxImageLoader"/> reads it. Data that ends before a signature does, with every
-    /// byte agreeing so far, is refused with a message that says so.
+    /// whose signature box declares a length above 12 and holds that many bytes is refused here
+    /// although <see cref="JpxImageLoader"/> reads it. Data that ends before a signature does,
+    /// with every byte agreeing so far, is refused with a message that says so.
     /// <para>The data then goes to the loader a caller would have called by hand, so a file loads
     /// to the same image as with <see cref="PngImageLoader"/>, <see cref="JpegImageLoader"/>,
     /// <see cref="TiffImageLoader"/>, <see cref="BmpImageLoader"/>, <see cref="GifImageLoader"/>,
@@ -418,7 +418,10 @@ public sealed class LayoutImage
     /// <returns>An element with the default size, margins and alignment.</returns>
     /// <remarks>
     /// <b>A file of more than 268,435,456 bytes (256 MiB) is refused</b> with
-    /// <see cref="InvalidDataException"/> before it is read. Read it yourself and pass the bytes to
+    /// <see cref="InvalidDataException"/>. A file whose reported size is over the bound is refused
+    /// before it is read. One that yields more than its size says, such as a device on Linux that
+    /// reports 0 or a file that grows during the call, is refused once one byte past the bound has
+    /// been read. Read it yourself and pass the bytes to
     /// <see cref="FromBytes(byte[])"/>, which has no bound of its own. An empty file is refused with
     /// <see cref="ArgumentException"/>. The file is opened for reading, allowing other readers, and
     /// closed before the call returns. An exception that <see cref="FileStream"/> throws for the
@@ -530,14 +533,16 @@ public sealed class LayoutImage
     /// <see cref="InvalidDataException"/>. A seekable stream whose <c>Length</c> says so is refused
     /// before a byte is read. Every stream is also read in chunks and refused once one byte past
     /// the bound has arrived, so a stream whose length is wrong, or one that never ends, costs the
-    /// call the memory of the chunks read, and one more copy of what it keeps. Read the bytes
+    /// call the chunks it read before the refusal. The chunks are rented from the shared array
+    /// pool and go back to it after the one copy into the result. Read the bytes
     /// yourself and pass them to <see cref="FromBytes(byte[])"/> for a larger image. A stream with
     /// nothing left to read is refused with <see cref="ArgumentException"/>, and so is one whose
     /// <c>CanRead</c> is false, such as a disposed <see cref="MemoryStream"/>.
     /// <para>The stream need not be seekable. It is read from the position it is at, not from the
     /// start, so the bytes before the position take no part in the signature. After a successful
     /// call the position is the end of the stream. After a refusal it is: unchanged, when the
-    /// stream had nothing left or its <c>Length</c> showed it over the bound; one byte past the
+    /// call was refused before it read (a null argument, a stream that cannot be read), the
+    /// stream had nothing left, or its <c>Length</c> showed it over the bound; one byte past the
     /// bound from where the call began, when the bound was found by reading; at the end of the
     /// stream, for any refusal that follows the read, such as an unknown signature, the options or
     /// the loader. An exception the stream itself throws propagates unchanged and leaves the
@@ -596,7 +601,8 @@ public sealed class LayoutImage
     /// <exception cref="ObjectDisposedException">As for <see cref="FromStream(Stream)"/>.</exception>
     /// <exception cref="InvalidDataException">As for <see cref="FromStream(Stream)"/>.</exception>
     /// <exception cref="NotSupportedException">
-    /// As for <see cref="FromBytes(byte[], ImageLoadOptions)"/>.
+    /// As for <see cref="FromStream(Stream)"/>, and whatever the loader throws for the options it is
+    /// given.
     /// </exception>
     public static LayoutImage FromStream(Stream stream, ImageLoadOptions options)
     {
@@ -629,7 +635,7 @@ public sealed class LayoutImage
     /// <exception cref="IOException">Reading the stream fails.</exception>
     /// <exception cref="ObjectDisposedException">As for <see cref="FromStream(Stream)"/>.</exception>
     /// <exception cref="InvalidDataException">As for <see cref="FromStream(Stream)"/>.</exception>
-    /// <exception cref="NotSupportedException">As for <see cref="FromBytes(byte[])"/>.</exception>
+    /// <exception cref="NotSupportedException">As for <see cref="FromStream(Stream)"/>.</exception>
     public static LayoutImage FromStream(Stream stream, GifLoadOptions options)
     {
         ArgumentNullException.ThrowIfNull(stream);

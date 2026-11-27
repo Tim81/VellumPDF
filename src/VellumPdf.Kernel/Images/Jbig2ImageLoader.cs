@@ -151,6 +151,11 @@ public static class Jbig2ImageLoader
     /// segment types that are not supported for in-process decoding (symbol dictionaries,
     /// text regions, halftone regions, refinement regions, or arithmetic-coded generic regions).
     /// </exception>
+    /// <remarks>
+    /// This loader reads <see cref="ImageLoadOptions.DecodeMode"/> and never reads
+    /// <see cref="ImageLoadOptions.BitDepth"/>. Asking for <see cref="ImageBitDepth.ReduceToEight"/>
+    /// is accepted and changes nothing: the output is the one the default options give.
+    /// </remarks>
     public static PdfImageXObject Load(byte[] jbig2, ImageLoadOptions options)
     {
         if (jbig2 is null || jbig2.Length == 0)
