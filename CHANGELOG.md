@@ -763,8 +763,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
     hold U+00A0 and an empty run. U+202F and U+2007 are spaces, so a Standard-14 font draws a plain
     space where main drew U+00A0. A word wider than the line is cut at the glyph. A surrogate pair
     split between two runs of one embedded-font style is refused with `ArgumentException`, as on
-    2.3.3, where main saved it. A paragraph with tab stops, a page reference or a run with no
-    style has no 2.3.3 wrap and is unaffected.
+    2.3.3, where main saved it. A paragraph with tab stops or a page reference has no 2.3.3 wrap and
+    is unaffected.
 
 - **A list indent that leaves an entry no text width kept the marker and discarded the text
   (#476).** `ParagraphRenderer` drops a paragraph whose width is zero or less, while the marker's

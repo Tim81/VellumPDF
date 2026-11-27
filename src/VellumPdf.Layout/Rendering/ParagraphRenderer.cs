@@ -226,7 +226,6 @@ public sealed partial class ParagraphRenderer : IRenderer, IPageBreakSource, IKe
             _tabStopsBeyond = _tabStopsBeyond,
             _activeIsTwin = _activeIsTwin,
             _twinApplies = _twinApplies,
-            _cutAtAPlace = _cutAtAPlace,
             _joinedAcrossRuns = _joinedAcrossRuns,
             StructType = StructType,
             ParentStructElem = ParentStructElem,
@@ -245,7 +244,6 @@ public sealed partial class ParagraphRenderer : IRenderer, IPageBreakSource, IKe
             _tabStopsBeyond = _tabStopsBeyond,
             _activeIsTwin = _activeIsTwin,
             _twinApplies = _twinApplies,
-            _cutAtAPlace = _cutAtAPlace,
             _joinedAcrossRuns = _joinedAcrossRuns,
             MinLinesRelaxed = relaxed,
             StructType = StructType,
@@ -301,9 +299,7 @@ public sealed partial class ParagraphRenderer : IRenderer, IPageBreakSource, IKe
         var stops = StopsWithin(_para, width, out _tabStopsBeyond);
         _reads = null;
         var runs = PageReferences.Effective(_para.Runs, ref _reads);
-        var cutsBefore = LongWordBreaks.PlaceCuts;
         (_lines, _lineEnds) = WordWrapJoined(runs, width, out var nullStyleRuns, stops, out var joined);
-        _cutAtAPlace = LongWordBreaks.PlaceCuts != cutsBefore;
         _joinedAcrossRuns = joined;
         _nullStyleRuns = nullStyleRuns;
         WrapCalls++;
@@ -322,7 +318,7 @@ public sealed partial class ParagraphRenderer : IRenderer, IPageBreakSource, IKe
         EnsureWrapped(width);
 
         // A list bounds its units with this, and the bound has to hold for the twin's wrap too. Where
-        // the two wraps can differ, a text is at most as many lines as it has characters, in either.
+        // the twin can take more lines, a text is at most as many lines as it has characters, in either.
         var count = _lines.Count;
         if (TwinWrapApplies() && WrapsCanDiffer())
             count = (int)Math.Min(int.MaxValue, Math.Max(count, TextLength()));

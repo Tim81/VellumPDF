@@ -74,13 +74,6 @@ internal static class LongWordBreaks
     // tier test alike.
     private static bool IsPlaceCharacter(int value) => value is '/' or '\\' or '-';
 
-    // How many cuts were made at a place and not at the glyph, on this thread. A wrap reads it
-    // before and after to learn whether its own lines used one. Removed in 3.0 (#688) with the twin.
-    [ThreadStatic]
-    private static int s_placeCuts;
-
-    internal static int PlaceCuts => s_placeCuts;
-
     // True while a table's twin lays out or draws: a word is then cut at the glyph, as it was
     // before places were used. Removed in 3.0 (#688) with the twin.
     [ThreadStatic]
@@ -191,9 +184,7 @@ internal static class LongWordBreaks
 
                 if (overflowAt < 0) return lines;
 
-                var cut = LineEnd(tiers, start, overflowAt);
-                if (cut != overflowAt) s_placeCuts++;
-                start = cut;
+                start = LineEnd(tiers, start, overflowAt);
                 starts?.Add(start);
                 lines++;
             }

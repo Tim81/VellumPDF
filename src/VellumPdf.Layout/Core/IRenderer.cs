@@ -79,9 +79,9 @@ public interface IRenderer
     /// after a solidus, reverse solidus or hyphen-minus. A surrogate pair split between two runs
     /// of one style instance in an embedded font is refused with
     /// <see cref="ArgumentException"/>, as 2.3.3 refused it, where the document's own wrap joins
-    /// and saves it, so the decision keeps the refusal. A paragraph with tab stops, a page
-    /// reference or a run with no style has no 2.3.3 wrap, because 2.3.3 had none of these, and
-    /// wraps as the document wraps it. <b>Do not</b> rely on which wrap an element gets near the
+    /// and saves it, so the decision keeps the refusal. A paragraph with tab stops or a page
+    /// reference has no 2.3.3 wrap, because 2.3.3 had neither, and wraps as the document wraps
+    /// it. <b>Do not</b> rely on which wrap an element gets near the
     /// limit: 3.0 wraps one way.</para>
     /// <para><b>A <see cref="VellumPdf.Layout.Rendering.ListRenderer"/> that your renderer lays out
     /// is laid out as it was before the fixes of #476 and #685.</b> Through the context you were

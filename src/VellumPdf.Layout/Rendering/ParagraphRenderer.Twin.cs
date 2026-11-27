@@ -20,12 +20,10 @@ public sealed partial class ParagraphRenderer : IContinuationTwin
     private bool _activeIsTwin;
 
     // 0 until read, then 1 when the 2.3.3 wrap applies to this paragraph and 2 when it does not:
-    // 2.3.3 had no tab stops and no page references, and refused a null style with another
-    // exception, so a paragraph that holds one of them has no twin wrap and wraps as it does now.
+    // 2.3.3 had no tab stops and no page references, so a paragraph that holds one of them has no
+    // twin wrap and wraps as it does now. A run with no style that holds a word is refused by the
+    // current wrap before any decision, and one that holds none wraps alike in both.
     private byte _twinApplies;
-
-    // Whether the wrap in _lines cut a word at a place, which the 2.3.3 wrap never did.
-    private bool _cutAtAPlace;
 
     // Whether the tokeniser joined a word across a run boundary when it made the wrap in _lines.
     private bool _joinedAcrossRuns;
@@ -54,7 +52,7 @@ public sealed partial class ParagraphRenderer : IContinuationTwin
         var applies = _para.TabStops is not { Count: > 0 };
         foreach (var run in _para.Runs)
         {
-            if (run.IsReference || run.Style is null)
+            if (run.IsReference)
             {
                 applies = false;
                 break;
@@ -104,14 +102,16 @@ public sealed partial class ParagraphRenderer : IContinuationTwin
     /// </summary>
     internal long? TwinBound() => TwinWrapApplies() ? 2L + TextLength() : null;
 
-    // Whether the two wraps can give this paragraph a different number of lines: its own wrap cut a
-    // word at a place, its tokeniser joined a word across a run boundary (the wrap's own decision,
-    // made whether the runs share a style instance or not), or its normalisation of white space
-    // read a character as part of a word where 2.3.3's read it as a space (U+202F, U+2007). It reads
-    // what the wrap decided and keeps no list of characters of its own. Call after the wrap.
+    // Whether the two wraps can give this paragraph more lines than its own: its tokeniser joined a
+    // word across a run boundary (the wrap's own decision, made whether the runs share a style
+    // instance or not), or its normalisation of white space read a character as part of a word
+    // where 2.3.3's read it as a space (U+202F, U+2007). A cut at a place is not read: with the same
+    // words, a cut at the glyph never takes more lines than a cut after a place, because each of its
+    // lines starts no earlier and reaches at least as far, so the current lines already bound the
+    // twin's. It keeps no list of characters of its own. Call after the wrap.
     private bool WrapsCanDiffer()
     {
-        if (_cutAtAPlace || _joinedAcrossRuns) return true;
+        if (_joinedAcrossRuns) return true;
         if (_readsApart != 0) return _readsApart == 1;
 
         var apart = false;

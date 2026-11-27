@@ -31,7 +31,7 @@ public sealed class LongWordLimitTests
     // Three lines of 10 characters in 2.3.3 and four in the current wrap: U+202F and U+2007 are
     // spaces to 2.3.3, and join the words around them now.
     private static readonly string NoBreakSpaces =
-        string.Concat(Enumerable.Repeat("cccc jjjjjj jjj vvvvvv sss ", 560));
+        string.Concat(Enumerable.Repeat("cccc jjjjjj\u202Fjjj\u2007vvvvvv\u2007sss ", 560));
 
     // Runs that continue one word: 2.3.3 read each run as words of its own and wrapped each pair
     // into three lines of 10 characters, where the current wrap needs two.
@@ -169,7 +169,8 @@ public sealed class LongWordLimitTests
         new("empty run, 2.3.3 refuses", 57, 342, 285, ["e", "mmmmm nnnnn", "", "jj kk ll", "mmmmm nnnnn", "jj kk ll\n"]),
         new("no boundary special, 2.3.3 refuses", 114, 342, 228, ["iiiiiiiiiii", "aaa "]),
         new("address with a place, 2.3.3 saves", 85, 255, 340, ["aaaaaaaaaaaa/bbbbbbbbbbbb "]),
-        new("no-break spaces in a word, 2.3.3 saves", 90, 270, 360, ["cccc jjjjjj jjj vvvvvv sss "])
+        new("no-break spaces in a word, 2.3.3 saves", 90, 270, 360, ["cccc jjjjjj\u202Fjjj\u2007vvvvvv\u2007sss "]),
+        new("no-break spaces in a word, 2.3.3 refuses", 85, 340, 255, ["oo\u202Fmmmmm\u2007u eeeeee\u2007ddddddd\u202Frrrr\u2007 "])
     ];
 
     private static readonly Setup OneLinePerPage = new() { PageWidth = 80, PageHeight = 37 };
@@ -315,17 +316,21 @@ public sealed class LongWordLimitTests
         public void Draw(DrawContext context) { }
     }
 
-    // A paragraph whose text is long enough to be probed, with a run that has no style: 2.3.3 had
-    // no such run to wrap, so the twin wrap does not apply and the document refuses it as it does
-    // any other, with ArgumentNullException for the style, not a null reference from the twin.
+    // A run with no style that holds no word does not change a paragraph's verdict: 2.3.3 read it as
+    // nothing, so the paragraph of the glued runs is refused at the limit as it was. A run with no
+    // style that holds a word is refused by the current wrap before any decision, for its style.
     [Fact]
-    public void ALongParagraphWithANullStyle_isRefusedForItsStyle()
+    public void ARunWithNoStyleAndNoWord_leavesTheVerdictOf2_3_3()
     {
-        var runs = new List<TextRun> { new(new string('x', 2000), Courier()), new("y", null!) };
+        var boundary = Boundaries.Single(b => b.Name == "no boundary special, 2.3.3 refuses");
+        List<TextRun> runs = [new TextRun("", null!)];
+        for (var i = 0; i < boundary.Repeats; i++) runs.AddRange(boundary.Runs.Select(s => new TextRun(s, Courier())));
 
-        var o = Run(Narrow, new Log(), new ParagraphRenderer(new Paragraph(runs)));
+        var refused = Run(OneLinePerPage, new Log(), new ParagraphRenderer(new Paragraph(runs)));
+        Assert.True(IsLimitRefusal(refused.Error));
 
-        var ex = Assert.IsType<ArgumentNullException>(o.Error);
+        var withAWord = Run(Narrow, new Log(), new ParagraphRenderer(new Paragraph([new TextRun(new string('x', 2000), Courier()), new TextRun("y", null!)])));
+        var ex = Assert.IsType<ArgumentNullException>(withAWord.Error);
         Assert.Equal("Style", ex.ParamName);
     }
 
