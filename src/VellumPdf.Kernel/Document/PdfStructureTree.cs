@@ -403,10 +403,11 @@ internal sealed class PdfStructureTree
                 "The structure tree contains a cycle: an element is its own ancestor, so the tree cannot be walked.");
     }
 
-    // Work the walks of the last Build call did: one for each element a pre-order walk entered, and
-    // FirstLeafPages' own steps. The tests read it to assert that a save does not walk the tree once
-    // per page. It belongs to the tree, so saves of other documents do not share it, and Build
-    // resets it on entry.
+    // Work the walks of the last Build call did: one for each element a pre-order walk entered,
+    // and FirstLeafPages' own steps when Build adds them. FirstLeafPages is static and counts only
+    // for a caller that adds its steps, so a call that discards them is not seen here. The tests
+    // read it to assert that a save does not walk the tree once per page. It belongs to the tree,
+    // so saves of other documents do not share it, and Build resets it on entry.
     private long _walkSteps;
 
     internal long LastBuildSteps => _walkSteps;

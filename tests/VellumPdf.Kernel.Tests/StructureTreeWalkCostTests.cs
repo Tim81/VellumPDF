@@ -78,7 +78,7 @@ public sealed class StructureTreeWalkCostTests
     }
 
     [Fact]
-    public void Save_listsALeafsPageInTheOrderTheWalkMeetsThem()
+    public void Save_listsAPagesLeavesInTheOrderTheWalkMeetsThem()
     {
         // Two pages, and on the first page (the one the walk meets first) the MCIDs 3, 1, 3, 1 in walk
         // order. The refusal names the first MCID met twice: 3 in walk order, 1 if the page's leaves

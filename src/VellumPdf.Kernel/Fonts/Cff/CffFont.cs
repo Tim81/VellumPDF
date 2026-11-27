@@ -401,7 +401,8 @@ internal sealed class CffFont
     // a compare-and-swap and never edited, so a reader on another thread sees a complete list.
     // Two threads that miss on the same INDEX each parse it and one wins; the other's result is
     // dropped. Today no instance is shared: every save parses its own copy of the font program,
-    // so this guards against a later caller that shares one, and costs one atomic read per call.
+    // so this guards against a later caller that shares one, and costs one volatile read and a
+    // scan of at most three entries per call.
     // The cache is keyed by position within Data, so Data must not change after the first read.
     private IndexOffsets[] _parsedIndexes = [];
 

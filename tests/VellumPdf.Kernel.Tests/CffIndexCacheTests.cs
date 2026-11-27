@@ -86,7 +86,8 @@ public sealed class CffIndexCacheTests(ITestOutputHelper output)
 
     // A CFF with a CharStrings, a Global Subr and a Local Subr INDEX of three entries each and
     // different bytes in every entry, laid out by hand so no installed font is needed. Equal counts
-    // are what make an offset array kept under the wrong key answer with another INDEX's bytes.
+    // are what let a cache keyed by count, rather than by position, answer with another INDEX's
+    // bytes.
     private static byte[] SyntheticCff()
     {
         static byte[] Index(params byte[][] entries)

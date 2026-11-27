@@ -746,7 +746,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 - **Saving a tagged document no longer walks the whole structure tree once per page (#728).** The
   save built each page's parent-tree array with a walk over every element, so the time grew with
-  pages times elements and doubling the pages of a tagged table more than doubled the save. One
+  pages times elements, and from 500 pages up doubling the pages of a tagged table more than
+  doubled the save. One
   walk now sorts the leaves into per-page lists in the order the old walks met them, and the saved
   bytes are unchanged.
 - **Subsetting a CFF font no longer re-reads an INDEX's offset array for every glyph and
