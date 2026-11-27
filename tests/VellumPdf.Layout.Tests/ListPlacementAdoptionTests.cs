@@ -791,7 +791,8 @@ public sealed class ListPlacementAdoptionTests
     /// its text is drawn, and the document never drew it. The document holds an entry it cannot
     /// draw, so its list is laid out as its twin and the save is the one the list had. The twin
     /// gave nothing up for that entry: giving its text a width would draw it, which refuses the
-    /// save, so nothing is reported.
+    /// save (an undefined Standard 14 value measures zero, so the clamp would not narrow that
+    /// row's entry at all), so nothing is reported.
     /// </summary>
     [Theory]
     [InlineData("foreign-handle")]

@@ -294,11 +294,11 @@ public sealed class ListSkippedReportTests
     }
 
     /// <summary>
-    /// A renderer built to start at a later entry does not report this code for a skipped move, as
-    /// it reports no clamp: the document never walked the entries before it. It can report 208.
+    /// A renderer built to start at a later entry does not report 207 for a skipped move, as it
+    /// reports no 203: the document never walked the entries before it. It can report 208.
     /// </summary>
     [Fact]
-    public void ARendererBuiltToStartAtALaterEntry_reportsNoSkippedClampOrMove()
+    public void ARendererBuiltToStartAtALaterEntry_reportsNoSkippedMove()
     {
         var doc = Page(header: false);
         doc.Add(new ListRenderer(Staggered(9), startItem: 2));
@@ -409,6 +409,83 @@ public sealed class ListSkippedReportTests
 
         Assert.StartsWith("StrictDiagnostics refused the save: ListEntryPartDropped", ex.Message, StringComparison.Ordinal);
         Assert.Empty(Skipped(refused));
+    }
+
+    // ── An entry in a font the document cannot draw ──────────────────────────
+
+    private static TextStyle Undrawable(string kind) => new()
+    {
+        FontRef = kind == "foreign-handle"
+            ? new Document().UseTrueTypeFont(FontReportSupport.DejaVuBytes)
+            : new FontReference((Standard14)99),
+        FontSize = 10,
+    };
+
+    private static ListElement OneEntry(params TextRun[] runs) =>
+        new ListElement(ListStyle.OrderedDecimal) { Indent = 1000 }.Add(new ListItem(runs) { Style = H(10) });
+
+    /// <summary>
+    /// An entry whose only run in a font the document cannot draw is white space loses its text in
+    /// the twin, and drawing it would not make the save throw: the wrap draws no fragment in that
+    /// style. The twin does give that entry up, so it is reported and strict mode refuses.
+    /// </summary>
+    [Theory]
+    [InlineData("foreign-handle")]
+    [InlineData("undefined-standard14")]
+    public void AnEntryWhoseOnlyUndrawableRunIsWhiteSpace_isCounted(string kind)
+    {
+        Document Build(bool strict)
+        {
+            var doc = Page(header: false);
+            doc.StrictDiagnostics = strict;
+            doc.Add(OneEntry(new TextRun("abc", H(10)), new TextRun(" ", Undrawable(kind)), new TextRun("def", H(10))));
+            return doc;
+        }
+
+        var doc = Build(strict: false);
+        Save(doc);
+        var item = Assert.Single(Skipped(doc));
+        Assert.Equal(1, item.Count);
+
+        var ex = Assert.Throws<InvalidOperationException>(() => Save(Build(strict: true)));
+        Assert.StartsWith("StrictDiagnostics refused the save: ListIndentClampSkipped", ex.Message, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// An entry whose text, and not only white space, is in a font the document cannot draw stays
+    /// exempt: giving that text a width would draw it, which makes the save throw.
+    /// </summary>
+    [Theory]
+    [InlineData("foreign-handle")]
+    [InlineData("undefined-standard14")]
+    public void AnEntryWhoseTextIsInAnUndrawableFont_isNotCounted(string kind)
+    {
+        var doc = Page(header: false);
+        doc.StrictDiagnostics = true;
+        doc.Add(OneEntry(new TextRun("abc", Undrawable(kind))));
+
+        Save(doc);
+
+        Assert.Empty(Skipped(doc));
+    }
+
+    /// <summary>
+    /// An entry whose marker is in a font the document cannot draw throws when the save draws the
+    /// marker, in the twin as it did before this change, and reports no skipped clamp.
+    /// </summary>
+    [Theory]
+    [InlineData("foreign-handle")]
+    [InlineData("undefined-standard14")]
+    public void AnEntryWhoseMarkerIsInAnUndrawableFont_throwsAndIsNotCounted(string kind)
+    {
+        var doc = Page(header: false);
+        doc.Add(new ListElement(ListStyle.OrderedDecimal) { Indent = 1000 }
+            .Add(new ListItem([new TextRun("abc", H(10))]) { Style = Undrawable(kind) }));
+
+        if (kind == "foreign-handle") Assert.Throws<ArgumentException>(() => Save(doc));
+        else Assert.Throws<IndexOutOfRangeException>(() => Save(doc));
+
+        Assert.Empty(Skipped(doc));
     }
 
     // ── Both ─────────────────────────────────────────────────────────────────

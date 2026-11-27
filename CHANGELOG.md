@@ -739,14 +739,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
     wrapped lines, cannot reach the limit and is not probed. A larger one is laid out twice without
     drawing, as it was and as it is now, and the new layout is kept only where neither reaches the
     limit. The new `LayoutDiagnosticCode.ListIndentClampSkipped` (207, severity `Error`) reports
-    a list placed that way only when it left as it was an entry that the clamp or the moving would
-    have changed. `Count` is the number of such entries: those whose gutter the clamp would have
-    narrowed, and those the list placed where they fall that the new layout would have moved to
-    the next page. A list that left none does not report this code, so a document whose lists lose
-    nothing saves under `StrictDiagnostics`. The text of the entries the clamp would have narrowed is not
-    drawn. The message of a 207 names every cause that applied: the continuation limit, or any of
-    a renderer of yours, a font the document cannot draw, and an element after a list that comes
-    near the limit.
+    a list placed that way only when it left something as it was that the clamp or the moving
+    would have changed. Its XML doc states the rule, the `Count` and the exceptions. A list that
+    left nothing does not report it, so a document whose lists lose nothing saves under
+    `StrictDiagnostics`. The text of the entries the clamp would have narrowed is not drawn. The
+    message of a 207 names every cause that applied: the continuation limit, or any of a renderer
+    of yours, a font the document cannot draw, and an element after a list that comes near the
+    limit.
   - A new `LayoutDiagnosticCode.ListIndentClamped` (203, severity `Error`) reports a clamped list
     once, with the number of clamped entries as `Count`. `StrictDiagnostics` refuses it, and the
     default saves. A list is reported when the document draws it from its first entry; a
@@ -794,11 +793,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
     list of the document is clamped or moved. The save gives what it gave before this change: the
     same bytes, or the same exception and message. `StrictDiagnostics` refuses it where a list
     reports 207 or 208. `ListIndentClampSkipped` (207) reports a list the document placed this way
-    that left as it was an entry that the clamp or the moving would have changed, as that code
-    describes. An entry in a font the document cannot draw is not one of them, because narrowing
-    or moving it would draw text that makes the save throw, so a document whose lists lose nothing
-    saves under strict mode. `ListEntryPartDropped` (208) reports an entry left
-    with a part missing.
+    as that code describes. An entry whose marker or text is in a font the document cannot draw
+    is not counted, because narrowing or moving it would draw it in that font, which makes the
+    save throw; a run of white space alone in such a font is not drawn, so it does not exempt the
+    entry. `ListEntryPartDropped` (208) reports an entry left with a part missing.
   - **A document that holds a renderer of yours lays every list out as it was before the clamp
     and the moving of entries.** That is any renderer that is not one of the library's own, added
     with `Document.Add(IRenderer)` or `DocumentRenderer.Add(IRenderer)`, wherever it sits and

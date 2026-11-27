@@ -575,13 +575,14 @@ public sealed class ListRenderer : IRenderer, IPageBreakSource, IKeepSource, IPl
             // reads as placed. An entry the clamp would have narrowed is counted as a clamp and
             // never as a move as well: its text has no width here, but PartUnplaced also reads a
             // marker that is cut at the page end, without looking at the text. An entry the
-            // document cannot draw is not counted: moving it would draw its text, which makes the
-            // save throw, so the twin gives nothing up for it. A continuation piece is laid out
-            // at a page top, so the page-top term covers it and it needs no term of its own.
+            // document cannot draw is not counted: moving it would draw it, marker and text, on the
+            // next page in a font that makes the save throw, so the twin gives nothing up for it.
+            // A continuation piece is laid out at a page top, so the page-top term covers it and it
+            // needs no term of its own.
             if (countsMoves && !entry.ClampCounted
                 && !(i == _startItem && context.AtPageTop)
                 && PartUnplaced(markerResult, contentResult, contentRenderer, area.Width)
-                && CanDrawEntry(ListLayoutRun.Current, entry.MarkerStyle, entry.Item))
+                && CanDrawEntry(ListLayoutRun.Current, entry.MarkerStyle, entry.Item, skipWhitespaceRuns: true))
                 moveSites++;
 
             if ((markerResult.Status == LayoutResult.Outcome.Nothing
@@ -1113,11 +1114,19 @@ public sealed class ListRenderer : IRenderer, IPageBreakSource, IKeepSource, IPl
     // Whether everything an entry would draw can be drawn in the document: its marker, which is
     // set in the style the entry inherits, and each run that holds text (ListLayoutRun.CanDraw
     // says what that asks of a style). A run with no text draws nothing, so its style is not read.
-    // A white-space-only run is read although it may yield no fragment, so this is stricter than
-    // the draw, in the safe direction. An item built from a string has one run, in the style it
-    // inherits, so that style is the only one to read.
+    // An item built from a string has one run, in the style it inherits, so that style is the only
+    // one to read.
+    //
+    // One predicate answers two questions, and they differ only for a white-space-only run. Which
+    // layout the document uses (skipWhitespaceRuns false) reads such a run, although the wrap
+    // collapses white space and the run may yield no fragment, because that is the safe direction
+    // for choosing the twin. Whether the entry is given up in the twin, which is what the 207
+    // count asks (skipWhitespaceRuns true), must not read it: the wrap draws no fragment in that
+    // style, so drawing the entry does not make the save throw and the twin does lose its text.
+    // A character the wrap keeps is one that NormaliseWhitespace does not turn into a space.
     // Removed in 3.0 (#688), which refuses such a font where the style is built.
-    private static bool CanDrawEntry(ListLayoutRun? run, TextStyle markerStyle, ListItem item)
+    private static bool CanDrawEntry(
+        ListLayoutRun? run, TextStyle markerStyle, ListItem item, bool skipWhitespaceRuns = false)
     {
         if (!ListLayoutRun.CanDraw(run, markerStyle)) return false;
         if (item.OwnRuns is not { } runs) return true;
@@ -1126,10 +1135,21 @@ public sealed class ListRenderer : IRenderer, IPageBreakSource, IKeepSource, IPl
         {
             // A reference draws its label, whatever the label turns out to be.
             if (!runs[i].HoldsText) continue;
+            if (skipWhitespaceRuns && !runs[i].IsReference && !HoldsKeptCharacter(runs[i].Text)) continue;
             if (runs[i].Style is not { } style || !ListLayoutRun.CanDraw(run, style)) return false;
         }
 
         return true;
+    }
+
+    private static bool HoldsKeptCharacter(string text)
+    {
+        foreach (var c in text)
+        {
+            if (c == '\n' || NoBreakSpaces.IsNoBreakSpace(c) || !char.IsWhiteSpace(c)) return true;
+        }
+
+        return false;
     }
 
     /// <summary>
@@ -1233,10 +1253,11 @@ public sealed class ListRenderer : IRenderer, IPageBreakSource, IKeepSource, IPl
                 gutter = clampedGutter;
                 indentClamped++;
             }
-            else if (wouldClamp && CanDrawEntry(ListLayoutRun.Current, itemStyle, item))
+            else if (wouldClamp && CanDrawEntry(ListLayoutRun.Current, itemStyle, item, skipWhitespaceRuns: true))
             {
-                // An entry the document cannot draw is not counted: giving its text a width would
-                // draw that text, which makes the save throw, so the twin gives nothing up for it.
+                // An entry the document cannot draw is not counted: its marker, or its text once
+                // given a width, is drawn in a font that makes the save throw, so the twin gives
+                // nothing up for it.
                 clampSkipped++;
                 clampCounted = true;
             }
@@ -1310,7 +1331,8 @@ public sealed class ListRenderer : IRenderer, IPageBreakSource, IKeepSource, IPl
                         childGutter = clampedChildGutter;
                         indentClamped++;
                     }
-                    else if (childWouldClamp && CanDrawEntry(ListLayoutRun.Current, childStyle, child))
+                    else if (childWouldClamp
+                        && CanDrawEntry(ListLayoutRun.Current, childStyle, child, skipWhitespaceRuns: true))
                     {
                         // Not counted for an undrawable entry, for the reason at the item above.
                         clampSkipped++;
