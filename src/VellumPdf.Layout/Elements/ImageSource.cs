@@ -1,7 +1,6 @@
 // Copyright © Timothy van der Ham (@Tim81)
 // SPDX-License-Identifier: Apache-2.0
 
-using System.Buffers;
 using System.Text;
 using VellumPdf.Images;
 
@@ -20,7 +19,7 @@ internal static class ImageSource
     internal const long MaxBytes = 256L * 1024 * 1024;
 
     private const int FirstChunk = 64 * 1024;
-    private const int LastChunk = 1024 * 1024;
+    private const int LastChunk = 4 * 1024 * 1024;
 
     private enum Format { Png, Jpeg, Tiff, Bmp, Gif, Jbig2, Jpx }
 
@@ -149,19 +148,16 @@ internal static class ImageSource
     }
 
     // Reads from the stream's position to its end, for every kind of stream the same way: in
-    // chunks rented from the shared array pool, growing from 64 KiB to 1 MiB (the largest array
-    // the pool keeps), never asking for more than one byte past the bound, and then one copy
-    // into an array of the exact length. The chunks go back to the pool after the copy, so an
-    // endless stream stops after bound + 1 bytes. At the end of the read the chunks and the
-    // result are live together, so the peak is about twice the result. What the call allocates
-    // depends on what the pool already holds. Measured on net10.0, one process per case, first
-    // call, zero-filled input of the stated size, bytes allocated over bytes read: 64 KiB 4.1,
-    // 1 MB 3.0, 4 MB 2.0, 10 MB 2.0, 100 MiB 2.0, the bound 2.0; a stream refused at bound + 1
-    // by reading, 1.0. The same call repeated in one process allocated the result alone, for each
-    // of those sizes up to 100 MiB, because the pool already held the chunks. The stream's Length is never used to size a buffer, since a stream can report
-    // anything (a growing file, a /proc file or a device that reports 0). It is used for one
-    // thing, to refuse early: a seekable stream that says more than the bound is left is refused
-    // before a byte is read, and so keeps its position.
+    // chunks that grow from 64 KiB to 4 MiB, never more than one byte past the bound, and then
+    // one copy into an array of the exact length. An endless stream stops after bound + 1 bytes.
+    // The chunks and the result are live together at the end of the read. Measured on net10.0,
+    // one process per case, zero-filled input, bytes allocated over bytes read: 64 KiB 4.1,
+    // 1,000,000 bytes 3.0, 4,000,000 bytes 2.0, 10,000,000 bytes 2.3, 100 MiB 2.0, the bound
+    // 2.0; refused at bound + 1 by reading, 1.0. So the cost is between 2 and 4 times the size,
+    // and about 2 from 4 MB up. Nothing is kept after the call. The stream's Length is never
+    // used to size a buffer, since a stream can report anything (a growing file, a /proc file
+    // that reports 0). It is used for one thing, to refuse early: a seekable stream that says
+    // more than the bound is left is refused before a byte is read, and so keeps its position.
     internal static byte[] ReadAll(Stream stream, long maxBytes, string paramName, string what)
     {
         if (!stream.CanRead)
@@ -169,49 +165,36 @@ internal static class ImageSource
         if (stream.CanSeek && stream.Length - stream.Position > maxBytes)
             throw TooLarge(what, maxBytes);
 
-        var pool = ArrayPool<byte>.Shared;
-        var chunks = new List<byte[]>();
-        var counts = new List<int>();
-        try
+        var chunks = new List<(byte[] Buffer, int Count)>();
+        long total = 0;
+        var size = FirstChunk;
+        while (true)
         {
-            long total = 0;
-            var size = FirstChunk;
-            while (true)
+            var buffer = new byte[(int)Math.Min(size, maxBytes + 1 - total)];
+            var filled = 0;
+            while (filled < buffer.Length)
             {
-                var want = (int)Math.Min(size, maxBytes + 1 - total);
-                var buffer = pool.Rent(want);
-                chunks.Add(buffer);
-                counts.Add(0);
-                var filled = 0;
-                while (filled < want)
-                {
-                    var n = stream.Read(buffer, filled, want - filled);
-                    if (n == 0) break;
-                    filled += n;
-                }
-                counts[^1] = filled;
-                total += filled;
-                if (total > maxBytes) throw TooLarge(what, maxBytes);
-                if (filled < want) break;
-                size = Math.Min(size * 2, LastChunk);
+                var n = stream.Read(buffer, filled, buffer.Length - filled);
+                if (n == 0) break;
+                filled += n;
             }
+            total += filled;
+            if (total > maxBytes) throw TooLarge(what, maxBytes);
+            if (filled > 0) chunks.Add((buffer, filled));
+            if (filled < buffer.Length) break;
+            size = Math.Min(size * 2, LastChunk);
+        }
 
-            if (total == 0)
-                throw new ArgumentException($"The {what} has no bytes to read.", paramName);
-            var all = new byte[total];
-            var at = 0;
-            for (var i = 0; i < chunks.Count; i++)
-            {
-                Buffer.BlockCopy(chunks[i], 0, all, at, counts[i]);
-                at += counts[i];
-            }
-            return all;
-        }
-        finally
+        if (total == 0)
+            throw new ArgumentException($"The {what} has no bytes to read.", paramName);
+        var all = new byte[total];
+        var at = 0;
+        foreach (var (buffer, count) in chunks)
         {
-            foreach (var chunk in chunks)
-                pool.Return(chunk);
+            Buffer.BlockCopy(buffer, 0, all, at, count);
+            at += count;
         }
+        return all;
     }
 
     private static InvalidDataException TooLarge(string what, long maxBytes) =>

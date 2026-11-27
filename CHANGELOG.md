@@ -16,7 +16,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   `/DCTDecode`. CCITT data and JBIG2 in its embedded form have no signature and still go through
   `CcittImageLoader` and `Jbig2ImageLoader`. Each factory also takes `ImageLoadOptions` or
   `GifLoadOptions`, which go to the loader as an explicit call would pass them; what a loader does
-  with each member is in that loader's documentation. Options for a loader that takes none (any
+  with each member is that loader's behaviour (#732 tracks the loaders that do not document it
+  yet). Options for a loader that takes none (any
   `ImageLoadOptions` other than the default for JPEG, BMP and GIF, and any `GifLoadOptions` other
   than the default for every other format) are refused with `ArgumentException`, and a member
   that is not a defined enumeration value is refused with `ArgumentOutOfRangeException`. Empty
@@ -1879,10 +1880,6 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
     `Document.Add(TableElement)` and `TableRenderer` states the rule for cutting a row.
 
 ### Documentation
-
-- **`Jbig2ImageLoader.Load` and `JpxImageLoader.Load` say they never read `BitDepth` (#291).** Both
-  overloads taking `ImageLoadOptions` read `DecodeMode` only, so `ReduceToEight` is accepted and
-  changes nothing. Neither carried a remarks element before. No code changed.
 
 - **The Conformance package says which rules were checked against veraPDF's profiles, and no
   longer says they were derived from the standards' text (#675).** Two audits on 2026-11-21 (#418

@@ -846,12 +846,12 @@ public sealed class LayoutImageFactoryTests : IDisposable
         public override void Write(byte[] buffer, int offset, int count) => throw new NotSupportedException();
     }
 
-    // The chunks grow 64 KiB, 128 KiB, 256 KiB, 512 KiB, then 1 MiB each, so the sums below are
-    // where one chunk ends and the next begins.
+    // The chunks grow 64 KiB, 128 KiB, 256 KiB, 512 KiB, 1 MiB, 2 MiB, then 4 MiB each, so the
+    // sums below are where one chunk ends and the next begins.
     public static TheoryData<int> ChunkSteps()
     {
         var data = new TheoryData<int>();
-        foreach (var step in new[] { 65_536, 196_608, 458_752, 983_040, 2_031_616, 3_080_192 })
+        foreach (var step in new[] { 65_536, 196_608, 458_752, 983_040, 2_031_616, 4_128_768, 8_323_072 })
             foreach (var delta in new[] { -1, 0, 1 })
                 data.Add(step + delta);
         return data;

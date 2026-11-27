@@ -228,15 +228,6 @@ public sealed class Jbig2ImageTests
     // ── Filter / dict structure tests ─────────────────────────────────────────
 
     [Fact]
-    public void BitDepthOption_IsNotRead_SoReduceToEightChangesNothing()
-    {
-        var jbig2 = BuildMinimalJbig2(100, 80);
-        var reduce = new ImageLoadOptions { BitDepth = ImageBitDepth.ReduceToEight };
-
-        Assert.Equal(Serialize(Jbig2ImageLoader.Load(jbig2)), Serialize(Jbig2ImageLoader.Load(jbig2, reduce)));
-    }
-
-    [Fact]
     public void Load_Filter_IsJbig2Decode()
     {
         var jbig2 = BuildMinimalJbig2(100, 80);

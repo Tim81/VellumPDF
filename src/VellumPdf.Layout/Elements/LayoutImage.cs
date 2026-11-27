@@ -339,11 +339,9 @@ public sealed class LayoutImage
     /// <returns>An element with the default size, margins and alignment.</returns>
     /// <remarks>
     /// <b>The options go to the data's loader exactly as an explicit call passes them.</b> What
-    /// the loader does with each member, including a member it ignores for some inputs, is in the
-    /// remarks of <see cref="PngImageLoader.Load(byte[], ImageLoadOptions)"/>,
-    /// <see cref="TiffImageLoader.Load(byte[], ImageLoadOptions)"/>,
-    /// <see cref="Jbig2ImageLoader.Load(byte[], ImageLoadOptions)"/> and
-    /// <see cref="JpxImageLoader.Load(byte[], ImageLoadOptions)"/>, and is not repeated here.
+    /// a loader does with each member, including a member it ignores for some inputs, is that
+    /// loader's behaviour and is not repeated here. Issue #732 tracks the loaders that do not
+    /// document it yet.
     /// <para><b>Options for a loader that takes none are refused.</b> JPEG, BMP and GIF are read by
     /// loaders with no <see cref="ImageLoadOptions"/>, so for them the call throws
     /// <see cref="ArgumentException"/> with <c>ParamName</c> <c>options</c> unless the options equal
@@ -533,8 +531,7 @@ public sealed class LayoutImage
     /// <see cref="InvalidDataException"/>. A seekable stream whose <c>Length</c> says so is refused
     /// before a byte is read. Every stream is also read in chunks and refused once one byte past
     /// the bound has arrived, so a stream whose length is wrong, or one that never ends, costs the
-    /// call the chunks it read before the refusal. The chunks are rented from the shared array
-    /// pool and go back to it after the one copy into the result. Read the bytes
+    /// call the chunks it read before the refusal. Read the bytes
     /// yourself and pass them to <see cref="FromBytes(byte[])"/> for a larger image. A stream with
     /// nothing left to read is refused with <see cref="ArgumentException"/>, and so is one whose
     /// <c>CanRead</c> is false, such as a disposed <see cref="MemoryStream"/>.

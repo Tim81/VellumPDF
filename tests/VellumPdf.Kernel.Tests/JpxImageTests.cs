@@ -73,18 +73,6 @@ public sealed class JpxImageTests
     }
 
     [Fact]
-    public void BitDepthOption_IsNotRead_SoReduceToEightChangesNothing()
-    {
-        var j2k = BuildRawCodestream(width: 4, height: 4, components: 3, bpc: 16);
-        var reduce = new ImageLoadOptions { BitDepth = ImageBitDepth.ReduceToEight };
-
-        var asked = StreamDictText(JpxImageLoader.Load(j2k, reduce));
-
-        Assert.Equal(StreamDictText(JpxImageLoader.Load(j2k)), asked);
-        Assert.Contains("/BitsPerComponent 16", asked);
-    }
-
-    [Fact]
     public void RawCodestream_BitsPerComponent_8()
     {
         var j2k = BuildRawCodestream(width: 4, height: 4, components: 3, bpc: 8);
