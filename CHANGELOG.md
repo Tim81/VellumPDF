@@ -778,6 +778,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   - Text extraction returns the pieces as written with the extractor's line separator between
     them. Reading a cut address back as one token needs marked content the library does not write
     yet (#588).
+- **Saving a tagged document no longer walks the whole structure tree once per page (#728).** The
+  save built each page's parent-tree array with a walk over every element, so the time grew with
+  pages times elements, and from 500 pages up doubling the pages of a tagged table more than
+  doubled the save. One
+  walk now sorts the leaves into per-page lists in the order the old walks met them, and the saved
+  bytes are unchanged.
+- **Subsetting a CFF font no longer re-reads an INDEX's offset array for every glyph and
+  subroutine it copies (#729).** The offsets of each INDEX are read once per subset instead, so
+  the work grows with the glyphs kept rather than with the glyphs kept times the glyphs in the
+  font. The subset bytes are unchanged.
 
 - **A list indent that leaves an entry no text width kept the marker and discarded the text
   (#476).** `ParagraphRenderer` drops a paragraph whose width is zero or less, while the marker's

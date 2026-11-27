@@ -349,8 +349,7 @@ internal sealed class CffFont
     {
         if (gid < 0 || gid >= NumGlyphs)
             throw new ArgumentOutOfRangeException(nameof(gid), $"GID {gid} is out of range [0, {NumGlyphs}).");
-        var s = Data.Span;
-        var (_, offsets, dataBase) = ReadIndexOffsets(s, CharStringsIndexOffset, Data.Length);
+        var (_, offsets, dataBase) = GetIndexOffsets(CharStringsIndexOffset);
         var start = (int)offsets[gid];
         var end = (int)offsets[gid + 1];
         var absStart = dataBase + start - 1;
@@ -365,7 +364,7 @@ internal sealed class CffFont
     {
         if (GlobalSubrCount == 0)
             throw new InvalidOperationException("Font has no Global Subr INDEX.");
-        return GetSubrEntry(Data.Span, GlobalSubrIndexOffset, Data.Length, index);
+        return GetSubrEntry(GlobalSubrIndexOffset, Data.Length, index);
     }
 
     /// <summary>Returns the raw bytes for Local Subr entry <paramref name="index"/>.</summary>
@@ -373,14 +372,14 @@ internal sealed class CffFont
     {
         if (LocalSubrCount == 0)
             throw new InvalidOperationException("Font has no Local Subr INDEX.");
-        return GetSubrEntry(Data.Span, LocalSubrIndexOffset, Data.Length, index);
+        return GetSubrEntry(LocalSubrIndexOffset, Data.Length, index);
     }
 
     // ── INDEX helpers ─────────────────────────────────────────────────────────
 
-    private ReadOnlyMemory<byte> GetSubrEntry(ReadOnlySpan<byte> s, int indexOffset, int totalLen, int entryIndex)
+    private ReadOnlyMemory<byte> GetSubrEntry(int indexOffset, int totalLen, int entryIndex)
     {
-        var (count, offsets, dataBase) = ReadIndexOffsets(s, indexOffset, totalLen);
+        var (count, offsets, dataBase) = GetIndexOffsets(indexOffset);
         if (entryIndex < 0 || entryIndex >= count)
             throw new ArgumentOutOfRangeException(nameof(entryIndex),
                 $"Subr index {entryIndex} out of range [0, {count}).");
@@ -391,6 +390,46 @@ internal sealed class CffFont
         if (entryLen < 0 || absStart < 0 || absStart + entryLen > totalLen)
             throw new InvalidDataException($"Subr INDEX entry {entryIndex} data out of range.");
         return Data.Slice(absStart, entryLen);
+    }
+
+    // A parsed INDEX offset array, never written after it is built. Parsing is the cost the
+    // subsetter would otherwise pay again for every glyph and subroutine it reads.
+    private sealed record IndexOffsets(int Position, int Count, uint[] Offsets, int DataBase);
+
+    // The INDEXes parsed so far for this parsed font: the CharStrings, Global Subr and Local Subr
+    // INDEXes, so at most three entries, each position once. The array is replaced whole through
+    // a compare-and-swap and never edited, so a reader on another thread sees a complete list.
+    // Two threads that miss on the same INDEX each parse it and one wins; the other's result is
+    // dropped. Today no instance is shared: every save parses its own copy of the font program,
+    // so this guards against a later caller that shares one, and costs one volatile read and a
+    // scan of at most three entries per call.
+    // The cache is keyed by position within Data, so Data must not change after the first read.
+    private IndexOffsets[] _parsedIndexes = [];
+
+    private (int count, uint[] offsets, int dataBase) GetIndexOffsets(int position)
+    {
+        var parsed = default(IndexOffsets);
+        while (true)
+        {
+            var current = Volatile.Read(ref _parsedIndexes);
+            foreach (var known in current)
+            {
+                if (known.Position == position)
+                    return (known.Count, known.Offsets, known.DataBase);
+            }
+
+            if (parsed is null)
+            {
+                var (count, offsets, dataBase) = ReadIndexOffsets(Data.Span, position, Data.Length);
+                parsed = new IndexOffsets(position, count, offsets, dataBase);
+            }
+
+            var next = new IndexOffsets[current.Length + 1];
+            current.CopyTo(next, 0);
+            next[^1] = parsed;
+            if (ReferenceEquals(Interlocked.CompareExchange(ref _parsedIndexes, next, current), current))
+                return (parsed.Count, parsed.Offsets, parsed.DataBase);
+        }
     }
 
     /// <summary>
