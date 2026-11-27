@@ -186,6 +186,34 @@ public sealed class CellBandLinkTests
         Assert.Empty(Links(Save(doc)));
     }
 
+    [Fact]
+    public void ABandOfOnlySpaces_writesNoLink_asABlankCellDoesNot()
+    {
+        using var doc = ShortPage();
+        doc.SetHeader("   ", BandStyle(Uri));
+        doc.SetFooter("   ", BandStyle(anchor: "t"));
+        doc.Add(new Paragraph("target") { Anchor = "t" });
+        var table = Table(Style(Uri));
+        table.AddRow().AddCell("   ");
+        doc.Add(table);
+
+        Assert.Empty(Links(Save(doc)));
+        Assert.DoesNotContain(doc.Diagnostics, d => d.Code == LayoutDiagnosticCode.LinkNotWritten);
+    }
+
+    [Fact]
+    public void UnderPdfUa1_aBandOfOnlySpaces_reportsNothing_andAStrictSaveStillSaves()
+    {
+        using var doc = Ua1(out var link);
+        doc.StrictDiagnostics = true;
+        doc.SetHeader("   ", link);
+        doc.SetFooter("   ", link);
+        doc.Add(new Paragraph("body", new TextStyle { FontRef = link.FontRef, FontSize = 12 }));
+
+        Assert.NotEmpty(Save(doc));
+        Assert.DoesNotContain(doc.Diagnostics, d => d.Code == LayoutDiagnosticCode.LinkNotWritten);
+    }
+
     // ── PDF/UA-1 ─────────────────────────────────────────────────────────────
 
     private static Document Ua1(out TextStyle style)

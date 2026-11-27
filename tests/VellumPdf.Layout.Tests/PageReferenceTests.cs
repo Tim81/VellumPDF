@@ -198,6 +198,10 @@ public sealed class PageReferenceTests
         Assert.Contains("'1', 'viii', 'ix', 'viii'", ex.Message, StringComparison.Ordinal);
         Assert.Contains("'t'", ex.Message, StringComparison.Ordinal);
         Assert.Contains("Paragraph 0", ex.Message, StringComparison.Ordinal);
+
+        // A fresh document lays out the same way, so the message does not advise one.
+        Assert.DoesNotContain("new document", ex.Message, StringComparison.Ordinal);
+        Assert.Contains("cannot be saved again", ex.Message, StringComparison.Ordinal);
     }
 
     [Fact]

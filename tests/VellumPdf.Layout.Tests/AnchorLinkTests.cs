@@ -120,8 +120,46 @@ public sealed class AnchorLinkTests
             table.AddRow().AddCell(new Cell("x") { Style = s });
             d.Add(table);
         }, "row 0, cell 0");
+        Check((d, s) =>
+        {
+            var table = new TableElement { DefaultCellStyle = s }.SetColumnWidths(100);
+            table.AddRow().AddCell("x");
+            d.Add(table);
+        }, "row 0, cell 0");
         Check((d, s) => d.SetHeader("x", s), "Header band");
         Check((d, s) => d.SetFooter("x", s), "Footer band");
+    }
+
+    [Fact]
+    public void ADefaultCellStyleThatALinkingCellStyleOverrides_isNotRead()
+    {
+        var doc = ShortPage();
+        var table = new TableElement { DefaultCellStyle = Style(anchor: "missing") }.SetColumnWidths(100);
+        table.AddRow().AddCell(new Cell("x") { Style = Style() });
+        doc.Add(table);
+
+        Assert.NotEmpty(Save(doc));
+    }
+
+    [Fact]
+    public void ALinkInTheDefaultCellStyle_isRefusedUnderPdfUa1BeforeAnyLayout_andTheDocumentSavesOnceTheClaimIsChanged()
+    {
+        var doc = ShortPage();
+        doc.Conformance = PdfConformance.PdfUA1;
+        doc.Tagged = true;
+        doc.Language = "en-US";
+        doc.Info.Title = "t";
+        var table = new TableElement { DefaultCellStyle = Go }.SetColumnWidths(100);
+        table.AddRow().AddCell("x");
+        doc.Add(table);
+        AddTarget(doc);
+
+        var ex = Assert.Throws<InvalidOperationException>(() => Save(doc));
+        Assert.Contains("row 0, cell 0", ex.Message, StringComparison.Ordinal);
+        Assert.Contains("can be saved", ex.Message, StringComparison.Ordinal);
+
+        doc.Conformance = PdfConformance.PdfA2u;
+        Assert.NotEmpty(Save(doc));
     }
 
     [Fact]
