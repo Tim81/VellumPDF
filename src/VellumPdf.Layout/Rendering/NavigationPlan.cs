@@ -91,6 +91,16 @@ internal sealed class NavigationPlan
                 case LayoutImageRenderer image:
                     plan.Add(image.Element.Anchor, LayoutElementKind.Image, i);
                     break;
+                case NoteBlockRenderer noteBlock:
+                    plan.Add(noteBlock.Element.Anchor, LayoutElementKind.NoteBlock, i);
+                    var held = noteBlock.Element.Paragraphs;
+                    for (var item = 0; item < held.Count; item++)
+                    {
+                        plan.Add(held[item].Anchor, LayoutElementKind.NoteBlock, i, item);
+                        plan.NoteRuns(held[item].Runs, new ElementSite(LayoutElementKind.NoteBlock, i, item));
+                    }
+
+                    break;
                 case PreformattedRenderer block:
                     plan.Add(block.Element.Anchor, LayoutElementKind.Preformatted, i);
                     break;

@@ -10,14 +10,15 @@ namespace VellumPdf.Layout.Core;
 /// Channels are stored as given, neither checked nor clamped, so the constructor and the
 /// <c>init</c> accessors never throw. A colour is checked before anything is drawn only where the
 /// member that takes it says so: <see cref="Elements.Table.TableElement.Add(Elements.Table.Row)"/>
-/// for a row background, <see cref="Elements.Preformatted"/> and the constructor of
-/// <see cref="Elements.Table.Cell"/> that takes runs. For any other colour, what happens to a
+/// for a row background, <see cref="Elements.Preformatted"/>, the constructor of
+/// <see cref="Elements.Table.Cell"/> that takes runs, and the <c>Background</c> and
+/// <c>BorderColor</c> of a <see cref="Elements.NoteBlock"/>. For any other colour, what happens to a
 /// channel is decided where the colour is drawn. A channel that is <c>NaN</c> or infinite is
 /// refused where it is written, because neither is a PDF number (ISO 32000-2, 7.3.3):
 /// <see cref="VellumPdf.Canvas.PdfCanvas"/> refuses it for any caller, and a paragraph run, the
 /// style of a table cell or a line separator names the element first. A colour that is not
 /// written is not refused; see <c>Document</c>.
-/// <para>A finite channel outside 0 to 1 is <b>not</b> refused, except by the three checks made
+/// <para>A finite channel outside 0 to 1 is <b>not</b> refused, except by the checks made
 /// before anything is drawn. Elsewhere it is written as given after rounding to five decimals, so
 /// (5, 0, -1) is written as <c>5 0 -1 rg</c>. ISO 32000-2, 8.6.4.3, says each DeviceRGB
 /// component "shall" be a number from 0.0 to 1.0, so that output is not conforming even though it

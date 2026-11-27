@@ -1107,6 +1107,44 @@ public sealed class Document : IDisposable
     }
 
     /// <summary>
+    /// Adds a block that sets its paragraphs apart with a background, a border and padding.
+    /// Returns this document for chaining.
+    /// </summary>
+    /// <remarks>
+    /// <b>A null block is refused.</b> It throws <see cref="ArgumentNullException"/> from this
+    /// call. What the block holds is read by the save, so a paragraph added to it later is drawn.
+    /// The save refuses a block that holds no paragraph, and a tab stop beyond the width the
+    /// border and padding leave, before any layout, so the document stays saveable once you have
+    /// changed what the message names; see <see cref="NoteBlock"/>. A block is listed in
+    /// <see cref="Diagnostics"/> as <see cref="LayoutElementKind.NoteBlock"/>, and so is what its
+    /// paragraphs report: the kind is the block's, not the paragraph's. The block, not a
+    /// paragraph, is the element a <see cref="Paragraph.KeepWithNext"/> run is reported against.
+    /// <para>The paragraphs hold no keep request, no line count and no margin, so the block is the
+    /// one element the keep rules of the document see; see <see cref="NoteBlock"/>.</para>
+    /// </remarks>
+    /// <exception cref="ArgumentNullException">
+    /// <paramref name="block"/> is <see langword="null"/>.
+    /// </exception>
+    /// <exception cref="InvalidOperationException">
+    /// Raised from <see cref="Save(System.IO.Stream)"/> and the other save overloads, not from this
+    /// call, for the block: before any layout, when the block holds no paragraph, when a paragraph
+    /// has a tab stop beyond the width left for it, and when the anchor of the block or of a
+    /// paragraph in it is held by another element too; after the layout has started, when the block
+    /// is too tall to fit, as <see cref="NoteBlock"/> says, and when it needs more than 50,000 page
+    /// continuations (see <see cref="Add(IRenderer)"/>). For each paragraph the block holds, the
+    /// save raises the exceptions <see cref="Add(Paragraph)"/> documents for a paragraph, whatever
+    /// their type: <see cref="ArgumentException"/>, <see cref="InvalidOperationException"/>,
+    /// <see cref="IndexOutOfRangeException"/> and the rest of that list, with the diagnostics the
+    /// block is listed under as <see cref="LayoutElementKind.NoteBlock"/>.
+    /// </exception>
+    public Document Add(NoteBlock block)
+    {
+        ArgumentNullException.ThrowIfNull(block);
+        _content.Add(new NoteBlockRenderer(block));
+        return this;
+    }
+
+    /// <summary>
     /// Adds a page break: the next element starts on a new page, or on the next right-hand page
     /// when <see cref="PageBreak.Recto"/> is set. Returns this document for chaining.
     /// </summary>
