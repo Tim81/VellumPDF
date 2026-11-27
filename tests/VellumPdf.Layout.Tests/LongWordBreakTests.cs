@@ -289,6 +289,9 @@ public sealed class LongWordBreakTests
     [InlineData("ab12/34cdefghijkl", new[] { "ab12/", "34cdefghij", "kl" })]
     [InlineData(@"C:\Users\Name\Documents", new[] { @"C:\Users\", @"Name\", "Documents" })]
     [InlineData("aaaaaaaaaaaaaaaa/bbb", new[] { "aaaaaaaaaa", "aaaaaa/bbb" })]
+    // A word that fits its line is not cut, alone or after another word.
+    [InlineData("aa/bb/cc/d", new[] { "aa/bb/cc/d" })]
+    [InlineData("xx aa/bb/cc/d", new[] { "xx", "aa/bb/cc/d" })]
     public void ACellStringAndACellOfRunsWrapTheSameAsTheParagraph(string word, string[] expected)
     {
         var style = Courier();
