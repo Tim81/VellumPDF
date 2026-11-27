@@ -294,11 +294,11 @@ public sealed class ListSkippedReportTests
     }
 
     /// <summary>
-    /// A renderer built to start at a later entry reports no skipped move, as it reports no
-    /// clamp: the document never walked the entries before it.
+    /// A renderer built to start at a later entry does not report this code for a skipped move, as
+    /// it reports no clamp: the document never walked the entries before it. It can report 208.
     /// </summary>
     [Fact]
-    public void ARendererBuiltToStartAtALaterEntry_reportsNothing()
+    public void ARendererBuiltToStartAtALaterEntry_reportsNoSkippedClampOrMove()
     {
         var doc = Page(header: false);
         doc.Add(new ListRenderer(Staggered(9), startItem: 2));
@@ -336,9 +336,10 @@ public sealed class ListSkippedReportTests
     /// <c>PartUnplaced</c> reads without looking at the text, so the move count must skip it.
     /// </summary>
     [Theory]
-    [InlineData(100.0, 2, 208)]
-    [InlineData(105.0, 2, 0)]
-    public void AClampedEntryWhoseMarkerIsCutAtThePageEnd_isCountedOnce(double contentHeight, int count, int dropped)
+    [InlineData(100.0, 2, true)]
+    [InlineData(105.0, 2, false)]
+    public void AClampedEntryWhoseMarkerIsCutAtThePageEnd_isCountedOnce(
+        double contentHeight, int count, bool partDropped)
     {
         var doc = new Document
         {
@@ -356,16 +357,42 @@ public sealed class ListSkippedReportTests
         var item = Assert.Single(Skipped(doc));
         Assert.Equal(count, item.Count);
         Assert.Equal(1, item.PageNumber);
-        Assert.Equal(dropped != 0, doc.Diagnostics.Any(d => d.Code == LayoutDiagnosticCode.ListEntryPartDropped));
+        Assert.Equal(partDropped, doc.Diagnostics.Any(d => d.Code == LayoutDiagnosticCode.ListEntryPartDropped));
     }
 
     /// <summary>
-    /// A document with a renderer of yours that holds a list built to start at a later entry is
+    /// The same count for a child entry: its clamp is counted, and its marker, cut at the page
+    /// end, is not counted again as a move.
+    /// </summary>
+    [Fact]
+    public void AClampedChildWhoseMarkerIsCutAtThePageEnd_isCountedOnce()
+    {
+        var doc = new Document
+        {
+            PageSize = new PdfRectangle(0, 0, 45, 56),
+            Margins = new EdgeInsets(10),
+        };
+        var list = new ListElement(ListStyle.OrderedDecimal) { Indent = 13 };
+        list.Add(new ListItem([new TextRun("a", H(5))]) { Style = H(5) });
+        var parent = new ListItem([new TextRun("a", H(5))]) { Style = H(5) };
+        parent.AddChild(new ListItem([new TextRun("a", H(5))]) { Style = H(20) });
+        list.Add(parent);
+        doc.Add(list);
+        doc.Add(new Opaque());
+
+        Save(doc);
+
+        var item = Assert.Single(Skipped(doc));
+        Assert.Equal(1, item.Count);
+    }
+
+    /// <summary>
+    /// A document that holds a renderer of yours and a list built to start at a later entry is
     /// refused under strict mode for the part of an entry that list drops (208), with no 207 on any
     /// list. Without the renderer the same list saves under strict mode.
     /// </summary>
     [Fact]
-    public void AStrictSaveIsRefusedFor208_whenARendererOfYoursHoldsAListBuiltToStartLater()
+    public void AStrictSaveIsRefusedFor208_whenTheDocumentHoldsARendererOfYoursAndAListBuiltToStartLater()
     {
         Document Build(bool withRenderer)
         {
@@ -389,7 +416,7 @@ public sealed class ListSkippedReportTests
     /// <summary>
     /// A list that holds entries the clamp would have narrowed and an entry the new layout would
     /// have moved reports both in one count. An entry is counted once: the text of a clamped entry
-    /// has no width in the twin, which does not read it as unplaced, so the two counts never meet.
+    /// has no width in the twin, and the move count skips an entry already counted as a clamp.
     /// </summary>
     [Fact]
     public void AClampAndAMoveInOneList_areCountedTogether_andNoEntryTwice()

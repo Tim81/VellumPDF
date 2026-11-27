@@ -116,7 +116,7 @@ public sealed class Document : IDisposable
     /// <see cref="LayoutDiagnosticCode.ListIndentClamped"/> (an indent that left list text no
     /// width),
     /// <see cref="LayoutDiagnosticCode.ListIndentClampSkipped"/> (a list laid out without that
-    /// clamp and without moving entries to the next page, which left an entry as it was that the
+    /// clamp and without moving entries to the next page, which left as it was an entry that the
     /// clamp or the moving would have changed; the code says when a list is laid out that way),
     /// <see cref="LayoutDiagnosticCode.ListEntryPartDropped"/> (a list entry placed with its marker
     /// or its text not drawn),

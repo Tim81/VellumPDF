@@ -379,7 +379,7 @@ public sealed class ListDocumentFontRuleTests
 
     /// <summary>
     /// The list that would have moved an entry reports the fallback, and the list of the entry the
-    /// document cannot draw does not: the new layout does not move that entry either.
+    /// document cannot draw does not: moving that entry would draw text the document cannot draw.
     /// </summary>
     [Fact]
     public void OnlyTheListThatWouldHaveMovedAnEntry_reportsTheFallback()

@@ -155,11 +155,11 @@ public sealed class ListRenderer : IRenderer, IPageBreakSource, IKeepSource, IPl
     // How the document placed this twin, read from the context of the last Layout and carried by
     // the pieces a split hands on. Document is a list the document placed as its twin without
     // deciding it: a list that holds an entry no page holds, which reports its dropped entries.
-    // Limit is the continuation limit's decision, and the three AllLists values the document-wide
-    // rules of ListLayoutRun, named for the rule that applied (an entry in a font the document
-    // cannot draw, an element after a list near the limit, or both); all of them report
-    // ListIndentClampSkipped when the twin left an entry as it was that the new layout would
-    // have changed. LayoutDiagnosticCode.ListIndentClampSkipped states that rule.
+    // Limit is the continuation limit's decision, and the AllLists values the document-wide rules
+    // of ListLayoutRun, with a bit for each rule that applied (an entry in a font the document
+    // cannot draw, an element after a list near the limit, a renderer of the caller's); all of
+    // them report ListIndentClampSkipped by the rule LayoutDiagnosticCode.ListIndentClampSkipped
+    // states.
     private TwinPlacement _placement;
 
     // What the list that built this twin tells it before each call: how that list was called. Set
@@ -575,9 +575,9 @@ public sealed class ListRenderer : IRenderer, IPageBreakSource, IKeepSource, IPl
             // reads as placed. An entry the clamp would have narrowed is counted as a clamp and
             // never as a move as well: its text has no width here, but PartUnplaced also reads a
             // marker that is cut at the page end, without looking at the text. An entry the
-            // document cannot draw is not moved by the new layout either, so the twin gives
-            // nothing up for it. A continuation piece is laid out at a page top, so the page-top
-            // term covers it and it needs no term of its own.
+            // document cannot draw is not counted: moving it would draw its text, which makes the
+            // save throw, so the twin gives nothing up for it. A continuation piece is laid out
+            // at a page top, so the page-top term covers it and it needs no term of its own.
             if (countsMoves && !entry.ClampCounted
                 && !(i == _startItem && context.AtPageTop)
                 && PartUnplaced(markerResult, contentResult, contentRenderer, area.Width)
@@ -1235,8 +1235,8 @@ public sealed class ListRenderer : IRenderer, IPageBreakSource, IKeepSource, IPl
             }
             else if (wouldClamp && CanDrawEntry(ListLayoutRun.Current, itemStyle, item))
             {
-                // An entry the document cannot draw is not clamped by the new layout either, so
-                // the twin gives nothing up for it.
+                // An entry the document cannot draw is not counted: giving its text a width would
+                // draw that text, which makes the save throw, so the twin gives nothing up for it.
                 clampSkipped++;
                 clampCounted = true;
             }
@@ -1312,6 +1312,7 @@ public sealed class ListRenderer : IRenderer, IPageBreakSource, IKeepSource, IPl
                     }
                     else if (childWouldClamp && CanDrawEntry(ListLayoutRun.Current, childStyle, child))
                     {
+                        // Not counted for an undrawable entry, for the reason at the item above.
                         clampSkipped++;
                         childClampCounted = true;
                     }

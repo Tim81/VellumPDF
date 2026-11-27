@@ -191,13 +191,14 @@ public enum LayoutDiagnosticCode
     ListIndentClamped = 203,
 
     /// <summary>
-    /// A list laid out as it was before the clamp described at <see cref="ListIndentClamped"/> and
-    /// before entries that do not fit what is left of a page were moved to the next one left at
-    /// least one entry as it was that those two changes would have altered.
-    /// <see cref="LayoutDiagnostic.Count"/> is the number of such entries: those whose gutter the
-    /// clamp would have narrowed, and those whose marker or text does not fit what is left of a
-    /// page, which the list placed where they fall and the new layout would have moved to the next
-    /// page. An entry is counted once, and a list that left none reports nothing.
+    /// A list the document laid out as it was before the clamp described at
+    /// <see cref="ListIndentClamped"/> and before entries that do not fit what is left of a page
+    /// were moved to the next one left as it was at least one entry that those two changes would
+    /// have changed. <see cref="LayoutDiagnostic.Count"/> is the number of such entries: those
+    /// whose gutter the clamp would have narrowed, and those whose marker or text does not fit what
+    /// is left of a page, which the list placed where they fall and the new layout would have moved
+    /// to the next page. An entry is counted once. A list with no such entry does not report this
+    /// code, except a list that holds an entry no page holds; see the remarks.
     /// </summary>
     /// <remarks>
     /// <b>The text of the entries the clamp would have narrowed is discarded, and only their
@@ -217,17 +218,21 @@ public enum LayoutDiagnosticCode
     /// out, from the elements added to it. The message names every cause it read there: the
     /// continuation limit for the list, or any of the font, the element near the limit and the
     /// renderer of yours.</para>
-    /// <para><b>A list that left no entry as it was reports nothing</b>, whichever cause applied,
-    /// so a document whose lists lose nothing saves under strict mode with the bytes it saves
-    /// without it. That covers an empty list, a list none of whose entries the clamp would have
-    /// narrowed or the new layout would have moved, and an entry in a font the document cannot
-    /// draw, which the new layout leaves as it was as well. A list a renderer of yours holds is
-    /// laid out as before and reports nothing, because the document did not place it, and neither
-    /// does a <see cref="Rendering.ListRenderer"/> built to start at a later entry, so such a list
-    /// can save under strict mode although it differs from the new layout. A list that holds an
-    /// entry no page holds is also placed where each entry falls by the new layout, and the twin
-    /// does not look for such an entry, so it counts that list's entries as it counts any other's;
-    /// <see cref="ListEntryPartDropped"/> reports the entry.</para>
+    /// <para><b>A list that left no such entry does not report this code</b>, whichever cause
+    /// applied, so a document whose lists lose nothing saves under strict mode with the bytes it
+    /// saves without it. That covers an empty list, a list none of whose entries the clamp would
+    /// have narrowed or the new layout would have moved, and an entry in a font the document cannot
+    /// draw: narrowing or moving that entry would draw text that makes the save throw, so leaving
+    /// it as it was gives nothing up.</para>
+    /// <para>Three lists do not report this code although the twin may differ from the new layout.
+    /// A list a renderer of yours holds is laid out as before and reports nothing, because the
+    /// document did not place it. A <see cref="Rendering.ListRenderer"/> built to start at a later
+    /// entry does not report this code either, although it can report
+    /// <see cref="ListEntryPartDropped"/>, so such a list can save under strict mode although it
+    /// differs from the new layout. A list that holds an entry no page holds is placed where each
+    /// entry falls by the new layout too, and the twin does not look for such an entry, so it
+    /// reports that list's entries as it reports any other's; <see cref="ListEntryPartDropped"/>
+    /// reports the entry as well.</para>
     /// <para>A moved entry is counted by the piece of the list that starts it, in the layout the
     /// list was given, so the count of a list that runs over several pages adds up its pieces and
     /// the page is that of the first piece that reports. The count can differ from the number of

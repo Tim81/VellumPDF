@@ -790,8 +790,8 @@ public sealed class ListPlacementAdoptionTests
     /// A run in an embedded font that another document returned would be refused at the save once
     /// its text is drawn, and the document never drew it. The document holds an entry it cannot
     /// draw, so its list is laid out as its twin and the save is the one the list had. The twin
-    /// gave nothing up for that entry, whose text the clamp does not give a width, so nothing is
-    /// reported.
+    /// gave nothing up for that entry: giving its text a width would draw it, which refuses the
+    /// save, so nothing is reported.
     /// </summary>
     [Theory]
     [InlineData("foreign-handle")]
