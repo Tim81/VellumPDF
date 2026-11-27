@@ -96,6 +96,11 @@ public sealed partial class DocumentRenderer
         var gap = band.ZoneGap;
         var swap = band.MirrorZones && MirrorMargins && !IsRectoNumber(pageNumber);
 
+        // The part of the band the rule leaves: the text box and the logos are drawn in it.
+        var ruleAbove = band.Rule is { Position: BandRulePosition.Above };
+        var regionTop = bandY + (ruleAbove ? band.RuleClearance : 0);
+        var regionHeight = bandHeight - band.RuleClearance;
+
         // Priority follows the zone, so the slot a zone stands in does not change who is cut.
         BandSlot SlotOf(int zone) =>
             zone == 1 ? BandSlot.Center : (zone == 0) == !swap ? BandSlot.Left : BandSlot.Right;
@@ -109,23 +114,28 @@ public sealed partial class DocumentRenderer
         static double? Nearest(double? a, double? b, Func<double, double, double> pick) =>
             a is { } x1 ? (b is { } x2 ? pick(x1, x2) : x1) : b;
 
+        // A zone has a place whatever its text measures: a zone of zero width, in a face whose glyphs
+        // measure zero, stands at its side's edge instead of at x = 0.
         void Place(int zone, double width)
         {
-            if (width <= 0) return;
             switch (SlotOf(zone))
             {
                 case BandSlot.Left:
                     x[zone] = leftX;
-                    leftEnd = leftX + width;
+                    if (width > 0) leftEnd = leftX + width;
                     break;
                 case BandSlot.Right:
                     x[zone] = rightX - width;
-                    rightStart = x[zone];
+                    if (width > 0) rightStart = x[zone];
                     break;
                 default:
                     x[zone] = centerX - width / 2;
-                    centerStart = x[zone];
-                    centerEnd = x[zone] + width;
+                    if (width > 0)
+                    {
+                        centerStart = x[zone];
+                        centerEnd = x[zone] + width;
+                    }
+
                     break;
             }
         }
@@ -151,33 +161,15 @@ public sealed partial class DocumentRenderer
                     (rightStart is { } r ? r - gap : rightX) - centerX),
             };
 
-            // A zone's runs are cut in turn: the run that does not fit ends the zone, and the runs
-            // after it are not drawn.
             var texts = cache.Texts[z];
-            drawn[z] = new string[runs.Count];
-            drawnWidths[z] = new double[runs.Count];
-            var remaining = allowed;
-            var cut = false;
+            (drawn[z], drawnWidths[z]) = FitZone(runs, texts, allowed);
             var total = 0.0;
             for (var r = 0; r < runs.Count; r++)
             {
-                var text = texts[r];
-                resolvedCharacters += text.Length;
-                if (cut || remaining <= 0 || text.Length == 0)
-                {
-                    drawn[z][r] = "";
-                    cut |= text.Length > 0;
-                    continue;
-                }
-
-                var (piece, width) = FitToWidth(runs[r].Style, text, remaining);
-                BandCharactersProduced += text.Produced;
-                drawn[z][r] = piece;
-                drawnWidths[z][r] = width;
-                drawnCharacters += piece.Length;
-                remaining -= width;
-                total += width;
-                cut = piece.Length < text.Length;
+                BandCharactersProduced += texts[r].Produced;
+                resolvedCharacters += texts[r].Length;
+                drawnCharacters += drawn[z][r].Length;
+                total += drawnWidths[z][r];
             }
 
             Place(z, total);
@@ -190,8 +182,10 @@ public sealed partial class DocumentRenderer
         var anyLogo = zones.Any(zone => zone.Image is not null);
         if (!anyText && !anyLogo && band.Rule is null) return;
 
-        // One baseline for the band, placed as a string band places its text, from the largest size.
-        var baseline = ctx.ToPdfY(bandY + bandHeight - (bandHeight - band.LargestFontSize) / 2);
+        // One baseline for the band: the text box, the largest ascent above it and the largest descent
+        // below it, centred in the part of the band the rule leaves.
+        var (ascent, descent) = band.TextExtent;
+        var baseline = ctx.ToPdfY(regionTop + (regionHeight - (ascent + descent)) / 2 + ascent);
 
         // A band is decoration, so a tagged document marks it as an artifact, rule and logo included.
         if (ctx.Tagged) canvas.BeginArtifactMarkedContent();
@@ -206,7 +200,7 @@ public sealed partial class DocumentRenderer
                 var resName = ctx.RendererContext.RegisterImageXObject(logo.Image);
                 canvas
                     .SaveState()
-                    .Concat(band.LogoWidth(z), 0, 0, bandHeight, x[z], ctx.ToPdfY(bandY + bandHeight))
+                    .Concat(band.LogoWidth(z), 0, 0, regionHeight, x[z], ctx.ToPdfY(regionTop + regionHeight))
                     .DoXObject(resName)
                     .RestoreState();
                 continue;
@@ -230,5 +224,99 @@ public sealed partial class DocumentRenderer
         }
 
         if (ctx.Tagged) canvas.EndMarkedContent();
+    }
+
+    /// <summary>
+    /// Cuts the runs of one zone to <paramref name="allowed"/> points as one text, and returns what
+    /// each run draws and how wide it is.
+    /// </summary>
+    /// <remarks>
+    /// The cut falls before the last space that is literal text, in any run, counting only the first
+    /// space of a run of spaces, as <see cref="FitToWidth"/> cuts a string band. A boundary between two
+    /// runs is a cut only where a space stands. A token's value is never cut: spaces inside it are not
+    /// cut points, and a cut that cannot use a space backs off to the start of the token. When no
+    /// space qualifies, the cut falls at the last position that fits and is not inside a token, so a
+    /// zone of one long word is cut as a string band cuts it. When nothing fits, every run is empty.
+    /// The work follows the characters that fit, as in <see cref="FitToWidth"/>.
+    /// </remarks>
+    private static (string[] Drawn, double[] Widths) FitZone(
+        IReadOnlyList<TextRun> runs, BandText[] texts, double allowed)
+    {
+        var count = runs.Count;
+        var width = 0.0;
+        var seen = 0;
+        var prevSpace = false;
+        var overflow = false;
+
+        // Where to cut if the zone overflows: before the last qualifying space, else at the last
+        // position that is not inside a token. A position is a run and an offset in it.
+        var haveBoundary = false;
+        int boundaryRun = 0, boundaryAt = 0, safeRun = 0, safeAt = 0;
+
+        for (var r = 0; r < count && !overflow; r++)
+        {
+            var text = texts[r];
+            var style = runs[r].Style;
+            var segment = 0;
+            var segmentStart = 0;
+            var i = 0;
+            while (i < text.Length)
+            {
+                // The segment that holds character i, advanced as i grows. A segment of no length (a
+                // token with an empty value) is passed.
+                (int Kind, int Length) seg;
+                while (true)
+                {
+                    seg = text.SegmentAt(segment);
+                    if (i < segmentStart + seg.Length) break;
+                    segmentStart += seg.Length;
+                    segment++;
+                }
+
+                var insideToken = seg.Kind >= 0;
+                if (!(insideToken && i > segmentStart))
+                    (safeRun, safeAt) = (r, i);
+
+                var step = char.IsHighSurrogate(text[i]) && i + 1 < text.Length && char.IsLowSurrogate(text[i + 1]) ? 2 : 1;
+                var piece = style.MeasureString(text.Slice(i, step));
+                if (width + piece > allowed)
+                {
+                    overflow = true;
+                    break;
+                }
+
+                if (!insideToken && step == 1 && text[i] == ' ')
+                {
+                    if (!prevSpace && seen > 0)
+                    {
+                        haveBoundary = true;
+                        (boundaryRun, boundaryAt) = (r, i);
+                    }
+
+                    prevSpace = true;
+                }
+                else
+                    prevSpace = false;
+
+                width += piece;
+                seen += step;
+                i += step;
+            }
+        }
+
+        var cutRun = count;
+        var cutAt = 0;
+        if (overflow)
+            (cutRun, cutAt) = haveBoundary ? (boundaryRun, boundaryAt) : (safeRun, safeAt);
+
+        var drawn = new string[count];
+        var widths = new double[count];
+        for (var r = 0; r < count; r++)
+        {
+            drawn[r] = r < cutRun ? texts[r].Prefix(texts[r].Length) : r == cutRun ? texts[r].Prefix(cutAt) : "";
+            if (drawn[r].Length > 0) widths[r] = runs[r].Style.MeasureString(drawn[r]);
+        }
+
+        return (drawn, widths);
     }
 }

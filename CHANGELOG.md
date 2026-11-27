@@ -14,21 +14,33 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   `TextRun`s, a logo made with `BandZone.Logo(LayoutImage)`, or nothing (`BandZone.Empty`). Every
   run resolves `{page}`, `{pages}` and, with `ChapterToken`, `{chapter}`, through the scan a string
   band's template gets, so a band that holds `{pages}` makes the passes a string band makes. The
-  zones stand at the content box's left edge, centre and right edge, on one baseline. A logo is as
-  tall as the band, is drawn as an artifact in a tagged document, and has no alternative text.
-  `Rule` takes a `BandRule` drawn along the band's top or bottom edge, inside the band, across
-  the content width, on every page; it also works on a string band. With
-  `Document.MirrorMargins` set, `MirrorZones` swaps the left and right zones on even pages, counted
-  by physical page, so the first page of a decimal body that follows three roman pages swaps.
-  Zones that would overlap are cut and not overprinted: a logo is kept whole, then the right zone, the
-  left and the centre are cut at a word to leave `ZoneGap` points (6 by default) to their
-  neighbours, and the cut is reported through `Document.BandTruncations` and the `BandTruncated`
-  diagnostic as a string band's cut is. The save refuses logos that cannot stand side by side, and
-  a height too small for the text and the rule, with an `InvalidOperationException` naming the
-  band. A null zone, a null run or style, a page reference, a link, a font size that is not a
-  positive finite number, a colour channel outside 0 to 1, an image with no area, a rule width
-  that is negative or not finite, and a zoned band's height below its largest font size are
-  refused at the member. A document that sets no zone and no rule saves to the same bytes as before.
+  zones stand at the content box's left edge, centre and right edge, and all the text sits on one
+  baseline: the largest ascent and descent of the band's fonts, taken from their bounding boxes,
+  make a text box that is centred in the band. A logo is as tall as the band, is drawn as an
+  artifact in a tagged document, and has no alternative text. `Rule` takes a `BandRule` along the
+  band's top or bottom edge, inside the band, across the content width, on every page that has the
+  band (a blank page a recto break inserts has neither band nor rule); it also works on a string
+  band. The rule keeps 1 point clear of the text box and the logos, the logo is shortened by the
+  rule's width and that clearance, and a band too short for its text box plus the rule is refused
+  by the save. With `Document.MirrorMargins` set, `MirrorZones` swaps the left and right zones on
+  even pages, counted by physical page, so the first page of a decimal body that follows three
+  roman pages swaps. Zones that would overlap are cut and not overprinted: a logo is kept whole,
+  then the right zone, the left and the centre take what is left with `ZoneGap` points (6 by
+  default) to their neighbours. A zone is cut as one text at the last literal space that fits, in any run, and
+  a page number, page count or chapter title is drawn whole or not at all, so a zone that cannot
+  show a number leaves it out. The cut is reported through `Document.BandTruncations` and the
+  `BandTruncated` diagnostic as a string band's cut is. The save refuses logos that cannot stand
+  side by side or would be written with no area, and a height below the text box plus the rule,
+  with an `InvalidOperationException` naming the band. What the zone alone decides is refused when
+  it is built: a null zone, run or style, a page reference, a link, an undefined `Standard14` value,
+  an unpaired surrogate, a font size below 5e-6, a colour channel outside 0 to 1, an image with no
+  area, a rule width that is negative or not finite, and a zoned band's height below its text box.
+  A font handle from another document is refused by the save. A document that sets no zone and no
+  rule saves to the same bytes as before.
+  **Attention, source break:** the new constructor takes three parameters, as the string constructor
+  does, so `new RunningBand(default, default, default)` and `new RunningBand(null!, null, default)`
+  no longer compile (CS0121, ambiguous). Callers that are already compiled are unaffected, and a call
+  whose first argument has a type compiles as before.
 
 - **`NoteBlock` sets paragraphs apart with a background, a border and padding (#703).** A note, a
   warning or a tip no longer has to be a one-cell table that the structure tree calls a table. A

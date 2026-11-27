@@ -14,14 +14,19 @@ namespace VellumPdf.Layout.Tests;
 
 /// <summary>
 /// #365: a running band of three zones. Pages are 300 x 300 pt with 20 pt margins unless a test says
-/// otherwise, and the text is Courier at 10 pt, so every character is exactly 6 pt wide, a band is
-/// 16 pt tall, and the header's baseline is at 267 and the footer's at 23. Expected x values are worked
-/// out from those widths, not read back from the file.
+/// otherwise, and the text is Courier at 10 pt, so every character is exactly 6 pt wide and a band is
+/// 16 pt tall. Courier's bounding box reaches 8.05 pt above and 2.5 pt below the baseline at that size,
+/// so the text box is 10.55 pt tall and sits 2.725 pt from the top of its band: the header's baseline
+/// is at 269.225 and the footer's at 25.225. Expected x values are worked out from those widths, not
+/// read back from the file.
 /// </summary>
 public sealed class BandZonesTests
 {
-    private const double HeaderBaseline = 267;
-    private const double FooterBaseline = 23;
+    private const double HeaderBaseline = 269.225;
+    private const double FooterBaseline = 25.225;
+
+    // A string band centres the em box instead, so its baseline is 267.
+    private const double StringBandBaseline = 267;
 
     private static Document NewPage(EdgeInsets? margins = null) => new()
     {
@@ -113,7 +118,7 @@ public sealed class BandZonesTests
 
         // The first run is 2 * 6 wide, so the second starts at 32. The right zone is 4.8 + 12 wide.
         AssertLine(content, HeaderBaseline, (20, "AB"), (32, "CD"), (263.2, "x"), (268, "yz"));
-        Assert.Contains("1 0 0 rg\n1 0 0 1 32 267 Tm", content, StringComparison.Ordinal);
+        Assert.Contains("1 0 0 rg\n1 0 0 1 32 269.225 Tm", content, StringComparison.Ordinal);
         Assert.Contains(" 8 Tf", content, StringComparison.Ordinal);
     }
 
@@ -327,7 +332,7 @@ public sealed class BandZonesTests
 
         var content = PageContents(Save(doc))[0];
 
-        AssertLine(content, HeaderBaseline, (20, "title"));
+        AssertLine(content, StringBandBaseline, (20, "title"));
         Assert.Contains("0 w\n20 264 m\n280 264 l\nS\n", content, StringComparison.Ordinal);
     }
 
@@ -465,8 +470,8 @@ public sealed class BandZonesTests
         var content = PageContents(Save(doc))[0];
 
         // The logo is 40 wide, centred at 130 to 170. The left zone may reach 124: 104 wide, 17
-        // characters, cut to 14 at the space. A band 20 tall puts its baseline at 265.
-        AssertLine(content, 265, (20, "aaaa bbbb cccc"));
+        // characters, cut to 14 at the space. A band 20 tall puts its baseline at 267.225.
+        AssertLine(content, 267.225, (20, "aaaa bbbb cccc"));
         Assert.Contains("40 0 0 20 130 260 cm", content, StringComparison.Ordinal);
         Assert.Single(doc.BandTruncations);
     }
@@ -506,10 +511,17 @@ public sealed class BandZonesTests
         for (var round = 0; round < 120; round++)
         {
             string Text() => new string('m', random.Next(0, 70)).Replace("mmmmm", "mmmm ");
-            var texts = new[] { Text(), Text(), Text() };
+
+            // A zone of one to three runs, so that a run after the first can be the one that overflows.
+            BandZone Zone()
+            {
+                var runs = Enumerable.Range(0, random.Next(1, 4)).Select(_ => new TextRun(Text(), Courier10));
+                return new BandZone(runs);
+            }
+
             using var doc = Pages(NewPage(), 2);
             doc.MirrorMargins = true;
-            doc.Header = new RunningBand(Z(texts[0]), Z(texts[1]), Z(texts[2]))
+            doc.Header = new RunningBand(Zone(), Zone(), Zone())
             {
                 MirrorZones = round % 2 == 0,
                 ZoneGap = 3 + round % 7,
@@ -524,8 +536,10 @@ public sealed class BandZonesTests
                     Assert.True(line[i].X >= 20 - 1e-6 && end <= 280 + 1e-6, $"round {round}: zone outside the box");
                     if (i > 0)
                     {
+                        // Runs of one zone follow each other with no gap; two zones are ZoneGap apart.
                         var before = line[i - 1].X + 6 * line[i - 1].Text.Length;
-                        Assert.True(line[i].X - before >= doc.Header.ZoneGap - 1e-6, $"round {round}: zones {i - 1} and {i} are too close");
+                        var distance = line[i].X - before;
+                        Assert.True(Math.Abs(distance) < 1e-6 || distance >= doc.Header.ZoneGap - 1e-6, $"round {round}: placements {i - 1} and {i} are too close");
                     }
                 }
             }
@@ -640,15 +654,17 @@ public sealed class BandZonesTests
     [InlineData(0)]
     [InlineData(-4)]
     [InlineData(9.5)]
+    [InlineData(10.5)]
     public void AZonedBand_refusesAHeightItsTextCannotFitIn(double height) =>
         Assert.Throws<ArgumentOutOfRangeException>(() => new RunningBand(Z("x"), BandZone.Empty, BandZone.Empty) { Height = height });
 
     [Fact]
-    public void AZonedBand_acceptsAHeightEqualToItsLargestFontSize()
+    public void AZonedBand_acceptsAHeightThatHoldsItsTextBox()
     {
-        var band = new RunningBand(Z("x"), BandZone.Empty, BandZone.Empty) { Height = 10 };
+        // Courier's box is 10.55 pt tall at 10 pt.
+        var band = new RunningBand(Z("x"), BandZone.Empty, BandZone.Empty) { Height = 10.6 };
 
-        Assert.Equal(10, band.EffectiveHeight);
+        Assert.Equal(10.6, band.EffectiveHeight);
     }
 
     [Fact]

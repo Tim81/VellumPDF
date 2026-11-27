@@ -24,11 +24,15 @@ public enum BandRulePosition
 /// are refused when the rule is built.</b> The constructor throws
 /// <see cref="ArgumentOutOfRangeException"/>. A width of zero draws the thinnest line the device
 /// renders.
-/// <para>The line lies inside the band: with <see cref="BandRulePosition.Above"/> it occupies the top
-/// <see cref="Width"/> points of the band and with <see cref="BandRulePosition.Below"/> the bottom
-/// ones, so a rule does not move the page's content. It runs from the content box's left edge to its
-/// right edge, which under <see cref="Document.MirrorMargins"/> are the margins of the page's own
-/// side. It is drawn on every page that has the band.</para>
+/// <para>On a zoned band the line lies inside the band: with <see cref="BandRulePosition.Above"/> it
+/// occupies the top <see cref="Width"/> points of the band and with
+/// <see cref="BandRulePosition.Below"/> the bottom ones, so a rule does not move the page's content.
+/// The band keeps its text and its logos 1 point clear of it and refuses a height that cannot; see
+/// <see cref="RunningBand"/>. On a string band the line is centred half its width inside the same edge
+/// and nothing checks the band's height against it, so a width beyond the band's height reaches past
+/// the band. It runs from the content box's left edge to its right edge, which under
+/// <see cref="Document.MirrorMargins"/> are the margins of the page's own side. It is drawn on every
+/// page that has the band; a blank page a recto break inserts has no band and so no rule.</para>
 /// </remarks>
 public sealed class BandRule
 {

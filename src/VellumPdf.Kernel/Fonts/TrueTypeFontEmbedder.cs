@@ -510,6 +510,16 @@ public sealed class TrueTypeFontEmbedder
     // a value that scales to a whole number does so exactly. Nothing here casts a double to an
     // integer: a unitsPerEm of 0 gives NaN or infinity, which PdfReal refuses, and
     // BuildFontDescriptor has already refused that font at /Ascent, before this runs.
+    /// <summary>
+    /// How far the font's own bounding box reaches above and below the baseline, as fractions of the
+    /// em: <c>head.yMax</c> and the negated <c>head.yMin</c>. A font whose <c>head.unitsPerEm</c> is 0
+    /// reads as 1 and 0.25, because the save refuses such a font where it writes /Ascent.
+    /// </summary>
+    internal (double Ascent, double Descent) BoundingBoxExtent =>
+        _head.UnitsPerEm == 0
+            ? (1, 0.25)
+            : ((double)_head.YMax / _head.UnitsPerEm, -(double)_head.YMin / _head.UnitsPerEm);
+
     private Core.PdfArray BuildFontBBox()
     {
         double Edge(double v) => v * 1000.0 / _head.UnitsPerEm;

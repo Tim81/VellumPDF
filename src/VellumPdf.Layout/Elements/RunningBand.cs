@@ -28,22 +28,36 @@ namespace VellumPdf.Layout.Elements;
 /// zone on one line.</b> Each zone holds styled runs or a logo, and each run resolves the same
 /// tokens as a template, through the same scan and the same passes, so a zone that holds
 /// <c>{pages}</c> costs the save what a string band that holds it costs. The zones take the content
-/// box's left edge, centre and right edge. All the text of the band sits on one baseline, placed as a
-/// string band places its text, using the largest font size of the band. A zoned band has no
-/// <see cref="Template"/> (it is empty), <see cref="Style"/> and <see cref="Alignment"/> read their
-/// defaults and mean nothing, and <see cref="Resolve"/> throws.</para>
-/// <para><b>Zones that would overlap are decided by priority, never overprinted.</b> A logo is never
-/// cut. A text zone takes the room the zones before it in this order left it, with a gap of
+/// box's left edge, centre and right edge. A zoned band has no <see cref="Template"/> (it is empty),
+/// <see cref="Style"/> and <see cref="Alignment"/> read their defaults and mean nothing, and
+/// <see cref="Resolve"/> throws.</para>
+/// <para><b>The text box is the one measure of height.</b> Its height is the largest ascent plus the
+/// largest descent over the runs of the band, each taken from the font's own bounding box and scaled
+/// by the run's font size. All the text of the band sits on one baseline, with that box centred in
+/// what a <see cref="Rule"/> leaves of the band. A rule occupies <see cref="BandRule.Width"/> points
+/// at its edge and keeps a clearance of 1 point from the text box and the logos. The band's height
+/// must be at least the box height plus the rule's width and clearance, so the rule never touches
+/// text drawn in the fonts' boxes. A logo is as tall as the band less the rule's width and clearance.
+/// Where the box is the largest the fonts' boxes make it, the glyphs of ordinary text are smaller, so
+/// the visible gap to a rule is usually larger.</para>
+/// <para><b>Zones that would overlap are decided by priority and cut, not overprinted.</b> A logo is
+/// never cut. A text zone takes the room the zones before it in this order left it, with a gap of
 /// <see cref="ZoneGap"/> points to the next drawn zone: first every logo, then the right zone, then
 /// the left, then the centre. Priority follows the zone, not the side it stands on, so swapping
-/// sides on even pages (see <see cref="MirrorZones"/>) does not change which zone is cut. A zone
-/// that does not fit is cut at a word boundary, as a template is, and a run after the cut is not
-/// drawn. The centre zone stays centred, so it gets twice the room of the nearer neighbour.
-/// The cut is reported through <see cref="Document.BandTruncations"/> and
+/// sides on even pages (see <see cref="MirrorZones"/>) does not change which zone is cut. The centre
+/// zone stays centred, so it gets twice the room of the nearer neighbour.</para>
+/// <para><b>A zone is cut as one text.</b> The cut falls at the last literal space of the zone that
+/// fits, in any run, and a boundary between two runs counts only when a space stands there.
+/// A resolved token (the page number, the page count or the chapter title) is never cut inside: it is
+/// drawn whole or not at all, and spaces inside a chapter title are not cut points. A zone with no
+/// space before the overflow is cut after the last whole token or literal character that fits, which
+/// can mid-word split literal text but never a token. A zone of which nothing fits is dropped. The
+/// cut is reported through <see cref="Document.BandTruncations"/> and
 /// <see cref="LayoutDiagnosticCode.BandTruncated"/> as for a string band, once per band, naming the
 /// page that lost the most; its counts are the characters of every zone of that page added together.
-/// <b>The save refuses two things before it draws:</b> logos that cannot stand side by side with the
-/// gap between them, and a height too small for the band's text and rule. Both throw
+/// <b>The save refuses these before it draws:</b> logos that cannot stand side by side with the
+/// gap between them, a logo wider than the content box or that would be written with no area, and a
+/// height below the text box plus the rule's width and clearance. Each throws
 /// <see cref="InvalidOperationException"/> naming the band.</para>
 /// </remarks>
 public sealed class RunningBand
@@ -229,13 +243,15 @@ public sealed class RunningBand
     /// footer alike.</para>
     /// <para>A refusal raised before the save writes anything leaves the file a path held as it was.</para>
     /// <para><b>A zoned band refuses a height it cannot hold its text in.</b> Setting a height that is
-    /// not a finite number above zero, or is below the largest font size of the band's runs, throws
-    /// <see cref="ArgumentOutOfRangeException"/> from this property. The default is the largest
-    /// leading of the runs plus 4, or <see cref="TextStyle.Default"/>'s leading plus 4 for a band with
-    /// no text. With a <see cref="Rule"/> the save also needs the height to be at least the largest
-    /// font size plus twice the rule's width, and throws <see cref="InvalidOperationException"/>
-    /// naming the band when it is not, because the rule would then touch the text. A logo is as tall
-    /// as the band, so its width follows the height.</para>
+    /// not a finite number above zero, or is below the text box (the largest ascent plus the largest
+    /// descent of the band's runs, from the fonts' bounding boxes), throws
+    /// <see cref="ArgumentOutOfRangeException"/> from this property. With a <see cref="Rule"/> the
+    /// save also needs the height to be at least the text box plus the rule's width plus 1 point of
+    /// clearance, and throws <see cref="InvalidOperationException"/> naming the band when it is not,
+    /// because the rule would then touch the text box. The default is the largest of the runs' leading
+    /// plus 4 (<see cref="TextStyle.Default"/>'s leading plus 4 for a band with no text) and that
+    /// minimum, so a default height never trips the refusal. A logo is as tall as the band less the
+    /// rule's width and clearance, so its width follows the height.</para>
     /// </remarks>
     /// <exception cref="ArgumentOutOfRangeException">
     /// Raised from this property on a zoned band when the value is not a finite number above zero or
@@ -266,11 +282,11 @@ public sealed class RunningBand
                         nameof(value), h,
                         FormattableString.Invariant(
                             $"A zoned band's height must be a positive finite number (was {h})."));
-                if (h < LargestFontSize)
+                if (h < TextHeight)
                     throw new ArgumentOutOfRangeException(
                         nameof(value), h,
                         FormattableString.Invariant(
-                            $"A zoned band's height ({h}) cannot hold its text, whose largest font size is {LargestFontSize}."));
+                            $"A zoned band's height ({h}) cannot hold its text, whose ascent plus descent is {TextHeight}."));
             }
 
             _height = value;
@@ -330,9 +346,12 @@ public sealed class RunningBand
     /// <see cref="LayoutDiagnosticCode.UnembeddedFont"/>.
     /// </exception>
     // RS0027 asks that an overload with optional parameters have the most parameters of its
-    // overloads. This constructor shipped first, and no call can mean both: the first argument is a
-    // string or a zone. A factory would not do for the zoned form, because Height, Rule and
-    // MirrorZones are init-only and a caller sets them in an object initializer on a constructor.
+    // overloads. This constructor shipped first with three, and the zoned constructor has three too.
+    // A call whose first argument has a type means one of them; the literals null and default, as in
+    // new RunningBand(default, default, default), match both and no longer compile (CS0121). Callers
+    // that are already compiled bind by signature and are unaffected. A factory would not do for the
+    // zoned form, because Height, Rule and MirrorZones are init-only and a caller sets them in an
+    // object initializer on a constructor.
 #pragma warning disable RS0027
     public RunningBand(string template, TextStyle? style = null, HorizontalAlignment alignment = HorizontalAlignment.Center)
     {
@@ -395,10 +414,11 @@ public sealed class RunningBand
     /// </summary>
     /// <remarks>
     /// Nothing is refused here, because a <see cref="BandRule"/> is checked when it is built. A string
-    /// band may carry a rule too; its height is not checked against the rule, so a rule wider than the
-    /// space around its text overlaps the text. A zoned band's save checks the height, as
-    /// <see cref="Height"/> says. The rule is drawn when the band is, including on a page where the
-    /// band draws no text.
+    /// band may carry a rule too, drawn at its edge as on a zoned band; a string band's height is not
+    /// checked against it, so a rule wider than the band is drawn past the band's edge and one wider
+    /// than the room around the text overlaps the text. A zoned band's save checks the height, as
+    /// <see cref="Height"/> says. The rule is drawn on every page that has the band, including one
+    /// where the band draws no text; a blank page a recto break inserts has no band and no rule.
     /// </remarks>
     public BandRule? Rule
     {
@@ -467,14 +487,35 @@ public sealed class RunningBand
     private IEnumerable<TextRun> AllRuns() =>
         _zones is null ? [] : _zones.SelectMany(z => z!.Runs);
 
-    /// <summary>The largest font size of the runs of a zoned band, or 0 when it has no text.</summary>
-    internal double LargestFontSize =>
-        _largestFontSize ??= AllRuns().Select(r => r.Style.FontSize).DefaultIfEmpty(0).Max();
+    /// <summary>Clearance in points kept between a rule and the text box or a logo.</summary>
+    internal const double RuleGap = 1;
 
-    private double? _largestFontSize;
+    private (double Ascent, double Descent)? _textExtent;
+
+    /// <summary>
+    /// The largest ascent and the largest descent of the runs in points: each font's bounding box
+    /// scaled by the run's size. Zero for a band with no text.
+    /// </summary>
+    internal (double Ascent, double Descent) TextExtent =>
+        _textExtent ??= AllRuns().Aggregate((Ascent: 0.0, Descent: 0.0), (acc, run) =>
+        {
+            var (ascent, descent) = BandFontExtent.Of(run.Style.FontRef);
+            return (Math.Max(acc.Ascent, ascent * run.Style.FontSize), Math.Max(acc.Descent, descent * run.Style.FontSize));
+        });
+
+    /// <summary>The height of the text box: the largest ascent plus the largest descent.</summary>
+    internal double TextHeight => TextExtent.Ascent + TextExtent.Descent;
+
+    /// <summary>What the rule takes from the band on its side: its width and the clearance, or zero.</summary>
+    internal double RuleClearance => Rule is { } rule ? rule.Width + RuleGap : 0;
 
     private double ZonedDefaultHeight =>
-        AllRuns().Select(r => r.Style.EffectiveLeading).DefaultIfEmpty(TextStyle.Default.EffectiveLeading).Max() + 4;
+        Math.Max(
+            AllRuns().Select(r => r.Style.EffectiveLeading).DefaultIfEmpty(TextStyle.Default.EffectiveLeading).Max() + 4,
+            TextHeight + RuleClearance);
+
+    /// <summary>The height a logo is drawn at: the band less the rule and its clearance.</summary>
+    internal double LogoHeight => EffectiveHeight - RuleClearance;
 
     private BandTemplate[][]? _zoneTemplates;
 
@@ -491,17 +532,17 @@ public sealed class RunningBand
             ? Compiled.TokenCounts[(int)token]
             : ZoneTemplates.Sum(zone => zone.Sum(t => t.TokenCounts[(int)token]));
 
-    /// <summary>The width of a zone's logo at the band's height, in points; zero for a zone with no image.</summary>
+    /// <summary>The width of a zone's logo at <see cref="LogoHeight"/>, in points; zero for a zone with no image.</summary>
     internal double LogoWidth(int zone)
     {
         var image = _zones![zone]!.Image;
-        return image is null ? 0 : EffectiveHeight * image.Image.Width / image.Image.Height;
+        return image is null ? 0 : LogoHeight * image.Image.Width / image.Image.Height;
     }
 
     /// <summary>
     /// Refuses, before anything is drawn, what the band's own members decide: a height too small for
-    /// the text and the rule, and logos that cannot stand side by side. Does nothing for a string
-    /// band. Called once by each save.
+    /// the text box and the rule, a logo that would be written with no area, and logos that cannot
+    /// stand side by side. Does nothing for a string band. Called once by each save.
     /// </summary>
     internal void ValidateZones(RunningBandKind kind, double contentWidth)
     {
@@ -509,22 +550,29 @@ public sealed class RunningBand
 
         var name = kind == RunningBandKind.Header ? "header" : "footer";
         var height = EffectiveHeight;
-        var need = LargestFontSize + 2 * (Rule?.Width ?? 0);
+        var need = TextHeight + RuleClearance;
         if (height < need)
             throw new InvalidOperationException(
                 FormattableString.Invariant(
-                    $"The {name} band's height ({height}) cannot hold its content: its largest font size is {LargestFontSize}") +
+                    $"The {name} band's height ({height}) cannot hold its content: its text box is {TextHeight} tall") +
                 (Rule is { } r
-                    ? FormattableString.Invariant($" and its rule is {r.Width} wide, which needs {need}.")
+                    ? FormattableString.Invariant($" and its rule is {r.Width} wide with a clearance of {RuleGap}, which needs {need}.")
                     : FormattableString.Invariant($", which needs {need}.")));
 
         var widths = new[] { LogoWidth(0), LogoWidth(1), LogoWidth(2) };
-        foreach (var width in widths)
+        for (var z = 0; z < 3; z++)
         {
-            if (width > contentWidth)
+            if (widths[z] == 0 && _zones![z]!.Image is null) continue;
+
+            // A size the canvas writes with five decimals is written as 0 below 5e-6.
+            if (!(LogoHeight >= 5e-6) || !(widths[z] >= 5e-6))
                 throw new InvalidOperationException(
                     FormattableString.Invariant(
-                        $"The {name} band's logo is {width} wide at the band's height, and the content box is {contentWidth} wide."));
+                        $"The {name} band's logo would be {widths[z]} wide and {LogoHeight} tall, which is written as no area. Give the band a height that leaves the logo at least 5e-6 points each way."));
+            if (widths[z] > contentWidth)
+                throw new InvalidOperationException(
+                    FormattableString.Invariant(
+                        $"The {name} band's logo is {widths[z]} wide at the band's height, and the content box is {contentWidth} wide."));
         }
 
         // The gap is kept between neighbours that both draw something. Swapping the left and right
@@ -542,7 +590,9 @@ public sealed class RunningBand
 
     /// <summary>Returns the effective band height (leading + small padding).</summary>
     /// <remarks>
-    /// <see cref="Height"/> when set, otherwise leading plus 4. A set non-finite or negative
+    /// <see cref="Height"/> when set. Otherwise, for a string band, <see cref="Style"/>'s leading plus
+    /// 4, and for a zoned band the largest leading of its runs plus 4, raised to hold the text box and
+    /// the rule; see <see cref="Height"/>. A set non-finite or negative
     /// <see cref="Height"/> is returned as given.
     /// </remarks>
     public double EffectiveHeight => Height ?? (IsZoned ? ZonedDefaultHeight : Style.EffectiveLeading + 4);

@@ -99,17 +99,22 @@ public sealed class BandZonesOracleTests : IDisposable
         Assert.Equal(3, pages.Count);
         foreach (var page in pages)
         {
-            // The logo (20 pt tall, 2 x 2 pixels), the rule below the header, and the footer's rule.
-            Assert.Matches(@"(?m)^20 0 0 20 \S+ 160 cm$", page);
+            // The logo, 2 x 2 pixels, is the band's 20 pt less the rule's 0.75 pt and 1 pt of clearance:
+            // 18.25 pt each way, ending 1.75 pt above the band's bottom edge at 160.
+            Assert.Matches(@"(?m)^18\.25 0 0 18\.25 \S+ 161\.75 cm$", page);
             Assert.Contains("0.2 0.2 0.6 RG\n0.75 w\n", page, StringComparison.Ordinal);
             Assert.Contains("0 0 0 RG\n0.5 w\n", page, StringComparison.Ordinal);
 
-            // The label run, the title run and the page number stand on the header's baseline, 165 up,
-            // and the count on the footer's, 23 up. An embedded font shows its text as hex, so the
+            // The label run, the title run and the page number stand on one baseline above the body,
+            // and the count on the footer's below it. An embedded font shows its text as hex, so the
             // placements are what is counted here.
-            var baselines = TmPositions(page).Select(p => p.Split(' ')[1]).ToList();
-            Assert.Equal(3, baselines.Count(y => y == "165"));
-            Assert.Single(baselines, y => y == "23");
+            var baselines = TmPositions(page)
+                .Select(p => double.Parse(p.Split(' ')[1], System.Globalization.CultureInfo.InvariantCulture))
+                .ToList();
+            var header = baselines.Where(y => y > 160).ToList();
+            Assert.Equal(3, header.Count);
+            Assert.Single(header.Distinct());
+            Assert.Single(baselines, y => y < 30);
             if (tagged)
                 Assert.Contains("/Artifact BMC", page, StringComparison.Ordinal);
         }
