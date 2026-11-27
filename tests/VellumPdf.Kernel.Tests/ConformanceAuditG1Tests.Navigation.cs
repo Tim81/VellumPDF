@@ -478,7 +478,7 @@ public sealed partial class ConformanceAuditG1Tests
         Assert.Equal(["A", "B", "D", "C", "E"], Flatten(top).Select(i => i.Title));
     }
 
-    [Fact(Skip = "audit G1 draft issue 02: an outline whose level skips lists a heading before an earlier one; ISO 14289-1, 7.17 (should)")]
+    [Fact(Skip = "#736: an outline whose level skips lists a heading before an earlier one; ISO 14289-1, 7.17 (should)")]
     public void Iso14289_1_7_17_TheOutlineListsHeadingsInTheOrderTheyOccur()
     {
         var doc = NewLayoutDocument(PdfConformance.PdfA2u);

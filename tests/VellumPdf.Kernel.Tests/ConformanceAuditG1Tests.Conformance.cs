@@ -173,7 +173,7 @@ public sealed partial class ConformanceAuditG1Tests
     }
 
     // Not yet true: a URI and a bookmark title of any length are written. Draft issue G1-01.
-    [Fact(Skip = "audit G1 draft issue 01: a URI or a bookmark title over 32,767 bytes is written and breaks ISO 19005-2, 6.1.13 (veraPDF 6.1.13-3)")]
+    [Fact(Skip = "#666: a URI or a bookmark title over 32,767 bytes is written and breaks ISO 19005-2, 6.1.13 (veraPDF 6.1.13-3)")]
     public void Iso19005_2_6_1_13_AUriOrABookmarkTitleLongerThan32767BytesIsRefusedOrNotWritten()
     {
         var doc = NewLayoutDocument(PdfConformance.PdfA2b);
@@ -313,9 +313,9 @@ public sealed partial class ConformanceAuditG1Tests
         QpdfChecks(bytes);
     }
 
-    // ── Destinations and text strings that name nothing or are not text (draft issues 03 and 04) ──
+    // ── Destinations and text strings that name nothing or are not text (#737 and #738) ──
 
-    [Fact(Skip = "audit G1 draft issue 03: an outline entry for a page the document does not hold is written as /Dest [null /XYZ ...]; ISO 32000-1, 12.3.2.2")]
+    [Fact(Skip = "#737: an outline entry for a page the document does not hold is written as /Dest [null /XYZ ...]; ISO 32000-1, 12.3.2.2")]
     public void Iso32000_1_12_3_2_2_AnOutlineEntryForAPageOfAnotherDocumentIsRefused()
     {
         using var other = new PdfDocument();
@@ -340,7 +340,7 @@ public sealed partial class ConformanceAuditG1Tests
         Assert.IsType<PdfIndirectReference>(pdf.Array(item.Dict.Get(N("Dest")))[0]);
     }
 
-    [Fact(Skip = "audit G1 draft issue 04: an unpaired surrogate in a bookmark title is written as UTF-16BE; ISO 32000-2, 7.9.2.2.1")]
+    [Fact(Skip = "#738: an unpaired surrogate in a bookmark title is written as UTF-16BE; ISO 32000-2, 7.9.2.2.1")]
     public void Iso32000_2_7_9_2_2_ABookmarkTitleIsWellFormedUtf16()
     {
         var doc = NewLayoutDocument(PdfConformance.PdfA2b);
