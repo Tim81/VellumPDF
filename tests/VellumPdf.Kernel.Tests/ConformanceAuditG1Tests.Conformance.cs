@@ -4,6 +4,7 @@
 using System.Text;
 using VellumPdf.Core;
 using VellumPdf.Document;
+using VellumPdf.IO;
 using VellumPdf.Layout.Core;
 using VellumPdf.Layout.Elements;
 using static VellumPdf.Kernel.Tests.ConformanceAuditG1Support;
@@ -144,6 +145,31 @@ public sealed partial class ConformanceAuditG1Tests
         Assert.All(strings, s => Assert.True(s.Length <= 32767));
         Assert.All(names, n => Assert.True(Encoding.UTF8.GetByteCount(n) <= 127));
         Assert.All(integers, i => Assert.InRange(i, int.MinValue, int.MaxValue));
+    }
+
+    [Fact]
+    public void Iso19005_2_6_1_13_TheBoundsTheLibraryAppliesToNavigationStringsStayWithinTheLimits()
+    {
+        // A destination name is at most 127 characters (a name object is limited to 127 bytes, and the
+        // name is also a string key); the prefix of a page label is at most 16,382 UTF-16 units, which
+        // are 32,766 bytes with the byte order mark; a name-tree key is at most 32,767 bytes.
+        using var doc = new PdfDocument { Timestamp = Pinned };
+        var page = doc.AddPage(new PdfRectangle(0, 0, 200, 200));
+        doc.AddNamedDestination(new string('n', 127), page, 0, 100);
+        Assert.Throws<ArgumentException>(() => doc.AddNamedDestination(new string('n', 128), page, 0, 100));
+        doc.AddPageLabelRange(0, PdfPageLabelStyle.Decimal, new string('p', 16_382));
+        Assert.Throws<ArgumentException>(() => doc.AddPageLabelRange(0, PdfPageLabelStyle.Decimal, new string('p', 16_383)));
+        using var pdf = new Pdf(Save(doc));
+
+        var name = Assert.Single(DestsTree(pdf).Entries).NameKey!;
+        Assert.Equal(127, name.Length);
+        var prefix = Assert.IsType<PdfLiteralString>(pdf.Dict(Assert.Single(LabelsTree(pdf).Entries).Value).Get(N("P"))).Bytes;
+        Assert.Equal(32_766, prefix.Length);
+
+        var registry = new PdfObjectRegistry();
+        _ = NameTreeWriter.Write([new KeyValuePair<byte[], PdfObject>(new byte[32_767], PdfNull.Instance)], registry);
+        Assert.Throws<ArgumentException>(() =>
+            NameTreeWriter.Write([new KeyValuePair<byte[], PdfObject>(new byte[32_768], PdfNull.Instance)], registry));
     }
 
     // Not yet true: a URI and a bookmark title of any length are written. Draft issue G1-01.
