@@ -529,6 +529,11 @@ public sealed class Document : IDisposable
     /// <see cref="TextStyle.FontSize"/>, <see cref="TextStyle.Leading"/> and
     /// <see cref="TextStyle.FontRef"/>. The chapter title that <c>{chapter}</c> prints comes from
     /// the document's level-0 headings; see <see cref="RunningBand.ChapterToken"/>.
+    /// <para>A band built from three <see cref="BandZone"/> values is assigned here like any other.
+    /// The save refuses a zoned band whose height cannot hold its text and rule, or whose logos
+    /// cannot stand side by side, with <see cref="InvalidOperationException"/> naming the band
+    /// before it draws anything; zones that overlap on a page are cut and reported as a string
+    /// band's text is. Both are described on <see cref="RunningBand"/>.</para>
     /// </remarks>
     /// <exception cref="ArgumentException">
     /// Raised from <see cref="Save(System.IO.Stream)"/> and the other save overloads, when the

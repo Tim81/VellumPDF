@@ -24,6 +24,27 @@ namespace VellumPdf.Layout.Elements;
 /// text. <c>{pages}</c> stays the number of pages in the document, a recto break's blank page
 /// included, and that blank page has no band. <see cref="Resolve"/> is given the number and knows no
 /// range, so it never substitutes a label.</para>
+/// <para><b>A band built from three <see cref="BandZone"/> values draws a left, a centre and a right
+/// zone on one line.</b> Each zone holds styled runs or a logo, and each run resolves the same
+/// tokens as a template, through the same scan and the same passes, so a zone that holds
+/// <c>{pages}</c> costs the save what a string band that holds it costs. The zones take the content
+/// box's left edge, centre and right edge. All the text of the band sits on one baseline, placed as a
+/// string band places its text, using the largest font size of the band. A zoned band has no
+/// <see cref="Template"/> (it is empty), <see cref="Style"/> and <see cref="Alignment"/> read their
+/// defaults and mean nothing, and <see cref="Resolve"/> throws.</para>
+/// <para><b>Zones that would overlap are decided by priority, never overprinted.</b> A logo is never
+/// cut. A text zone takes the room the zones before it in this order left it, with a gap of
+/// <see cref="ZoneGap"/> points to the next drawn zone: first every logo, then the right zone, then
+/// the left, then the centre. Priority follows the zone, not the side it stands on, so swapping
+/// sides on even pages (see <see cref="MirrorZones"/>) does not change which zone is cut. A zone
+/// that does not fit is cut at a word boundary, as a template is, and a run after the cut is not
+/// drawn. The centre zone stays centred, so it gets twice the room of the nearer neighbour.
+/// The cut is reported through <see cref="Document.BandTruncations"/> and
+/// <see cref="LayoutDiagnosticCode.BandTruncated"/> as for a string band, once per band, naming the
+/// page that lost the most; its counts are the characters of every zone of that page added together.
+/// <b>The save refuses two things before it draws:</b> logos that cannot stand side by side with the
+/// gap between them, and a height too small for the band's text and rule. Both throw
+/// <see cref="InvalidOperationException"/> naming the band.</para>
 /// </remarks>
 public sealed class RunningBand
 {
@@ -207,7 +228,19 @@ public sealed class RunningBand
     /// still positive, and <see cref="ArgumentException"/> once it reaches exactly zero, on a header and a
     /// footer alike.</para>
     /// <para>A refusal raised before the save writes anything leaves the file a path held as it was.</para>
+    /// <para><b>A zoned band refuses a height it cannot hold its text in.</b> Setting a height that is
+    /// not a finite number above zero, or is below the largest font size of the band's runs, throws
+    /// <see cref="ArgumentOutOfRangeException"/> from this property. The default is the largest
+    /// leading of the runs plus 4, or <see cref="TextStyle.Default"/>'s leading plus 4 for a band with
+    /// no text. With a <see cref="Rule"/> the save also needs the height to be at least the largest
+    /// font size plus twice the rule's width, and throws <see cref="InvalidOperationException"/>
+    /// naming the band when it is not, because the rule would then touch the text. A logo is as tall
+    /// as the band, so its width follows the height.</para>
     /// </remarks>
+    /// <exception cref="ArgumentOutOfRangeException">
+    /// Raised from this property on a zoned band when the value is not a finite number above zero or
+    /// is below the largest font size of its runs. A string band refuses nothing here.
+    /// </exception>
     /// <exception cref="ArgumentException">
     /// Raised from a save rather than from this property, when a finite height is large enough on
     /// its own that the content area is left with no positive size, or the height is positive
@@ -220,7 +253,31 @@ public sealed class RunningBand
     /// value large enough on its own that the content area is left positive but too small for the
     /// element. The messages differ for each cause, described above.
     /// </exception>
-    public double? Height { get; init; }
+    public double? Height
+    {
+        get => _height;
+        init
+        {
+            // A string band takes any value, as it always has; only a zoned band, which is new, refuses.
+            if (IsZoned && value is { } h)
+            {
+                if (!double.IsFinite(h) || h <= 0)
+                    throw new ArgumentOutOfRangeException(
+                        nameof(value), h,
+                        FormattableString.Invariant(
+                            $"A zoned band's height must be a positive finite number (was {h})."));
+                if (h < LargestFontSize)
+                    throw new ArgumentOutOfRangeException(
+                        nameof(value), h,
+                        FormattableString.Invariant(
+                            $"A zoned band's height ({h}) cannot hold its text, whose largest font size is {LargestFontSize}."));
+            }
+
+            _height = value;
+        }
+    }
+
+    private readonly double? _height;
 
     /// <summary>Creates a running band from a text template, with optional style and alignment (defaults to centered).</summary>
     /// <remarks>
@@ -272,11 +329,215 @@ public sealed class RunningBand
     /// <see cref="LayoutDiagnosticCode.NotdefGlyph"/> and
     /// <see cref="LayoutDiagnosticCode.UnembeddedFont"/>.
     /// </exception>
+    // RS0027 asks that an overload with optional parameters have the most parameters of its
+    // overloads. This constructor shipped first, and no call can mean both: the first argument is a
+    // string or a zone. A factory would not do for the zoned form, because Height, Rule and
+    // MirrorZones are init-only and a caller sets them in an object initializer on a constructor.
+#pragma warning disable RS0027
     public RunningBand(string template, TextStyle? style = null, HorizontalAlignment alignment = HorizontalAlignment.Center)
     {
         Template = template;
         Style = style ?? TextStyle.Default;
         Alignment = alignment;
+    }
+#pragma warning restore RS0027
+
+    /// <summary>The smallest gap, in points, between two drawn zones of a zoned band.</summary>
+    private const double DefaultZoneGap = 6;
+
+    private readonly BandZone?[]? _zones;
+    private double _zoneGap = DefaultZoneGap;
+    private bool _mirrorZones;
+    private BandRule? _rule;
+
+    /// <summary>
+    /// Creates a band of three zones on one line: left, centre and right.
+    /// </summary>
+    /// <param name="left">The zone at the content box's left edge. <see cref="BandZone.Empty"/> for none.</param>
+    /// <param name="center">The zone centred on the content box. <see cref="BandZone.Empty"/> for none.</param>
+    /// <param name="right">The zone at the content box's right edge. <see cref="BandZone.Empty"/> for none.</param>
+    /// <remarks>
+    /// <b>A null zone is refused here.</b> The constructor throws <see cref="ArgumentNullException"/>
+    /// naming it; pass <see cref="BandZone.Empty"/> for a side with nothing on it. What each zone
+    /// holds is checked when the zone is built; see <see cref="BandZone"/>. How zones that do not fit
+    /// side by side are cut, and what the save refuses, is on this class. The band is a
+    /// <see cref="Document.Header"/> or <see cref="Document.Footer"/> value like any other.
+    /// <para><b>Do not read</b> <see cref="Template"/>, <see cref="Style"/> or <see cref="Alignment"/>
+    /// of a zoned band: it reads its text from its zones, and they hold defaults that mean
+    /// nothing.</para>
+    /// </remarks>
+    /// <exception cref="ArgumentNullException">A zone is <see langword="null"/>.</exception>
+    public RunningBand(BandZone left, BandZone center, BandZone right)
+    {
+        ArgumentNullException.ThrowIfNull(left);
+        ArgumentNullException.ThrowIfNull(center);
+        ArgumentNullException.ThrowIfNull(right);
+        _zones = [left, center, right];
+        Template = "";
+        Style = TextStyle.Default;
+        Alignment = HorizontalAlignment.Center;
+    }
+
+    /// <summary>Whether the band was built from three zones.</summary>
+    internal bool IsZoned => _zones is not null;
+
+    /// <summary>The zone at the content box's left edge, or <see langword="null"/> for a string band.</summary>
+    public BandZone? Left => _zones?[0];
+
+    /// <summary>The zone centred on the content box, or <see langword="null"/> for a string band.</summary>
+    public BandZone? Center => _zones?[1];
+
+    /// <summary>The zone at the content box's right edge, or <see langword="null"/> for a string band.</summary>
+    public BandZone? Right => _zones?[2];
+
+    /// <summary>
+    /// A line along the band's top or bottom edge, or <see langword="null"/> (the default) for none.
+    /// </summary>
+    /// <remarks>
+    /// Nothing is refused here, because a <see cref="BandRule"/> is checked when it is built. A string
+    /// band may carry a rule too; its height is not checked against the rule, so a rule wider than the
+    /// space around its text overlaps the text. A zoned band's save checks the height, as
+    /// <see cref="Height"/> says. The rule is drawn when the band is, including on a page where the
+    /// band draws no text.
+    /// </remarks>
+    public BandRule? Rule
+    {
+        get => _rule;
+        init => _rule = value;
+    }
+
+    /// <summary>
+    /// The smallest gap in points the zones of a zoned band keep between each other, 6 by default.
+    /// </summary>
+    /// <remarks>
+    /// <b>A gap that is not a finite number of at least zero is refused here</b> with
+    /// <see cref="ArgumentOutOfRangeException"/>, and so is any value on a string band, with
+    /// <see cref="InvalidOperationException"/>, which has no zones. The gap applies between two zones
+    /// that both draw something; the cut of a text zone and the check of the logos use it.
+    /// </remarks>
+    /// <exception cref="ArgumentOutOfRangeException">The value is not a finite number of at least zero.</exception>
+    /// <exception cref="InvalidOperationException">The band is a string band.</exception>
+    public double ZoneGap
+    {
+        get => _zoneGap;
+        init
+        {
+            RequireZoned(nameof(ZoneGap));
+            if (!double.IsFinite(value) || value < 0)
+                throw new ArgumentOutOfRangeException(
+                    nameof(value), value,
+                    FormattableString.Invariant(
+                        $"A zone gap must be a finite number of at least zero (was {value})."));
+            _zoneGap = value;
+        }
+    }
+
+    /// <summary>
+    /// Whether a zoned band swaps its left and right zones on even-numbered pages when the document
+    /// mirrors its margins. The default is <see langword="false"/>.
+    /// </summary>
+    /// <remarks>
+    /// <b>The swap needs <see cref="Document.MirrorMargins"/>; with it unset the property does
+    /// nothing.</b> A page counts as even by its physical position in the document, the number the
+    /// margins use, and not by its page label: a decimal body that follows three pages of roman front
+    /// matter has its first page, labelled 1, at physical page 4, and it swaps. A blank page a recto
+    /// break inserts counts as a physical page and has no band. The centre zone stays where it is,
+    /// and the priority of the zones follows the zone, not the side; see this class. Setting it on a
+    /// string band throws <see cref="InvalidOperationException"/>, because a string band mirrors its
+    /// alignment already; see <see cref="Alignment"/>.
+    /// </remarks>
+    /// <exception cref="InvalidOperationException">The band is a string band.</exception>
+    public bool MirrorZones
+    {
+        get => _mirrorZones;
+        init
+        {
+            RequireZoned(nameof(MirrorZones));
+            _mirrorZones = value;
+        }
+    }
+
+    private void RequireZoned(string member)
+    {
+        if (!IsZoned)
+            throw new InvalidOperationException(
+                $"{member} applies to a band built from three zones, and this band is a string band.");
+    }
+
+    private IEnumerable<TextRun> AllRuns() =>
+        _zones is null ? [] : _zones.SelectMany(z => z!.Runs);
+
+    /// <summary>The largest font size of the runs of a zoned band, or 0 when it has no text.</summary>
+    internal double LargestFontSize =>
+        _largestFontSize ??= AllRuns().Select(r => r.Style.FontSize).DefaultIfEmpty(0).Max();
+
+    private double? _largestFontSize;
+
+    private double ZonedDefaultHeight =>
+        AllRuns().Select(r => r.Style.EffectiveLeading).DefaultIfEmpty(TextStyle.Default.EffectiveLeading).Max() + 4;
+
+    private BandTemplate[][]? _zoneTemplates;
+
+    /// <summary>
+    /// The runs of a zoned band scanned once, indexed by zone and run: the same scan a template gets,
+    /// with the band's <see cref="ChapterToken"/>.
+    /// </summary>
+    internal BandTemplate[][] ZoneTemplates =>
+        _zoneTemplates ??= [.. _zones!.Select(z => z!.Runs.Select(r => BandTemplate.Compile(r.Text, ChapterToken)).ToArray())];
+
+    /// <summary>How often a token occurs in the band, over the template or over every run.</summary>
+    internal int CountOf(BandToken token) =>
+        _zones is null
+            ? Compiled.TokenCounts[(int)token]
+            : ZoneTemplates.Sum(zone => zone.Sum(t => t.TokenCounts[(int)token]));
+
+    /// <summary>The width of a zone's logo at the band's height, in points; zero for a zone with no image.</summary>
+    internal double LogoWidth(int zone)
+    {
+        var image = _zones![zone]!.Image;
+        return image is null ? 0 : EffectiveHeight * image.Image.Width / image.Image.Height;
+    }
+
+    /// <summary>
+    /// Refuses, before anything is drawn, what the band's own members decide: a height too small for
+    /// the text and the rule, and logos that cannot stand side by side. Does nothing for a string
+    /// band. Called once by each save.
+    /// </summary>
+    internal void ValidateZones(RunningBandKind kind, double contentWidth)
+    {
+        if (!IsZoned) return;
+
+        var name = kind == RunningBandKind.Header ? "header" : "footer";
+        var height = EffectiveHeight;
+        var need = LargestFontSize + 2 * (Rule?.Width ?? 0);
+        if (height < need)
+            throw new InvalidOperationException(
+                FormattableString.Invariant(
+                    $"The {name} band's height ({height}) cannot hold its content: its largest font size is {LargestFontSize}") +
+                (Rule is { } r
+                    ? FormattableString.Invariant($" and its rule is {r.Width} wide, which needs {need}.")
+                    : FormattableString.Invariant($", which needs {need}.")));
+
+        var widths = new[] { LogoWidth(0), LogoWidth(1), LogoWidth(2) };
+        foreach (var width in widths)
+        {
+            if (width > contentWidth)
+                throw new InvalidOperationException(
+                    FormattableString.Invariant(
+                        $"The {name} band's logo is {width} wide at the band's height, and the content box is {contentWidth} wide."));
+        }
+
+        // The gap is kept between neighbours that both draw something. Swapping the left and right
+        // zones on a page changes none of these sums, because the centre is centred, so one check
+        // serves both kinds of page.
+        var (left, center, right) = (widths[0], widths[1], widths[2]);
+        var centerStart = (contentWidth - center) / 2;
+        if ((left > 0 && right > 0 && left + right + ZoneGap > contentWidth)
+            || (left > 0 && center > 0 && left + ZoneGap > centerStart)
+            || (center > 0 && right > 0 && right + ZoneGap > centerStart))
+            throw new InvalidOperationException(
+                FormattableString.Invariant(
+                    $"The {name} band's logos do not fit side by side in a content box {contentWidth} wide with a gap of {ZoneGap}."));
     }
 
     /// <summary>Returns the effective band height (leading + small padding).</summary>
@@ -284,7 +545,7 @@ public sealed class RunningBand
     /// <see cref="Height"/> when set, otherwise leading plus 4. A set non-finite or negative
     /// <see cref="Height"/> is returned as given.
     /// </remarks>
-    public double EffectiveHeight => Height ?? (Style.EffectiveLeading + 4);
+    public double EffectiveHeight => Height ?? (IsZoned ? ZonedDefaultHeight : Style.EffectiveLeading + 4);
 
     /// <summary>Substitutes <c>{page}</c> and <c>{pages}</c> in <see cref="Template"/>.</summary>
     /// <remarks>
@@ -310,12 +571,20 @@ public sealed class RunningBand
     /// <exception cref="ArgumentNullException">
     /// <see cref="Template"/> is <see langword="null"/>. <c>ParamName</c> is <c>template</c>.
     /// </exception>
-    public string Resolve(int pageNumber, int totalPages) =>
-        (Template ?? throw new ArgumentNullException("template", "The band's template is null."))
+    /// <exception cref="InvalidOperationException">
+    /// The band is zoned: it has no single template, and a save resolves its runs.
+    /// </exception>
+    public string Resolve(int pageNumber, int totalPages)
+    {
+        if (IsZoned)
+            throw new InvalidOperationException("A zoned band has no single template to resolve.");
+
+        return (Template ?? throw new ArgumentNullException("template", "The band's template is null."))
             .Replace("{page}", pageNumber.ToString(System.Globalization.CultureInfo.InvariantCulture),
                 StringComparison.Ordinal)
             .Replace("{pages}", totalPages.ToString(System.Globalization.CultureInfo.InvariantCulture),
                 StringComparison.Ordinal);
+    }
 
     private BandTemplate? _compiled;
 

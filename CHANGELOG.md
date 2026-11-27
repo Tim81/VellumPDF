@@ -8,6 +8,28 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- **A running header or footer holds a left, a centre and a right zone (#365).** A book-style band
+  puts a title at the left, a chapter at the centre and a page number at the right on one line.
+  `new RunningBand(left, center, right)` takes three `BandZone` values, each one holding styled
+  `TextRun`s, a logo made with `BandZone.Logo(LayoutImage)`, or nothing (`BandZone.Empty`). Every
+  run resolves `{page}`, `{pages}` and, with `ChapterToken`, `{chapter}`, through the scan a string
+  band's template gets, so a band that holds `{pages}` makes the passes a string band makes. The
+  zones stand at the content box's left edge, centre and right edge, on one baseline. A logo is as
+  tall as the band, is drawn as an artifact in a tagged document, and has no alternative text.
+  `Rule` takes a `BandRule` drawn along the band's top or bottom edge, inside the band, across
+  the content width, on every page; it also works on a string band. With
+  `Document.MirrorMargins` set, `MirrorZones` swaps the left and right zones on even pages, counted
+  by physical page, so the first page of a decimal body that follows three roman pages swaps.
+  Zones that would overlap are cut and not overprinted: a logo is kept whole, then the right zone, the
+  left and the centre are cut at a word to leave `ZoneGap` points (6 by default) to their
+  neighbours, and the cut is reported through `Document.BandTruncations` and the `BandTruncated`
+  diagnostic as a string band's cut is. The save refuses logos that cannot stand side by side, and
+  a height too small for the text and the rule, with an `InvalidOperationException` naming the
+  band. A null zone, a null run or style, a page reference, a link, a font size that is not a
+  positive finite number, a colour channel outside 0 to 1, an image with no area, a rule width
+  that is negative or not finite, and a zoned band's height below its largest font size are
+  refused at the member. A document that sets no zone and no rule saves to the same bytes as before.
+
 - **`NoteBlock` sets paragraphs apart with a background, a border and padding (#703).** A note, a
   warning or a tip no longer has to be a one-cell table that the structure tree calls a table. A
   `NoteBlock` holds paragraphs, so a bold lead-in run, a link and a page reference work in it as
