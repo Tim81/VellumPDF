@@ -29,10 +29,9 @@ internal sealed class NoteBlockRenderer : IRenderer, IPageBreakSource, IKeepSour
     }
 
     // A paragraph, or the rest of one, placed in a piece, with where its renderer put it. A
-    // renderer
-    // that answered Full is the shared one, and a later layout of the block, a probe for a keep
-    // request for one, writes over what it holds, so the piece restores its own placement before it
-    // reports or draws.
+    // renderer that answered Full is the shared one, and a later layout of the block, a probe for
+    // a keep request for one, writes over what it holds, so the piece restores its own placement
+    // before it reports or draws.
     private readonly record struct Placed(
         ParagraphRenderer Renderer, LayoutBox Box, (int EndLine, LayoutBox Occupied) Placement);
 
@@ -267,9 +266,8 @@ internal sealed class NoteBlockRenderer : IRenderer, IPageBreakSource, IKeepSour
             if (_isFirst || _shared.Structure is null)
             {
                 // Div in every file: it is standard in the default namespace of PDF 1.7 and 2.0.
-                // Aside
-                // is a PDF 2.0 type that needs its own structure namespace, which the Kernel does
-                // not write yet.
+                // Aside is a PDF 2.0 type that needs its own structure namespace, which the
+                // Kernel does not write yet.
                 _shared.Structure = new PdfStructElem("Div");
                 created = true;
             }
@@ -291,10 +289,9 @@ internal sealed class NoteBlockRenderer : IRenderer, IPageBreakSource, IKeepSour
     }
 
     // The fill, then the border, as an artifact in a tagged document: neither is content, so
-    // neither
-    // enters the structure tree or the extracted text. The border is four bars filled in one path,
-    // so an edge a page break leaves open is left out and the corners need no join. The background
-    // fills the whole box, border included, so no hairline shows between the two.
+    // neither enters the structure tree or the extracted text. The border is four bars filled in
+    // one path, drawn on every piece, so the corners need no join. The background fills the whole
+    // box, border included, so no hairline shows between the two.
     private void DrawBox(DrawContext ctx)
     {
         var background = _block.Background;

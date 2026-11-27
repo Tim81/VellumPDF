@@ -219,9 +219,8 @@ public sealed class NoteBlock
     /// <remarks>
     /// <b>A channel that is not a finite number from 0 to 1 is refused.</b> This <c>init</c>
     /// accessor throws <see cref="ArgumentOutOfRangeException"/>, because ISO 32000-2:2020, 8.6.4.3
-    /// gives each DeviceRGB component that range. The fill is drawn as an artifact on every page
-    /// the
-    /// block reaches.
+    /// gives each DeviceRGB component that range. The fill is drawn on every page the block
+    /// reaches, as an artifact in a tagged document.
     /// </remarks>
     /// <exception cref="ArgumentOutOfRangeException">
     /// Raised from this <c>init</c> accessor when a channel is <c>NaN</c>, infinite, below 0 or
@@ -252,8 +251,8 @@ public sealed class NoteBlock
     /// <summary>The width of the border, in points. The default, 0, draws none.</summary>
     /// <remarks>
     /// <b>A value that is not finite or is below zero is refused.</b> This <c>init</c> accessor
-    /// throws <see cref="ArgumentOutOfRangeException"/>, because a negative line width is outside
-    /// the domain of ISO 32000-2:2020, 8.4.3.2. Negative zero is accepted and means 0. The border
+    /// throws <see cref="ArgumentOutOfRangeException"/>, because a border narrower than nothing
+    /// has no place in the box. Negative zero is accepted and means 0. The border
     /// lies inside the block's width, and its inside edge is where the padding starts. A width
     /// that leaves the content no room is refused by the save, as an element too tall to fit; see
     /// the type.

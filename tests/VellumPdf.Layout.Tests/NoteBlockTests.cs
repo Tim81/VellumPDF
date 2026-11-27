@@ -601,7 +601,7 @@ public sealed class NoteBlockTests
     // each character when it is read as Latin-1.
     private static int LangCount(string text, string lang)
     {
-        var needle = "/Lang (þÿ" + string.Concat(lang.Select(c => " " + c)) + ")";
+        var needle = "/Lang (\u00FE\u00FF" + string.Concat(lang.Select(c => "\0" + c)) + ")";
         var count = 0;
         for (var at = text.IndexOf(needle, StringComparison.Ordinal); at >= 0; at = text.IndexOf(needle, at + 1, StringComparison.Ordinal))
             count++;
