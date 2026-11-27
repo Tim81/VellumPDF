@@ -9,6 +9,7 @@ using System.Text;
 using System.Text.RegularExpressions;
 using System.Xml;
 using System.Xml.Linq;
+using VellumPdf.Annotations;
 using VellumPdf.Canvas;
 using VellumPdf.Core;
 using VellumPdf.Document;
@@ -110,7 +111,8 @@ public sealed class ConformanceAuditG5Tests
     {
         using var rsa = RSA.Create(2048);
         var request = new CertificateRequest("CN=VellumPdf audit", rsa, HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1);
-        return request.CreateSelfSigned(DateTimeOffset.UtcNow.AddDays(-1), DateTimeOffset.UtcNow.AddYears(1));
+        // The validity window follows the pinned instant, so no assertion depends on the wall clock.
+        return request.CreateSelfSigned(Pinned.AddDays(-1), Pinned.AddYears(1));
     });
 
     private static readonly ConcurrentDictionary<(PdfConformance, FixturePath), byte[]> Cache = new();
@@ -153,6 +155,13 @@ public sealed class ConformanceAuditG5Tests
         };
         doc.Info.Title = "G5 audit";
         DrawHello(doc);
+
+        // A bookmark, a named destination and a page label are the catalog entries the shared builder
+        // (#635, #626) writes for Save and for the signing path, so every fixture carries them.
+        var page = doc.Pages[0];
+        doc.AddOutlineEntry(new PdfOutlineEntry { Title = "Start", DestPage = page, DestTop = 700 });
+        doc.AddNamedDestination("audit-dest", page, 0, 700);
+        doc.AddPageLabelRange(0, PdfPageLabelStyle.Decimal);
         return doc;
     }
 
@@ -380,6 +389,16 @@ public sealed class ConformanceAuditG5Tests
         Assert.Equal(first.Bytes, second.Bytes);
         Assert.False(trailer.Has("Encrypt"));
 
+        // Every trailer of the file, not only the first: a linearized file has two, and each that
+        // carries an /ID carries the same two strings.
+        foreach (var t in p.AllTrailers.Where(t => t.Has("ID")))
+        {
+            var pair = Assert.IsType<List<object?>>(t["ID"]);
+            Assert.Equal(PinnedId, ((Scan.PStr)pair[0]!).Bytes);
+            Assert.Equal(PinnedId, ((Scan.PStr)pair[1]!).Bytes);
+        }
+        Assert.Equal(path == FixturePath.Linearized ? 2 : 1, p.AllTrailers.Count());
+
         // 6.1.3: nothing follows the last %%EOF but one optional end-of-line marker.
         var text = p.Text;
         var eof = text.LastIndexOf("%%EOF", StringComparison.Ordinal);
@@ -468,6 +487,23 @@ public sealed class ConformanceAuditG5Tests
 
         // ISO 32000-2 Table 15: with /Encrypt the /ID array and both strings are direct hex strings.
         Assert.Matches(@"/ID \[<[0-9A-F]{32}> <[0-9A-F]{32}>\]", trailer);
+
+        // 7.16 (veraPDF 7.16-1): the encryption dictionary has /P with bit 10 (value 512) set, whether
+        // the caller allowed everything, only extraction, or (outside PDF/UA-1) nothing of the kind.
+        foreach (var (claim, permissions) in new[]
+        {
+            (PdfConformance.PdfUA1, PdfPermissions.All),
+            (PdfConformance.PdfUA1, PdfPermissions.Extract),
+            (PdfConformance.None, PdfPermissions.Print),
+        })
+        {
+            var d = NewKernel(claim);
+            d.Encrypt(new PdfEncryptionSettings { UserPassword = "u", OwnerPassword = "o", Permissions = permissions });
+            var scanned = Scan.Parse(Save(d));
+            var encrypt = (Scan.PDict)scanned.Resolve(scanned.Trailer["Encrypt"])!;
+            var p = encrypt.Int("P")!.Value;
+            Assert.Equal(512, p & 512);
+        }
     }
 
     // ── ISO 19005-2, 6.1.4; ISO 32000-1, 7.5.4 and 7.5.5 ───────────────────────────────────────
@@ -672,7 +708,7 @@ public sealed class ConformanceAuditG5Tests
     }
 
     [Theory]
-    [MemberData(nameof(PdfAClaimData))]
+    [MemberData(nameof(ClaimData))]
     public void Iso32000_1_7_5_7_ObjectStreamHoldsNoStreamNoEncryptAndItsLengthIsDirect(PdfConformance claim)
     {
         var p = Parsed(claim, FixturePath.ObjectStreams);
@@ -692,6 +728,25 @@ public sealed class ConformanceAuditG5Tests
         Assert.DoesNotContain(xref.Number, inside);
         Assert.DoesNotContain(objStm.Number, inside);
         Assert.False(xref.Dict!.Has("Encrypt"));
+
+        // 7.5.7, the four layout rules: the N offsets increase, the first object starts right after the
+        // offset header, no object is only a reference, and no obj or endobj keyword is inside.
+        var body = Scan.Inflate(objStm.StreamData!);
+        var n = (int)objStm.Dict.Int("N")!.Value;
+        var first = (int)objStm.Dict.Int("First")!.Value;
+        var head = new Scan.Lexer(body, 0);
+        var offsets = new List<long>();
+        for (var i = 0; i < n; i++)
+        {
+            Assert.IsType<Scan.PNum>(head.ReadToken());
+            offsets.Add(long.Parse(((Scan.PNum)head.ReadToken()).Raw, CultureInfo.InvariantCulture));
+        }
+        Assert.Equal(0, offsets[0]);
+        for (var i = 1; i < n; i++)
+            Assert.True(offsets[i] > offsets[i - 1], $"offset {i} does not increase");
+        Assert.All(body.AsSpan(head.Pos, first - head.Pos).ToArray(), b => Assert.Contains(b, new byte[] { 0, 9, 10, 12, 13, 32 }));
+        Assert.All(p.Objects.Where(o => o.InObjectStream), o => Assert.IsNotType<Scan.PRef>(o.Value));
+        Assert.DoesNotMatch(@"\b(end)?obj\b", Encoding.Latin1.GetString(body));
 
         // 7.5.8.2: the cross-reference stream dictionary's /W, /Size and /Root are direct, with /Root a reference.
         Assert.IsType<List<object?>>(xref.Dict["W"]);
@@ -852,7 +907,8 @@ public sealed class ConformanceAuditG5Tests
     [Fact]
     public void Iso19005_2_6_1_13_StringsOfExactly32767BytesAndTitlesOfExactly32766AreWrittenInFull()
     {
-        // A 16382-character title is 32766 bytes in UTF-16BE with its two-byte mark... plus the mark: 32766 bytes.
+        // A 16382-character title is 32766 bytes in UTF-16BE with its two-byte mark (2 + 2 x 16382 = 32766);
+        // the output intent identifier is Latin-1, one byte a character, so 32767 characters are 32767 bytes.
         using var doc = new PdfDocument { Conformance = PdfConformance.PdfA2b, Timestamp = Pinned, DocumentId = PinnedId };
         doc.Info.Title = new string('a', 16382);
         doc.SetPdfAOutputIntent(IccProfiles.Srgb, 3, new string('o', 32767));
@@ -876,17 +932,101 @@ public sealed class ConformanceAuditG5Tests
     [Fact(Skip = "Gap #666: a string of 32768 bytes or more (Info text, OutputConditionIdentifier, Lang) is written under a PDF/A claim and fails 6.1.13 (veraPDF 6.1.13-3); the class is #666.")]
     public void Iso19005_2_6_1_13_StringsOver32767BytesAreNotWrittenUnderAPdfAClaim()
     {
-        using var doc = new PdfDocument { Conformance = PdfConformance.PdfA2b, Timestamp = Pinned, DocumentId = PinnedId };
-        doc.Info.Title = new string('a', 16383);
-        doc.AddPage();
+        // Each source named in the skip reason: an Info text key, the output intent identifier, and the catalog /Lang.
+        // 16383 UTF-16 characters are 32768 bytes with the mark; 32768 Latin-1 characters are 32768 bytes.
+        var builds = new Action<PdfDocument>[]
+        {
+            d => d.Info.Title = new string('a', 16383),
+            d => d.Info.Author = new string('a', 16383),
+            d => d.SetPdfAOutputIntent(IccProfiles.Srgb, 3, new string('o', 32768)),
+            d => d.Language = new string('a', 16383),
+        };
+        var failures = new List<string>();
+        for (var i = 0; i < builds.Length; i++)
+        {
+            using var doc = new PdfDocument { Conformance = PdfConformance.PdfA2b, Timestamp = Pinned, DocumentId = PinnedId };
+            builds[i](doc);
+            doc.AddPage();
+            try
+            {
+                var p = Scan.Parse(Save(doc));
+                if (p.Tokens.Any(t => t.Kind == 'S' && t.Length > 32767))
+                    failures.Add($"source {i} wrote a string over 32767 bytes");
+            }
+            catch (ArgumentException)
+            {
+                // A refusal is the other way to meet the clause.
+            }
+        }
+        Assert.Empty(failures);
+    }
+
+    [Fact(Skip = "Gap #740: a font name or resource name over 127 bytes, with a byte above 127 (invalid UTF-8), with a character above U+00FF (written as '?') or with the null character (written /..#00..) is written; veraPDF 6.1.13-4 and 6.1.8-1 see the first two.")]
+    public void Iso19005_2_6_1_8_And_6_1_13_NamesAreUtf8AndAtMost127BytesUnderAPdfAClaim()
+    {
+        var failures = new List<string>();
+
+        // A font's PostScript name reaches /BaseFont as it is: too long, not UTF-8, not Latin-1.
+        foreach (var (label, psName) in new[] { ("128 bytes", new string('P', 128 - 7)), ("U+00E9", "Café"), ("CJK", "日本") })
+        {
+            var font = EmbeddedFontFixtures.WithTables(DejaVu, add: new Dictionary<string, byte[]> { ["name"] = PostScriptNameTable(psName) });
+            using var doc = new PdfDocument { Conformance = PdfConformance.PdfA2b, Timestamp = Pinned, DocumentId = PinnedId };
+            DrawHelloIn(doc, font);
+            try
+            {
+                var p = Scan.Parse(Save(doc));
+                var baseFont = AllDictionaries(p).Select(d => d["BaseFont"]).OfType<Scan.PName>().First();
+                if (baseFont.Bytes.Length > 127)
+                    failures.Add($"{label}: /BaseFont is {baseFont.Bytes.Length} bytes");
+                if (baseFont.Bytes.Any(b => b > 127))
+                    failures.Add($"{label}: /BaseFont holds a byte above 127, which is not UTF-8");
+                if (psName.Any(c => c > 0xFF) && baseFont.Text.Contains('?'))
+                    failures.Add($"{label}: /BaseFont has '?' where the name had a character above U+00FF");
+            }
+            catch (ArgumentException)
+            {
+                // A refusal meets the clause too.
+            }
+        }
+
+        // A caller's resource name: too long, or holding the null character 7.3.5 excludes.
+        foreach (var (label, resource) in new[] { ("128 bytes", new string('I', 128)), ("null", "Im\0x") })
+        {
+            using var doc = new PdfDocument { Conformance = PdfConformance.PdfA2b, Timestamp = Pinned, DocumentId = PinnedId };
+            var page = doc.AddPage();
+            doc.RegisterImageXObject(page, Images.PngImageLoader.Load(TinyPng()), resource);
+            new PdfCanvas(page).SaveState().Concat(10, 0, 0, 10, 0, 0).DoXObject(resource).RestoreState().Finish();
+            try
+            {
+                var p = Scan.Parse(Save(doc));
+                if (p.Tokens.Any(t => t.Kind == 'N' && t.Length > 127))
+                    failures.Add($"{label}: a name over 127 bytes");
+                if (p.Tokens.Any(t => t.Kind == 'N' && t.Raw.Contains("#00", StringComparison.Ordinal)))
+                    failures.Add($"{label}: a name holds the null character");
+            }
+            catch (ArgumentException)
+            {
+                // A refusal meets the clause too.
+            }
+        }
+        Assert.Empty(failures);
+    }
+
+    [Fact(Skip = "Gap #740: PdfName accepts the null character, which ISO 32000-1, 7.3.5 excludes from a name, and writes it as #00; qpdf 12.4.2 warns 'null character not allowed in name token' and damages the resource dictionary; under no claim too.")]
+    public void Iso32000_1_7_3_5_ANameHoldsNoNullCharacter()
+    {
+        using var doc = new PdfDocument();
+        var page = doc.AddPage();
+        doc.RegisterImageXObject(page, Images.PngImageLoader.Load(TinyPng()), "Im\0x");
+        new PdfCanvas(page).SaveState().Concat(10, 0, 0, 10, 0, 0).DoXObject("Im\0x").RestoreState().Finish();
         try
         {
             var p = Scan.Parse(Save(doc));
-            Assert.All(p.Tokens.Where(t => t.Kind == 'S'), t => Assert.True(t.Length <= 32767));
+            Assert.DoesNotContain(p.Tokens, t => t.Kind == 'N' && t.Raw.Contains("#00", StringComparison.Ordinal));
         }
         catch (ArgumentException)
         {
-            // A refusal is the other way to meet the clause.
+            // A refusal meets the clause too.
         }
     }
 
@@ -916,31 +1056,6 @@ public sealed class ConformanceAuditG5Tests
         Assert.True(compliant, string.Join(",", failed));
     }
 
-    [Fact(Skip = "Gap #740: a name over 127 bytes, one with a byte above 127 (invalid UTF-8) and one with a character above U+00FF (written as '?') is written under a PDF/A claim; veraPDF 6.1.13-4 and 6.1.8-1.")]
-    public void Iso19005_2_6_1_8_And_6_1_13_NamesAreUtf8AndAtMost127BytesUnderAPdfAClaim()
-    {
-        foreach (var psName in new[] { new string('P', 128 - 7), "Caf\u00e9" })
-        {
-            var font = EmbeddedFontFixtures.WithTables(DejaVu, add: new Dictionary<string, byte[]> { ["name"] = PostScriptNameTable(psName) });
-            using var doc = new PdfDocument { Conformance = PdfConformance.PdfA2b, Timestamp = Pinned, DocumentId = PinnedId };
-            DrawHelloIn(doc, font);
-            try
-            {
-                var p = Scan.Parse(Save(doc));
-                foreach (var t in p.Tokens.Where(t => t.Kind == 'N'))
-                {
-                    Assert.True(t.Length <= 127);
-                    var expanded = Regex.Replace(t.Raw, "#([0-9A-Fa-f]{2})", m => ((char)Convert.ToByte(m.Groups[1].Value, 16)).ToString());
-                    _ = new UTF8Encoding(false, true).GetString(Encoding.Latin1.GetBytes(expanded));
-                }
-            }
-            catch (ArgumentException)
-            {
-                // A refusal meets the clause too.
-            }
-        }
-    }
-
     [Fact]
     public void Iso19005_2_6_1_13_PageBoundariesOfThreeAndFourteenThousandFourHundredAreWritten()
     {
@@ -964,23 +1079,77 @@ public sealed class ConformanceAuditG5Tests
     [Fact(Skip = "Gap #666: a page size outside 3 to 14400 units is written under a PDF/A claim and fails 6.1.13 (veraPDF 6.1.13-11), from Kernel AddPage and from Layout PageSize.")]
     public void Iso19005_2_6_1_13_PageBoundariesOutsideThreeToFourteenThousandFourHundredAreNotWrittenUnderAPdfAClaim()
     {
+        var failures = new List<string>();
         foreach (var (w, h) in new[] { (14401d, 100d), (2.9, 100d), (100d, 14400.5) })
         {
             using var doc = new PdfDocument { Conformance = PdfConformance.PdfA2b, Timestamp = Pinned, DocumentId = PinnedId };
             doc.AddPage(new PdfRectangle(0, 0, w, h));
-            try
+            var layout = new LayoutDocument { Conformance = PdfConformance.PdfA2b, Timestamp = Pinned, DocumentId = PinnedId, PageSize = new PdfRectangle(0, 0, w, h), Margins = new EdgeInsets(1) };
+            layout.Add(new Paragraph("x", new TextStyle { FontSize = 1 }));
+            foreach (var (label, save) in new (string, Func<byte[]>)[] { ("Kernel", () => Save(doc)), ("Layout", () => Save(layout)) })
             {
-                var p = Scan.Parse(Save(doc));
-                var box = p.Objects.Single(o => o.Dict?.Name("Type") == "Page").Dict!.Array("MediaBox")!
-                    .Cast<Scan.PNum>().Select(n => double.Parse(n.Raw, CultureInfo.InvariantCulture)).ToArray();
-                Assert.InRange(box[2] - box[0], 3, 14400);
-                Assert.InRange(box[3] - box[1], 3, 14400);
-            }
-            catch (ArgumentException)
-            {
-                // A refusal meets the clause too.
+                try
+                {
+                    var p = Scan.Parse(save());
+                    var box = p.Objects.First(o => o.Dict?.Name("Type") == "Page").Dict!.Array("MediaBox")!
+                        .Cast<Scan.PNum>().Select(n => double.Parse(n.Raw, CultureInfo.InvariantCulture)).ToArray();
+                    if (box[2] - box[0] is < 3 or > 14400 || box[3] - box[1] is < 3 or > 14400)
+                        failures.Add($"{label} wrote a {w} x {h} page");
+                }
+                catch (ArgumentException)
+                {
+                    // A refusal meets the clause too.
+                }
+                catch (InvalidOperationException)
+                {
+                    // So does a refusal as too tall.
+                }
             }
         }
+        Assert.Empty(failures);
+    }
+
+    [Fact(Skip = "Gap #746: the incremental update Sign writes at PadesLevel B_LT or B_LTA drops /Info from the trailer and keeps the second /ID string equal to the first, against ISO 32000-1, 7.5.6 and 14.4; veraPDF 2b accepts the file.")]
+    public void Iso32000_1_7_5_6_IncrementalTrailersKeepEveryEntryAndTheSecondIdChanges()
+    {
+        using var doc = NewKernel(PdfConformance.PdfA2b);
+        using var ms = new MemoryStream();
+        doc.Sign(ms, new PdfSignatureSettings
+        {
+            Certificate = Certificate.Value,
+            SigningTime = Pinned,
+            Level = PadesLevel.B_LT,
+            TimestampClient = new TestTimestampClient(Pinned),
+            RevocationClient = new CannedRevocation(),
+        });
+        var p = Scan.Parse(ms.ToArray());
+
+        // The construct: the file holds the signing revision and at least one appended revision, each with a trailer.
+        var trailers = p.Xrefs.Select(x => x.Trailer!).ToList();
+        Assert.True(trailers.Count >= 2, $"{trailers.Count} trailers");
+        Assert.Contains(p.Xrefs.Skip(1), x => x.Trailer!.Has("Prev"));
+
+        // 7.5.6: an added trailer holds every entry of the previous one except /Prev; 14.4: the second /ID
+        // string is the changing one, based on the file as last updated.
+        for (var i = 1; i < trailers.Count; i++)
+        {
+            foreach (var (key, _) in trailers[i - 1].Entries.Where(e => e.Key != "Prev"))
+                Assert.True(trailers[i].Has(key), $"trailer {i} lacks /{key}");
+            var previous = (List<object?>)trailers[i - 1]["ID"]!;
+            var current = (List<object?>)trailers[i]["ID"]!;
+            Assert.Equal(((Scan.PStr)previous[0]!).Bytes, ((Scan.PStr)current[0]!).Bytes);
+            Assert.NotEqual(((Scan.PStr)current[0]!).Bytes, ((Scan.PStr)current[1]!).Bytes);
+        }
+    }
+
+    private sealed class CannedRevocation : IRevocationClient
+    {
+        public RevocationData GetRevocationData(X509Certificate2 certificate, X509Certificate2 issuer)
+            => new()
+            {
+                Ocsp = new ReadOnlyMemory<byte>([0x30, 0x03, 0x0A, 0x01, 0x00]),
+                Crl = new ReadOnlyMemory<byte>([0x30, 0x04, 0x02, 0x01, 0x2A]),
+            };
     }
 
     [Fact]
@@ -1357,6 +1526,20 @@ public sealed class ConformanceAuditG5Tests
         Assert.Equal("Audit producer", Description(b.MetadataXml).Element(PdfNs + "Producer")!.Value);
     }
 
+    [Fact(Skip = "Gap #747: an Info string and its XMP property differ for a carriage return (the XMP parser reads CR as LF) and for U+0001 (kept in Info, dropped from the XMP), against the should of ISO 19005-2, 6.6.3 and Table 7.")]
+    public void Iso19005_2_6_6_3_InfoAndXmpCarryTheSameTextForEveryStringTheWriterAccepts()
+    {
+        foreach (var title in new[] { "a\r\nb\rc", "a\u0001b" })
+        {
+            using var doc = new PdfDocument { Conformance = PdfConformance.PdfA2b, Timestamp = Pinned, DocumentId = PinnedId };
+            doc.Info.Title = title;
+            doc.AddPage();
+            var p = Scan.Parse(Save(doc));
+            var xmp = Description(p.MetadataXml).Element(Dc + "title")!.Descendants(Rdf + "li").Single().Value;
+            Assert.Equal(Decode((Scan.PStr)p.Info!["Title"]!), xmp);
+        }
+    }
+
     [Theory]
     [MemberData(nameof(DeliveredFixtures))]
     public void Iso19005_2_6_6_5_NoSavePathWritesXmpHistoryOrIdentifiers(PdfConformance claim, FixturePath path)
@@ -1493,6 +1676,7 @@ public sealed class ConformanceAuditG5Tests
             Reason = "Caf\u00e9",
             Location = "\u65e5\u672c",
             SignerName = "A\uD800B",
+            ContactInfo = "A\u00A0B",
         });
         var p = Scan.Parse(bytes);
         var sig = p.Objects.Single(o => o.Dict?.Name("Type") == "Sig").Dict!;
@@ -1502,6 +1686,8 @@ public sealed class ConformanceAuditG5Tests
         Assert.Equal([0x43, 0x61, 0x66, 0xE9], ((Scan.PStr)sig["Reason"]!).Bytes);
         var location = ((Scan.PStr)sig["Location"]!).Bytes;
         Assert.Equal([0xFE, 0xFF, 0x65, 0xE5, 0x67, 0x2C], location);
+        // U+00A0 is a euro sign in PDFDocEncoding, so it takes the UTF-16BE form.
+        Assert.Equal([0xFE, 0xFF, 0x00, 0x41, 0x00, 0xA0, 0x00, 0x42], ((Scan.PStr)sig["ContactInfo"]!).Bytes);
         // A lone surrogate becomes U+FFFD, not an ill-formed UTF-16BE pair.
         Assert.Equal("A\uFFFDB", Decode((Scan.PStr)sig["Name"]!));
     }
@@ -1520,14 +1706,14 @@ public sealed class ConformanceAuditG5Tests
     [Fact]
     public void Iso32000_1_7_3_5_NamesEscapeNumberSignSpaceAndDelimitersAndReadBackTheSame()
     {
-        const string name = "A#B C/D(E)%F\u00e9";
+        const string name = "A#B C/D(E)%F[G]<H>{I}\u00e9";
         using var ms = new MemoryStream();
         new PdfName(name).WriteTo(new PdfWriter(ms));
         var written = Encoding.ASCII.GetString(ms.ToArray());
 
         // 7.3.5 a to c: a number sign, white space, a delimiter and anything outside ! to ~ are written
         // as # and two hex digits after the solidus.
-        Assert.Equal("/A#23B#20C#2FD#28E#29#25F#E9", written);
+        Assert.Equal("/A#23B#20C#2FD#28E#29#25F#5BG#5D#3CH#3E#7BI#7D#E9", written);
         var lexer = new Scan.Lexer(ms.ToArray(), 0);
         var read = Assert.IsType<Scan.PName>(lexer.ReadToken());
         Assert.Equal(name, read.Text);
@@ -1536,7 +1722,7 @@ public sealed class ConformanceAuditG5Tests
         using var doc = new PdfDocument();
         var page = doc.AddPage();
         new PdfCanvas(page).DoXObject(name).Finish();
-        Assert.Equal("/A#23B#20C#2FD#28E#29#25F#E9 Do\n", Encoding.ASCII.GetString(page.ContentBytes!));
+        Assert.Equal("/A#23B#20C#2FD#28E#29#25F#5BG#5D#3CH#3E#7BI#7D#E9 Do\n", Encoding.ASCII.GetString(page.ContentBytes!));
     }
 
     // ── Streams: ISO 32000-1, 7.3.8.2; the empty stream (#643) ─────────────────────────────────
@@ -1561,7 +1747,10 @@ public sealed class ConformanceAuditG5Tests
         Assert.Empty(p.Problems);
 
         Assert.Contains("No syntax or stream encoding errors found", QpdfCheck(bytes), StringComparison.Ordinal);
-        ExternalTool.TryRun("pdftotext", [WriteTemp(bytes), "-"], out var exit, out var stdout, out var stderr, out var timedOut);
+        using var dir = new TempDir();
+        var emptyPath = dir.Path("empty.pdf");
+        File.WriteAllBytes(emptyPath, bytes);
+        ExternalTool.TryRun("pdftotext", [emptyPath, "-"], out var exit, out var stdout, out var stderr, out var timedOut);
         Assert.False(timedOut);
         Assert.True(exit == 0, stderr);
         Assert.Equal(string.Empty, stdout.Trim());
@@ -1570,13 +1759,6 @@ public sealed class ConformanceAuditG5Tests
             var (compliant, failed) = VeraPdf(Flavour(claim), bytes);
             Assert.True(compliant, string.Join(",", failed));
         }
-    }
-
-    private static string WriteTemp(byte[] bytes)
-    {
-        var path = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "vellum-audit-g5-" + Guid.NewGuid().ToString("N") + ".pdf");
-        File.WriteAllBytes(path, bytes);
-        return path;
     }
 
     // ── Dates: ISO 32000-2, 7.9.4 ──────────────────────────────────────────────────────────────
@@ -1601,10 +1783,19 @@ public sealed class ConformanceAuditG5Tests
         Assert.Equal("00", match.Groups[9].Value);
     }
 
-    [Fact(Skip = "Gap #743: the signature /M date ends in an apostrophe (D:20261120120000+00'00'), where the grammar of ISO 32000-2, 7.9.4 ends at the minutes and its NOTE 2 calls the apostrophe the form up to PDF 1.7; the held ISO 32000-1 grammar line does not show it either.")]
+    [Fact(Skip = "Gap #743: the signature /M date ends in an apostrophe (D:20261120120000+00'00'), where the grammar of ISO 32000-2, 7.9.4 ends at the minutes; NOTE 2 calls the apostrophe the form up to PDF 1.7, which a reader should accept, not the form a writer produces.")]
     public void Iso32000_2_7_9_4_SignatureDateEndsAtTheMinutesInAPdf20File()
     {
         var p = Parsed(PdfConformance.None, FixturePath.Signed);
+        var m = Decode((Scan.PStr)p.Objects.Single(o => o.Dict?.Name("Type") == "Sig").Dict!["M"]!);
+        Assert.Matches(@"^D:\d{14}[+\-Z]\d\d'\d\d$", m);
+    }
+
+    [Fact(Skip = "Gap #743: the signature /M date of a signed PDF/A-2b file ends in an apostrophe; the date grammar of ISO 32000-1, 7.9.4 (page 87 of the held copy), which ISO 19005-2 clause 5 and ISO 14289-1 6.2 bind, ends at the minutes, so the file is invalid under its claim.")]
+    public void Iso32000_1_7_9_4_SignatureDateEndsAtTheMinutesInAPdfAFile()
+    {
+        var p = Parsed(PdfConformance.PdfA2b, FixturePath.Signed);
+        Assert.StartsWith("%PDF-1.7", p.Text);
         var m = Decode((Scan.PStr)p.Objects.Single(o => o.Dict?.Name("Type") == "Sig").Dict!["M"]!);
         Assert.Matches(@"^D:\d{14}[+\-Z]\d\d'\d\d$", m);
     }

@@ -357,6 +357,10 @@ internal static class AuditScanner
             ? Xrefs.First(x => x.Trailer?.Has("Root") == true).Trailer!
             : Objects.Last(o => o.Dict?.Name("Type") == "XRef").Dict!;
 
+        /// <summary>Every trailer in file order: each classic section's, and each cross-reference stream's dictionary.</summary>
+        internal IEnumerable<PDict> AllTrailers => Xrefs.Where(x => x.Trailer is not null).Select(x => x.Trailer!)
+            .Concat(Objects.Where(o => o.Dict?.Name("Type") == "XRef").Select(o => o.Dict!));
+
         internal PDict Catalog => (PDict)Resolve(Trailer["Root"])!;
 
         internal object? Resolve(object? v) => v is PRef r && ByNumber.TryGetValue(r.Number, out var o) ? o.Value : v;
@@ -468,8 +472,12 @@ internal static class AuditScanner
         }
         foreach (var o in p.Objects)
             p.ByNumber[o.Number] = o;
-        foreach (var content in p.PageContents())
-            p.Tokens.AddRange(TokenizeContent(content));
+        // An encrypted file's streams are ciphertext; only the structure is read from it.
+        if (!p.AllTrailers.Any(t => t.Has("Encrypt")))
+        {
+            foreach (var content in p.PageContents())
+                p.Tokens.AddRange(TokenizeContent(content));
+        }
         return p;
     }
 
