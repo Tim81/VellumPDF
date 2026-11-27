@@ -87,8 +87,8 @@ internal sealed class ListLayoutRun
 
     /// <summary>
     /// The anchors the elements of the layout hold, once the layout has walked them, or null before
-    /// and for a run that no layout started. A link to an anchor is checked against it where it is
-    /// registered.
+    /// and for a run that no layout started. A link to an anchor is checked against it where it
+    /// is registered.
     /// </summary>
     internal NavigationPlan? Navigation { get; set; }
 

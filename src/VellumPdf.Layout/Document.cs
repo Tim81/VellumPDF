@@ -136,8 +136,8 @@ public sealed class Document : IDisposable
     /// to keep a number of lines that the pages could not hold; warnings, which
     /// <see cref="StrictDiagnostics"/> saves) and
     /// <see cref="LayoutDiagnosticCode.DiagnosticsDropped"/>. Every other one saves by default;
-    /// only <see cref="StrictDiagnostics"/> refuses it, and a later major version refuses them
-    /// all.</para>
+    /// only <see cref="StrictDiagnostics"/> refuses it, and a later major version refuses
+    /// them all.</para>
     /// <para>The channel stores at most 1,000 distinct items, and adds
     /// <see cref="LayoutDiagnosticCode.DiagnosticsDropped"/> after them when it dropped any, so the
     /// list can hold 1,001. That item's <see cref="LayoutDiagnostic.Count"/> is the number of

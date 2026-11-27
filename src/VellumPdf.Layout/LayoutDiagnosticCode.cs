@@ -24,8 +24,7 @@ public enum LayoutDiagnosticCode
     // Reserved, not defined here, so that later members do not collide:
     //   105 SymbolFontMeasuredAsZero (Error), 204 ListDepthCapped, 205 ListEntriesCapped, 206
     //   ListEntrySkipped (all Error), 302 SurplusCell (Error), 402 UnknownBandToken. The rest of
-    // the
-    //   8xx block stays free for later pagination reports.
+    //   the 8xx block stays free for later pagination reports.
 
     /// <summary>
     /// A <see cref="Elements.TextRun"/> with a null style that yields no word, so it saved without

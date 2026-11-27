@@ -59,8 +59,8 @@ public sealed class PageReferenceCostTests
         NavigationPlan.StylesRead = 0;
         NavigationPlan.Build(renderers);
 
-        // A string cell is one style, a run cell one for each of its runs.
-        Assert.Equal(100 * (1 + 2), NavigationPlan.StylesRead);
+        // Each cell's own style is read once, and a run cell's runs besides.
+        Assert.Equal(100 * (1 + 1 + 2), NavigationPlan.StylesRead);
     }
 
     [Fact]

@@ -331,9 +331,9 @@ public sealed class TextStyle
     /// <exception cref="InvalidOperationException">
     /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
     /// from this property, when <see cref="Document.StrictDiagnostics"/> is set and a cell or band
-    /// link is left out under a PDF/UA-1 claim, and for a style that also sets <see
-    /// cref="LinkAnchor"/>. The document cannot be saved again, except when the style is refused
-    /// before any layout runs.
+    /// link is left out under a PDF/UA-1 claim, and for a style that also sets
+    /// <see cref="LinkAnchor"/>. The document cannot be saved again, except when the style is
+    /// refused before any layout runs.
     /// </exception>
     /// <exception cref="ArgumentException">
     /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
@@ -360,18 +360,14 @@ public sealed class TextStyle
     /// library does not write for them; PDF/A-2a and PDF/A-2u accept the link. A name only an item
     /// below the second level of a list holds is refused too, because that item is never drawn. An
     /// anchor whose element the layout does not draw is refused after the layout, and the document
-    /// cannot be saved again. A renderer of yours that draws a link to a name no element holds is
-    /// refused where it registers the link, after the layout started, and the document cannot be
-    /// saved again. <see cref="VellumPdf.Layout.Elements.Preformatted"/> refuses a style with this
-    /// set from its constructor, with <see cref="ArgumentException"/>.
-    /// <para><b>The save reads the styles the elements hold, not the text they draw.</b> The style
-    /// of every run, string cell and band, and of each item of the first two levels of a list, is
-    /// refused as above even where it draws no text, as an empty run, an empty cell or an empty
-    /// band template does. The save does not read the style of an item below the second level or of
-    /// that item's runs, <see cref="VellumPdf.Layout.Elements.Table.Cell.Style"/> or
-    /// <see cref="VellumPdf.Layout.Elements.Table.TableElement.DefaultCellStyle"/> on a cell built
-    /// from runs, or a default cell style that the cell's own style replaces. There a name no
-    /// element holds, or a PDF/UA-1 claim, does not refuse the save, and no link is written.</para>
+    /// cannot be saved again.
+    /// <para><b>The save checks every style an element of the document holds</b>, wherever it sits
+    /// and whether or not the layout draws it; a style that is checked and not drawn writes no
+    /// link. The one style it cannot check is a style held inside a renderer of yours. A link such
+    /// a renderer draws to a name no element holds, or to any anchor under PDF/UA-1, is refused
+    /// where it registers the link, after the layout started, and the document cannot be saved
+    /// again. <see cref="VellumPdf.Layout.Elements.Preformatted"/> refuses a style with this set
+    /// from its constructor, with <see cref="ArgumentException"/>.</para>
     /// <para>The link is written as a named destination, <c>/Dest (name)</c>, and not as a GoTo
     /// action, because ISO 32000-1, 12.6.4.2 prefers the direct form. It covers the text the way a
     /// <see cref="LinkUri"/> does, in a paragraph, a heading, a list item (the marker included), a
@@ -391,8 +387,8 @@ public sealed class TextStyle
 
     /// <summary>
     /// A copy of this style that links to <paramref name="anchor"/>. It copies every public
-    /// property that can be set, and clears <see cref="LinkUri"/>, which a link to an anchor
-    /// replaces.
+    /// property that can be set, and clears <see cref="LinkUri"/>, which a link to an
+    /// anchor replaces.
     /// </summary>
     internal TextStyle WithLinkAnchor(string anchor) => new()
     {

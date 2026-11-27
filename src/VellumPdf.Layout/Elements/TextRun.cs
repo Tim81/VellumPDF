@@ -114,9 +114,9 @@ public sealed class TextRun(string Text, TextStyle Style)
     /// <see cref="InvalidOperationException"/> while it measures: earlier when the labels of all
     /// references, taken together, are the labels of a pass two or more passes back, and at the
     /// fifth pass when they are still changing.</para>
-    /// <para><b>A label that is empty or only white space is refused</b> once the labels settle, because
-    /// it prints nothing. A reference in an item below the second level of a list is ignored, as
-    /// the item is; see <see cref="TextStyle.LinkAnchor"/>.</para>
+    /// <para><b>A label that is empty or only white space is refused</b> once the labels settle,
+    /// because it prints nothing. A reference in an item below the second level of a list is
+    /// checked and never drawn.</para>
     /// <para>The document decides before any layout whether an element after a list can need about
     /// as many page continuations as one element may take, and no label is known then. It counts
     /// each reference as the longest prefix of the document's label ranges plus 16 characters,
@@ -136,8 +136,8 @@ public sealed class TextRun(string Text, TextStyle Style)
     /// </remarks>
     /// <param name="anchor">The anchor to print the page of.</param>
     /// <param name="style">The style of the label.</param>
-    /// <exception cref="ArgumentNullException"><paramref name="anchor"/> or <paramref
-    /// name="style"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentNullException"><paramref name="anchor"/> or
+    /// <paramref name="style"/> is <see langword="null"/>.</exception>
     /// <exception cref="ArgumentException"><paramref name="anchor"/> is empty, longer than 127
     /// characters, or holds a character outside <c>A-Z a-z 0-9 . _ - :</c>.</exception>
     /// <exception cref="InvalidOperationException">

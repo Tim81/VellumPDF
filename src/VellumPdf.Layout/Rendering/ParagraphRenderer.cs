@@ -56,8 +56,8 @@ public sealed partial class ParagraphRenderer : IRenderer, IPageBreakSource, IKe
 
     // The labels of the page references the wrap read, or null when it read none. A wrap whose
     // labels the table no longer holds is made again. The pieces a split returns carry the wrap but
-    // not this, so a piece never wraps again: its labels cannot change within the pass that made
-    // it.
+    // not this, so a piece never wraps again: its labels cannot change within the pass that
+    // made it.
     private ReferenceReads? _reads;
 
     // Pagination window: only lines[_startLine.._endLine) are in this renderer.
@@ -134,8 +134,8 @@ public sealed partial class ParagraphRenderer : IRenderer, IPageBreakSource, IKe
     /// reads the placeholder label, and the save refuses the reference after the layout.</para>
     /// </remarks>
     /// <exception cref="InvalidOperationException">
-    /// A page reference is laid out outside a save. A run that yields text has a <see
-    /// cref="TextStyle.FontSize"/> or <see cref="TextStyle.Color"/> that is refused; see those
+    /// A page reference is laid out outside a save. A run that yields text has a
+    /// <see cref="TextStyle.FontSize"/> or <see cref="TextStyle.Color"/> that is refused; see those
     /// members. It is also raised when the paragraph has a tab stop with a leader and a run has a
     /// font size the leader cannot be drawn at; see <see cref="Paragraph.TabStops"/>.
     /// </exception>

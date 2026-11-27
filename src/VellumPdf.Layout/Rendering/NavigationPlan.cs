@@ -38,8 +38,8 @@ internal sealed class NavigationPlan
     /// <summary>The page references the walk found, or null when the elements hold none.</summary>
     internal PageReferenceTable? References { get; private set; }
 
-    /// <summary>Whether an element of the document holds the anchor <paramref
-    /// name="name"/>.</summary>
+    /// <summary>Whether an element of the document holds the anchor
+    /// <paramref name="name"/>.</summary>
     internal bool Declares(string name) => _byName is not null && _byName.ContainsKey(name);
 
     /// <summary>Whether a <see cref="PageBreak"/> in the flow starts a label range.</summary>
@@ -172,6 +172,7 @@ internal sealed class NavigationPlan
     private void WalkTable(TableElement table, int index)
     {
         var rows = table.Rows;
+        NoteStyle(table.DefaultCellStyle, new ElementSite(LayoutElementKind.Table, index));
         for (var r = 0; r < rows.Count; r++)
         {
             var cells = rows[r].Cells;
@@ -181,24 +182,20 @@ internal sealed class NavigationPlan
                 if (cell is null) continue;
                 var site = new ElementSite(LayoutElementKind.Table, index, Row: r, Cell: c);
 
-                // A cell built from runs links through its runs; its own style is not drawn there.
-                if (cell.Runs is { } runs)
-                {
-                    NoteRuns(runs, site);
-                }
-                else
-                {
-                    StylesRead++;
-                    NoteStyle(cell.Style ?? table.DefaultCellStyle, site);
-                }
+                // The cell's own style is read whether it styles a string or, in a run cell,
+                // nothing, and so is each run's.
+                StylesRead++;
+                NoteStyle(cell.Style, site);
+                if (cell.Runs is { } runs) NoteRuns(runs, site);
             }
         }
     }
 
-    private void NoteItem(ListItem item, TextStyle style, ElementSite site)
+    // An item with a null text is refused where its text is read, with its own exception.
+    private void NoteItem(ListItem item, ElementSite site)
     {
         if (item.HasNullText) return;
-        NoteStyle(style, site);
+        NoteStyle(item.Style, site);
         NoteRuns(item.OwnRuns, site);
     }
 
@@ -226,25 +223,25 @@ internal sealed class NavigationPlan
     {
         Add(list.Anchor, LayoutElementKind.List, index);
         var items = list.Items;
-        var defaultStyle = list.DefaultStyle ?? TextStyle.Default;
+        NoteStyle(list.DefaultStyle, new ElementSite(LayoutElementKind.List, index));
         for (var item = 0; item < items.Count; item++)
         {
             var top = items[item];
             Add(top.Anchor, LayoutElementKind.List, index, item);
-            var topStyle = top.Style ?? defaultStyle;
-            NoteItem(top, topStyle, new ElementSite(LayoutElementKind.List, index, item));
+            NoteItem(top, new ElementSite(LayoutElementKind.List, index, item));
             if (top.Children is not { } children) continue;
 
             for (var child = 0; child < children.Count; child++)
             {
                 var second = children[child];
                 Add(second.Anchor, LayoutElementKind.List, index, item, child);
-                NoteItem(second, second.Style ?? topStyle, new ElementSite(LayoutElementKind.List, index, item, child));
+                NoteItem(second, new ElementSite(LayoutElementKind.List, index, item, child));
                 if (second.Children is null) continue;
 
                 // Below the second level nothing is drawn, so these items matter only for the
-                // anchors they hold. The visited set ends a cycle and keeps a subtree reached from
-                // many parents to one visit.
+                // anchors they hold and the styles they set, which are read like any other. The
+                // visited set ends a cycle and keeps a subtree reached from many parents to
+                // one visit.
                 deep ??= new HashSet<ListItem>(ReferenceEqualityComparer.Instance);
                 var pending = new Stack<ListItem>();
                 foreach (var next in second.Children)
@@ -253,6 +250,7 @@ internal sealed class NavigationPlan
                 {
                     var below = pending.Pop();
                     Add(below.Anchor, LayoutElementKind.List, index, item, child, deeper: true);
+                    NoteItem(below, new ElementSite(LayoutElementKind.List, index, item, child));
                     if (below.Children is null) continue;
                     foreach (var next in below.Children)
                         if (deep.Add(next)) pending.Push(next);

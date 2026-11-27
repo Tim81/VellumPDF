@@ -173,43 +173,74 @@ public sealed class AnchorLinkTests
         Assert.Contains("Paragraph 0", Assert.Throws<InvalidOperationException>(() => Save(doc)).Message, StringComparison.Ordinal);
     }
 
-    [Fact]
-    public void TheStyleOfAnItemBelowTheSecondLevel_andOfARunCellsOwnStyle_isNotRead()
-    {
-        foreach (var conformance in new[] { PdfConformance.None, PdfConformance.PdfUA1 })
-        {
-            var bad = Style(anchor: "missing");
-            var leaf = new ListItem("deep", bad);
-            var middle = new ListItem("middle");
-            middle.AddChild(leaf);
-            var top = new ListItem("top");
-            top.AddChild(middle);
-            var table = new TableElement().SetColumnWidths(100);
-            table.AddRow().AddCell(new Cell([new TextRun("x", Style())]) { Style = bad });
-
-            var doc = ShortPage();
-            doc.Conformance = conformance;
-            doc.Tagged = conformance == PdfConformance.PdfUA1;
-            doc.Language = "en-US";
-            doc.Info.Title = "t";
-            doc.Add(new ListElement().Add(top));
-            doc.Add(table);
-
-            // Neither a name no element holds nor the claim refuses the save, and no link is written.
-            var pdf = Save(doc);
-            Assert.DoesNotContain(Links(pdf), l => l.Dest == "missing");
-        }
-    }
-
-    [Fact]
-    public void ALinkingDefaultCellStyle_thatACellStyleOverrides_isNotRead()
+    // Every style an element holds is checked, wherever it sits and whether or not it is drawn.
+    // Each case puts the style where the layout does not draw it, or draws it only through another.
+    private static Document Hold(int where, TextStyle style)
     {
         var doc = ShortPage();
-        var table = new TableElement { DefaultCellStyle = Style(anchor: "missing") }.SetColumnWidths(100);
-        table.AddRow().AddCell(new Cell("x") { Style = Style() });
-        doc.Add(table);
+        var plain = Style();
+        switch (where)
+        {
+            case 0: // a list default style, in a list with no items
+                doc.Add(new ListElement { DefaultStyle = style });
+                break;
+            case 1: // a list default style that every item replaces
+                doc.Add(new ListElement { DefaultStyle = style }.Add(new ListItem("x", plain)));
+                break;
+            case 2: // an item below the second level
+                var leaf = new ListItem("deep", style);
+                var middle = new ListItem("middle");
+                middle.AddChild(leaf);
+                var top = new ListItem("top");
+                top.AddChild(middle);
+                doc.Add(new ListElement().Add(top));
+                break;
+            case 3: // the own style of a cell built from runs
+                var runs = new TableElement().SetColumnWidths(100);
+                runs.AddRow().AddCell(new Cell([new TextRun("x", plain)]) { Style = style });
+                doc.Add(runs);
+                break;
+            default: // a default cell style that the cell's own style replaces
+                var replaced = new TableElement { DefaultCellStyle = style }.SetColumnWidths(100);
+                replaced.AddRow().AddCell(new Cell("x") { Style = plain });
+                doc.Add(replaced);
+                break;
+        }
 
-        Assert.NotEmpty(Save(doc));
+        return doc;
+    }
+
+    [Theory]
+    [InlineData(0, "List 0")]
+    [InlineData(1, "List 0")]
+    [InlineData(2, "List 0 (item 0, child 0)")]
+    [InlineData(3, "row 0, cell 0")]
+    [InlineData(4, "Table 0")]
+    public void AStyleTheLayoutDoesNotDraw_isRefusedForAnUnknownName_andForPdfUa1_andSavesForAKnownOne(int where, string site)
+    {
+        var unknown = Hold(where, Style(anchor: "missing"));
+        var ex = Assert.Throws<InvalidOperationException>(() => Save(unknown));
+        Assert.Contains(site, ex.Message, StringComparison.Ordinal);
+        Assert.Contains("\"missing\"", ex.Message, StringComparison.Ordinal);
+        Assert.Contains("can be saved", ex.Message, StringComparison.Ordinal);
+
+        // Giving an element the name makes the document saveable: nothing was laid out.
+        unknown.Add(new Paragraph("here") { Anchor = "missing" });
+        Assert.NotEmpty(Save(unknown));
+
+        var known = Hold(where, Go);
+        AddTarget(known);
+        Assert.NotEmpty(Save(known));
+
+        var ua = Hold(where, Go);
+        ua.Conformance = PdfConformance.PdfUA1;
+        ua.Tagged = true;
+        ua.Language = "en-US";
+        ua.Info.Title = "t";
+        AddTarget(ua);
+        var refused = Assert.Throws<InvalidOperationException>(() => Save(ua));
+        Assert.Contains("PDF/UA-1", refused.Message, StringComparison.Ordinal);
+        Assert.Contains(site, refused.Message, StringComparison.Ordinal);
     }
 
     [Fact]

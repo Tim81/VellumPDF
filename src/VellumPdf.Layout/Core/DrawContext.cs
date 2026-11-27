@@ -229,8 +229,8 @@ public sealed class DrawContext
     /// </summary>
     /// <exception cref="InvalidOperationException">
     /// The document claims PDF/UA-1, which a link to an anchor breaks without a Link structure
-    /// element, or the layout in progress is for this document and no element of it holds the
-    /// anchor.
+    /// element, or the layout in progress is for this document and no element of it holds
+    /// the anchor.
     /// </exception>
     internal void AddAnchorLinkAnnotation(LayoutBox box, string name, LinkOwner owner = LinkOwner.Run)
     {

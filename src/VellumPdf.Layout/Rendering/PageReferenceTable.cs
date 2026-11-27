@@ -9,8 +9,8 @@ using VellumPdf.Layout.Rendering.Table;
 
 namespace VellumPdf.Layout.Rendering;
 
-/// <summary>Where a text style or a page reference sits among the elements, for a
-/// message.</summary>
+/// <summary>Where a text style or a page reference sits among the elements, for
+/// a message.</summary>
 internal readonly record struct ElementSite(
     LayoutElementKind Kind, int Index, int Item = -1, int Child = -1, int Row = -1, int Cell = -1)
 {
@@ -160,8 +160,8 @@ internal sealed class PageReferenceTable : IPlanDependent
 
     /// <summary>
     /// The entry of <paramref name="run"/>. A reference the walk did not find, one a renderer of
-    /// the caller's holds, gets an entry that is never resolved and that the save refuses after the
-    /// layout.
+    /// the caller's holds, gets an entry that is never resolved and that the save refuses after
+    /// the layout.
     /// </summary>
     internal PageReferenceEntry EntryFor(TextRun run)
     {
@@ -253,11 +253,7 @@ internal sealed class PageReferenceTable : IPlanDependent
 
         var more = unstable > named ? $", and {(unstable - named).ToString(CultureInfo.InvariantCulture)} more" : "";
         var detail = parts.Count > 0 ? ": " + string.Join("; ", parts) + more : "";
-        return $"Pagination did not settle: {cause}{detail}. " +
-            "A label that depends on where its anchor lands can change the layout and so move that " +
-            "anchor, and here the passes keep changing it instead of settling. " +
-            "A Document cannot be saved again after a layout that threw; a DocumentRenderer " +
-            "needs a new renderer and a new PdfDocument.";
+        return $"Pagination did not settle: {cause}{detail}.";
     }
 
     /// <summary>

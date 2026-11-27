@@ -375,7 +375,8 @@ public sealed class Cell
     /// style of its run. A space is measured in the style of the run that holds it. Adjacent runs
     /// that share one <see cref="TextStyle"/> instance and hold text are one piece of text, drawn
     /// in one show operator, so a cell of such runs draws the string cell of the text they hold in
-    /// that style. Which links are written is on <see cref="TextStyle.LinkUri"/>.</para>
+    /// that style. Which links are written is on <see cref="TextStyle.LinkUri"/>, and the refusals
+    /// of a <see cref="TextStyle.LinkAnchor"/> are on that property.</para>
     /// <para>Every line of the cell is as tall as the largest <see
     /// cref="TextStyle.EffectiveLeading"/> among the runs that hold text, and the first baseline
     /// lies one largest font size of those runs below the top of the cell's content, padding

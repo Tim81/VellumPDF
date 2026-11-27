@@ -334,8 +334,8 @@ public sealed class DocumentRenderer
     /// <para>This method has no strict switch and exposes no <c>Diagnostics</c>: it never applies
     /// <see cref="Document.StrictDiagnostics"/>, so none of that refusal reaches you from
     /// here.</para>
-    /// <para><b>A page reference or a link to an anchor can refuse this call.</b> The refusals, and
-    /// which of them leave the document saveable, are on <see cref="TextStyle.LinkAnchor"/> and
+    /// <para><b>A page reference or a link to an anchor can refuse this call.</b> The refusals are
+    /// on <see cref="TextStyle.LinkAnchor"/> and
     /// <see cref="TextRun.PageReference(string, TextStyle)"/>. In a renderer that holds a page
     /// reference, a <see cref="Header"/> or <see cref="Footer"/> replaced while this call runs also
     /// makes it throw "Pagination changed between the measuring and the drawing pass". <b>Do not
@@ -578,8 +578,8 @@ public sealed class DocumentRenderer
     }
 
     // What a reference can add to the bound on the continuations an element needs: the most its
-    // label can hold, which the walk set from the ranges of the document. Zero for a layout with no
-    // reference.
+    // label can hold, which the walk set from the ranges of the document. Zero for a layout with
+    // no reference.
     private static long ReferenceBound => ListLayoutRun.Current?.References?.LabelBound ?? 0;
 
     private static LayoutElementKind KindOf(IRenderer renderer) => renderer switch
@@ -1150,17 +1150,13 @@ public sealed class DocumentRenderer
         return new InvalidOperationException(
             $"Pagination did not settle after {MaxMeasureRuns} layout passes: {cause}. " +
             "A string that depends on where its target lands can change the layout and so move " +
-            "that target, and here the passes keep changing it instead of settling. " +
-            "A Document cannot be saved again after a layout that threw; a DocumentRenderer " +
-            "needs a new renderer and a new PdfDocument.");
+            "that target, and here the passes keep changing it instead of settling.");
     }
 
     private static InvalidOperationException PaginationChanged() =>
         new("Pagination changed between the measuring and the drawing pass: the drawing pass " +
             "reported a placement that differs from the last measuring run's, so a renderer " +
-            "answered differently the later time. " +
-            "A Document cannot be saved again after a layout that threw; a DocumentRenderer " +
-            "needs a new renderer and a new PdfDocument.");
+            "answered differently the later time.");
 
     // FreshPageArea is the area of the page a Nothing answer is retried on: the next page, or, for
     // the retry itself, the page it is already on. Under mirrored margins the two differ in x.

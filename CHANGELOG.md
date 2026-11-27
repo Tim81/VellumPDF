@@ -539,38 +539,39 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
     with the property are refused: the first two from the save before any layout, the last from the
     constructor with `ArgumentException`.
   - `TextRun.PageReference(anchor, style)` prints the label of the page where the element holding
-    `anchor` starts, as `{page}` prints it in a band: the decimal number, or the prefix and numeral of
-    the page's label range. `Text` stays empty, so the label is in no `Paragraph.Text`, heading text,
-    outline title or `{chapter}`. The run is always a link to its anchor. It works in a paragraph, a
-    heading, a list item and a run cell. The label is resolved by laying the document out until the
-    labels stop changing (at most five measuring passes, then the drawing pass), so a forward
-    reference needs no second pass from the caller. Pagination that does not settle is refused once the layout has started: when the labels of a
-    pass are those of a pass two or more back, or are still changing after five measuring passes.
+    `anchor` starts, as `{page}` prints it in a band: the decimal number, or the prefix and numeral
+    of the page's label range. `Text` stays empty, so the label is in no `Paragraph.Text`, heading
+    text, outline title or `{chapter}`. The run is always a link to its anchor. It works in a
+    paragraph, a heading, a list item and a run cell. The label is resolved by laying the document
+    out until the labels stop changing (at most five measuring passes, then the drawing pass), so a
+    forward reference needs no second pass from the caller. Pagination that does not settle is
+    refused once the layout has started: when the labels of a pass are those of a pass two or more
+    back, or are still changing after five measuring passes.
   - A page reference or a link to an anchor under a PDF/UA-1 claim is refused before layout, naming
     the element: the link would be untagged. PDF/A-2a and PDF/A-2u save it.
   - **Attention:** once a document holds a page reference, the drawing pass is compared with the
     last measuring run, which no document did before. A renderer of yours that answers differently
-    the later time, or a `Header` or `Footer` replaced while the document renders, then makes the save
-    throw "Pagination changed between ...". Documents without a reference are not compared and behave
-    as before. A reference held by a renderer the document did not add cannot be resolved and is refused
-    after the layout, naming the anchor.
+    the later time, or a `Header` or `Footer` replaced while the document renders, then makes the
+    save throw "Pagination changed between ...". Documents without a reference are not compared and
+    behave as before. A reference held by a renderer the document did not add cannot be resolved and
+    is refused after the layout, naming the anchor.
   - New diagnostic `LayoutDiagnosticCode.LinkNotWritten` (701), an error, for a link the document
     leaves out; see the entry under Changed.
 
 ### Changed
 
-- **`LinkUri` in the style of a table cell or running band now draws a link (#475).** A string
-  cell given the style through `Cell.Style` or `TableElement.DefaultCellStyle` gets one `/Link`
-  annotation per line it draws, over the width `TextStyle.MeasureString` gives the line and cut to the
-  cell. A running band given the style gets one per page over the text it draws, none over a band of
-  only white space. Both were dropped
-  without a word before, so a document that sets the style on a cell or band changes: it gains these
-  annotations and nothing else. A cell built from runs is still linked by its runs' styles only. A
-  style set on a cell or band of a PDF/UA-1 document keeps its earlier output, no link, and the save now reports
-  `LinkNotWritten` (701) once per table and once per band with the count of links left out; strict
-  mode refuses it. A context built with no page, and a rectangle that would be written with a value
-  that is not finite, write no cell or band link and report nothing. A paragraph link keeps throwing
-  `ArgumentNullException` for a context with no page.
+- **`LinkUri` in the style of a table cell or running band now draws a link (#475).** A string cell
+  given the style through `Cell.Style` or `TableElement.DefaultCellStyle` gets one `/Link`
+  annotation per line it draws, over the width `TextStyle.MeasureString` gives the line and cut to
+  the cell. A running band given the style gets one per page over the text it draws, none over a
+  band of only white space. Both were dropped without a word before, so a document that sets the
+  style on a cell or band changes: it gains these annotations and nothing else. A cell built from
+  runs is still linked by its runs' styles only. A style set on a cell or band of a PDF/UA-1
+  document keeps its earlier output, no link, and the save now reports `LinkNotWritten` (701) once
+  per table and once per band with the count of links left out; strict mode refuses it. A context
+  built with no page, and a rectangle that would be written with a value that is not finite, write
+  no cell or band link and report nothing. A paragraph link keeps throwing `ArgumentNullException`
+  for a context with no page.
 
 - **The exception for an image too tall for a page now ends with a reason (#471).** For a
   `LayoutImage` that the document lays out, with or without `FitToPage`, `Save` throws the same

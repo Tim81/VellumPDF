@@ -114,9 +114,7 @@ public sealed class PageReferenceGuardTests
         using var ms2 = new MemoryStream();
         var ex = Assert.Throws<InvalidOperationException>(() => renderer.Render(ms2));
         Assert.StartsWith("Pagination changed between", ex.Message, StringComparison.Ordinal);
-        Assert.EndsWith(
-            "A Document cannot be saved again after a layout that threw; a DocumentRenderer needs a new renderer and a new PdfDocument.",
-            ex.Message, StringComparison.Ordinal);
+        Assert.EndsWith("so a renderer answered differently the later time.", ex.Message, StringComparison.Ordinal);
 
         // The same renderer does not render again.
         Assert.ThrowsAny<Exception>(() => renderer.Render(new MemoryStream()));

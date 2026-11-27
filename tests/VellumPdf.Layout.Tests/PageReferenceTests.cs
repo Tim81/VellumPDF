@@ -199,9 +199,10 @@ public sealed class PageReferenceTests
         Assert.Contains("'t'", ex.Message, StringComparison.Ordinal);
         Assert.Contains("Paragraph 0", ex.Message, StringComparison.Ordinal);
 
-        // A fresh document lays out the same way, so the message does not advise one.
-        Assert.DoesNotContain("new document", ex.Message, StringComparison.Ordinal);
-        Assert.Contains("cannot be saved again", ex.Message, StringComparison.Ordinal);
+        // The message says what happened and not what to do next; a second save of a Document says
+        // that.
+        Assert.EndsWith("'viii'.", ex.Message, StringComparison.Ordinal);
+        Assert.DoesNotContain("saved again", ex.Message, StringComparison.Ordinal);
     }
 
     [Fact]
