@@ -437,6 +437,7 @@ public sealed class ListSkippedReportTests
             "lf-middle" => [abc, new TextRun(new string((char)10, 1), bad), def],
             "lf-trailing" => [abc, new TextRun(new string((char)10, 1), bad)],
             "lf-leading" => [new TextRun(new string((char)10, 1), bad), abc],
+            "cr-middle" => [abc, new TextRun(new string((char)13, 1), bad), def],
             "crlf-middle" => [abc, new TextRun(new string((char)13, 1) + new string((char)10, 1), bad), def],
             _ => throw new ArgumentOutOfRangeException(nameof(shape)),
         };
@@ -453,12 +454,14 @@ public sealed class ListSkippedReportTests
     [InlineData("foreign-handle", "lf-middle")]
     [InlineData("foreign-handle", "lf-trailing")]
     [InlineData("foreign-handle", "lf-leading")]
+    [InlineData("foreign-handle", "cr-middle")]
     [InlineData("foreign-handle", "crlf-middle")]
     [InlineData("undefined-standard14", "space")]
     [InlineData("undefined-standard14", "tab")]
     [InlineData("undefined-standard14", "lf-middle")]
     [InlineData("undefined-standard14", "lf-trailing")]
     [InlineData("undefined-standard14", "lf-leading")]
+    [InlineData("undefined-standard14", "cr-middle")]
     [InlineData("undefined-standard14", "crlf-middle")]
     public void AnEntryWhoseOnlyUndrawableRunDrawsNothing_isCounted(string kind, string shape)
     {
@@ -556,6 +559,28 @@ public sealed class ListSkippedReportTests
     }
 
     /// <summary>
+    /// A child whose text is in a font the document cannot draw stays exempt at the child's clamp
+    /// site, as an item's does: giving the text a width would draw it. The font is a handle another
+    /// document returned, because the text of a Standard 14 value the enumeration does not name
+    /// measures nothing, so the clamp is not reached and the row would pin no exemption.
+    /// </summary>
+    [Fact]
+    public void AChildWhoseTextIsInAnUndrawableFont_isNotCounted()
+    {
+        var doc = Page(header: false);
+        doc.StrictDiagnostics = true;
+        var list = new ListElement(ListStyle.OrderedDecimal) { Indent = 90 };
+        var parent = new ListItem([new TextRun("a", H(10))]) { Style = H(10) };
+        parent.AddChild(new ListItem([new TextRun("abc", Undrawable("foreign-handle"))]) { Style = H(10) });
+        list.Add(parent);
+        doc.Add(list);
+
+        Save(doc);
+
+        Assert.Empty(Skipped(doc));
+    }
+
+    /// <summary>
     /// An entry whose marker is in a font the document cannot draw throws when the save draws the
     /// marker, in the twin as it did before. Strict mode publishes the diagnostics before the
     /// write, so it shows that the entry is not counted: the exception is the write's own, and
@@ -595,6 +620,97 @@ public sealed class ListSkippedReportTests
 
         Assert.Empty(Skipped(doc));
         Assert.Contains(doc.Diagnostics, d => d.Code == LayoutDiagnosticCode.ListEntryPartDropped);
+    }
+
+    // ── A page reference ─────────────────────────────────────────────────────
+
+    // A document whose only list entry that matters holds a page reference in the given style, at the
+    // site the row names. The reference draws its label in that style, so the entry is one whose
+    // drawing throws when the style is undrawable. A drawable row has a renderer of yours added, so
+    // that the list is still laid out as its twin.
+    internal static Document ReferenceRow(string site, string kind, bool strict)
+    {
+        var style = kind == "drawable" ? H(10) : Undrawable(kind);
+        var doc = Page(header: false);
+        doc.StrictDiagnostics = strict;
+        var list = new ListElement(ListStyle.OrderedDecimal) { Indent = site switch { "clamp" => 1000, "child" => 90, _ => 20 } };
+        switch (site)
+        {
+            case "clamp":
+                list.Add(new ListItem([new TextRun("abc", H(10)), TextRun.PageReference("t", style)])
+                { Style = H(10), Anchor = "t" });
+                break;
+            case "move":
+                list.Add(new ListItem([new TextRun("t0", H(14))]) { Style = H(10), Anchor = "t" });
+                list.Add(new ListItem([new TextRun("t1", H(14)), TextRun.PageReference("t", style)]) { Style = H(10) });
+                break;
+            default:
+                var parent = new ListItem([new TextRun("a", H(10))]) { Style = H(10), Anchor = "t" };
+                parent.AddChild(new ListItem([TextRun.PageReference("t", style)]) { Style = H(10) });
+                list.Add(parent);
+                break;
+        }
+
+        doc.Add(list);
+        if (kind == "drawable") doc.Add(new Opaque());
+        return doc;
+    }
+
+    /// <summary>
+    /// A page reference draws its label in the style it holds, so an entry whose reference is in a
+    /// style the document cannot draw is exempt exactly as one whose text is: the new layout would
+    /// draw the label and the save would throw. The reference run holds no text, so reading the
+    /// text of the runs would count the entry.
+    /// </summary>
+    [Theory]
+    [InlineData("clamp", "foreign-handle")]
+    [InlineData("clamp", "undefined-standard14")]
+    [InlineData("child", "foreign-handle")]
+    public void AReferenceInAnUndrawableStyle_isNotCounted(string site, string kind)
+    {
+        var doc = ReferenceRow(site, kind, strict: true);
+
+        Save(doc);
+
+        Assert.Empty(Skipped(doc));
+    }
+
+    /// <summary>
+    /// At the move site the twin does not draw the part that does not fit, so the save does not
+    /// throw, and the new layout would move the entry and draw the label. The entry is exempt, and
+    /// only the part dropped is reported.
+    /// </summary>
+    [Theory]
+    [InlineData("foreign-handle")]
+    [InlineData("undefined-standard14")]
+    public void AReferenceInAnUndrawableStyleAtAMoveSite_isNotCounted(string kind)
+    {
+        var doc = ReferenceRow("move", kind, strict: false);
+
+        Save(doc);
+
+        Assert.Empty(Skipped(doc));
+        Assert.Contains(doc.Diagnostics, d => d.Code == LayoutDiagnosticCode.ListEntryPartDropped);
+    }
+
+    /// <summary>
+    /// The same reference in a style the document can draw is one the new layout would draw, so the
+    /// twin gives that entry up where the clamp or the move changes it: it is counted, and strict
+    /// mode refuses.
+    /// </summary>
+    [Theory]
+    [InlineData("clamp")]
+    [InlineData("move")]
+    [InlineData("child")]
+    public void AReferenceInADrawableStyle_isCounted(string site)
+    {
+        var doc = ReferenceRow(site, "drawable", strict: false);
+        Save(doc);
+        var item = Assert.Single(Skipped(doc));
+        Assert.Equal(1, item.Count);
+
+        var ex = Assert.Throws<InvalidOperationException>(() => Save(ReferenceRow(site, "drawable", strict: true)));
+        Assert.StartsWith("StrictDiagnostics refused the save: ListIndentClampSkipped", ex.Message, StringComparison.Ordinal);
     }
 
     // ── Both ─────────────────────────────────────────────────────────────────

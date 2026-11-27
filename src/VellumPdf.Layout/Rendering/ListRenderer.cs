@@ -574,10 +574,10 @@ public sealed class ListRenderer : IRenderer, IPageBreakSource, IKeepSource, IPl
             // text are both Nothing splits the list before it in both layouts, which PartUnplaced
             // reads as placed. An entry the clamp would have narrowed is counted as a clamp and
             // never as a move as well: its text has no width here, but PartUnplaced also reads a
-            // marker that is cut at the page end, without looking at the text. An
-            // entry whose marker or text the new layout would draw in a font the document cannot
-            // draw is not counted: that makes the save throw, so the twin gives nothing up for it.
-            // A continuation piece is laid out at a page top, so the page-top term covers it and it
+            // marker that is cut at the page end, without looking at the text. An entry whose
+            // marker or text the new layout would draw in a font the document cannot draw is not
+            // counted: that makes the save throw, so the twin gives nothing up for it. A
+            // continuation piece is laid out at a page top, so the page-top term covers it and it
             // needs no term of its own.
             if (countsMoves && !entry.ClampCounted
                 && !(i == _startItem && context.AtPageTop)
@@ -1134,12 +1134,12 @@ public sealed class ListRenderer : IRenderer, IPageBreakSource, IKeepSource, IPl
     }
 
     // Whether drawing the entry in the new layout would draw text in a font the document cannot
-    // draw, which makes the save throw: its marker, or a word of the tokens ParagraphRenderer
-    // places for its runs. That is the wrap's own reading of which style each piece of text is
-    // drawn in, so a run the wrap draws nothing for does not count. It measures nothing, so it
-    // records no glyph. The width the clamp gives the text does not
-    // change which styles the wrap places. Asked only for the entries the 207 count would
-    // otherwise count. Removed in 3.0 (#688), with the twin.
+    // draw, which makes the save throw: its marker, a word of the tokens ParagraphRenderer places
+    // for its runs, or a page reference, which draws its label in its own style. That is the wrap's
+    // own reading of which style each piece of text is drawn in, so a run the wrap draws nothing
+    // for does not count. It measures nothing, so it records no glyph, and the width the clamp
+    // gives the text does not change which styles the wrap places. Asked only for the entries the
+    // 207 count would otherwise count. Removed in 3.0 (#688), with the twin.
     private static bool DrawingWouldThrow(ListLayoutRun? run, TextStyle markerStyle, ListItem item) =>
         !ListLayoutRun.CanDraw(run, markerStyle)
         || (item.OwnRuns is { } runs

@@ -911,8 +911,9 @@ public sealed partial class ParagraphRenderer : IRenderer, IPageBreakSource, IKe
     }
 
     // The tokens WordWrap places, before anything is measured: the word pieces, line breaks and
-    // tabs of the runs, each with the style it is drawn in. A break has no style, and a run that
-    // holds no word yields no token, so a style that appears here is one that draws text.
+    // tabs of the runs, each with the style it is drawn in. A break has no style, and a run of
+    // white space alone yields no word token, so the style of a word token is one that draws text.
+    // A tab token, made only when there are tab stops, carries its run's style and draws no text.
     private static List<(string Text, TextStyle? Style, TokenKind Kind)> Tokenise(
         IReadOnlyList<TextRun> runs, bool tabbed, out int nullStyleRuns)
     {
@@ -991,10 +992,25 @@ public sealed partial class ParagraphRenderer : IRenderer, IPageBreakSource, IKe
     /// Whether the wrap of <paramref name="runs"/> draws a word in a style for which
     /// <paramref name="refused"/> is true. It reads the tokens the wrap places and measures
     /// nothing, so it records no glyph. A style that is only in a run of line breaks, white space
-    /// the wrap collapses or no text is not drawn, and does not count.
+    /// the wrap collapses or no text is not drawn, and does not count. A page reference holds no
+    /// text, so it yields no token here, and is read as a word in its own style instead.
     /// </summary>
+    /// <remarks>
+    /// The draw replaces a reference by its label, and the label is what the pagination makes it:
+    /// a measuring pass reads another string from the one the last pass does, and the table that
+    /// holds them exists only inside a layout. Reading the label would make the answer depend on
+    /// the pass and on that table. A reference is one word of text whatever the label is, which is
+    /// also how <c>ListRenderer.CanDrawEntry</c> reads it, so the two predicates agree on what a
+    /// reference draws. The style the label is drawn in is the reference's own with a link added,
+    /// and the link does not change which font the style names.
+    /// </remarks>
     internal static bool DrawsWordInStyle(IReadOnlyList<TextRun> runs, Func<TextStyle, bool> refused)
     {
+        foreach (var run in runs)
+        {
+            if (run.IsReference && run.Style is { } style && refused(style)) return true;
+        }
+
         foreach (var token in Tokenise(runs, tabbed: false, out _))
         {
             if (token.Kind is TokenKind.WordStart or TokenKind.WordContinue && refused(token.Style!)) return true;
