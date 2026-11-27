@@ -105,6 +105,10 @@ public sealed class Heading
     /// band throws <see cref="InvalidOperationException"/> when a template repeats
     /// <c>{chapter}</c> so often that the titles it prints add up to more than
     /// <see cref="int.MaxValue"/> characters; see <see cref="RunningBand.ChapterToken"/>.</para>
+    /// <para><b>A page reference leaves its spaces in the title.</b> The title is built from the
+    /// text of the runs, and a <see cref="TextRun.PageReference(string, TextStyle)"/> has none, so
+    /// "See ", a reference and " end" give the title "See  end", with both spaces. Set this
+    /// property to give the outline the title you want.</para>
     /// </remarks>
     /// <exception cref="ArgumentException">
     /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not

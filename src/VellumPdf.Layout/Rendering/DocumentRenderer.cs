@@ -1975,7 +1975,8 @@ public sealed class DocumentRenderer
         // would be written with a value that is not finite, and nothing is reported for either.
         // Under a PDF/UA-1 claim a URI link is not written, because it would be untagged, and the
         // drop is reported once per band kind with the pages as its count. Removed in 3.0 (#688).
-        if (textWidth > 0 && (style.LinkUri is not null || style.LinkAnchor is not null))
+        if (textWidth > 0 && !string.IsNullOrWhiteSpace(drawn)
+            && (style.LinkUri is not null || style.LinkAnchor is not null))
         {
             if (style.LinkAnchor is null && ctx.Conformance == PdfConformance.PdfUA1)
                 _sink.Report(LayoutDiagnosticCode.LinkNotWritten, 0, TableRenderer.LinkNotWrittenMessage, 1, perElement: true);

@@ -112,6 +112,12 @@ public sealed class TextRun(string Text, TextStyle Style)
     /// bookmark title or <c>{chapter}</c>. The same instance in two places prints one label. A
     /// reference in an item below the second level of a list is ignored, as the item is, because
     /// the layout neither lays it out nor draws it.</para>
+    /// <para>The document decides before any layout whether an element after a list can need about
+    /// as many page continuations as one element may take, and a label is not known then. It counts
+    /// each reference as the longest prefix of the document's label ranges plus 16 characters. An
+    /// element within 16 characters of that limit can be treated as near it where the same text
+    /// written out is not. A label longer than that, such as a letter style a long way in or a range
+    /// that starts at a large first number, is counted at 16.</para>
     /// <para>A document that holds one lays its content out with the pagination loop. A renderer of
     /// yours that answers differently on the later call makes the save throw
     /// <see cref="InvalidOperationException"/> naming a change of pagination, and after any layout

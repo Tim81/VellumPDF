@@ -138,8 +138,10 @@ internal sealed class PageReferenceTable : IPlanDependent
     internal int LabelBound { get; set; }
 
     /// <summary>
-    /// What the bound allows a page numeral: ten digits, the first thirty-two Roman numerals' worth
-    /// and more, far beyond a document of 50,000 continuations a page each.
+    /// What the bound allows a page numeral. A decimal numeral of 16 digits is out of reach of a
+    /// document counting pages from 1, but a range that starts at a large <c>FirstNumber</c>, or a
+    /// letter or Roman style a long way in, prints a numeral longer than this, and the label is then
+    /// counted at the allowance.
     /// </summary>
     internal const int NumeralBound = 16;
 
@@ -253,7 +255,7 @@ internal sealed class PageReferenceTable : IPlanDependent
         return $"Pagination did not settle: {cause}: {detail}. " +
             "A label that depends on where its anchor lands can change the layout and so move that " +
             "anchor, and here the passes keep changing it instead of settling. " +
-            "The renderers have already measured, so lay the content out again in a new document.";
+            "The renderers have already measured, so this document cannot be saved again.";
     }
 
     /// <summary>
