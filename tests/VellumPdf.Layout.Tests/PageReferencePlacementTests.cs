@@ -79,7 +79,8 @@ public sealed class PageReferencePlacementTests
 
         Assert.Equal(settled, reference);
 
-        // The entries are built for the placeholder, once more for the settled label, and not again.
+        // The entries are built for the placeholder, once more for the settled label, and not
+        // again.
         ListRenderer.BuildCalls = 0;
         _ = Texts(ListDoc(Prefix + "2"));
         Assert.Equal(ListRenderer.BuildCalls + 1, builds);
@@ -110,7 +111,8 @@ public sealed class PageReferencePlacementTests
         var settled = Texts(TableDoc(Prefix + "2", widths, Fresh(12)));
         var reference = Texts(TableDoc(null, widths, Fresh(12)));
 
-        // The precondition: the table is taller with the settled label, so the paragraph after it is
+        // The precondition: the table is taller with the settled label, so the paragraph after it
+        // is
         // lower, and a grid kept from the placeholder would show.
         var after = (List<ContentStreamReadback.TextPlacement> t) => t.First(p => p.Text.StartsWith("after", StringComparison.Ordinal)).Y;
         Assert.True(after(settled) < after(placeholder) - 1);
@@ -126,7 +128,8 @@ public sealed class PageReferencePlacementTests
         var settled = Texts(TableDoc(Prefix + "2", widths, Fresh(12)));
         var reference = Texts(TableDoc(null, widths, Fresh(12)));
 
-        // The second cell starts where the first column ends, which is wider with the settled label.
+        // The second cell starts where the first column ends, which is wider with the settled
+        // label.
         var beside = (List<ContentStreamReadback.TextPlacement> t) => t.First(p => p.Text == "beside").X;
         Assert.True(beside(settled) > beside(placeholder) + 1);
 
@@ -201,7 +204,8 @@ public sealed class PageReferencePlacementTests
             table.Add(reference, new ElementSite(LayoutElementKind.Paragraph, 0));
             run.References = table;
 
-            // "ab 9" fits 22pt on one line and "ab 10" does not, so the label "10" wraps to two lines.
+            // "ab 9" fits 22pt on one line and "ab 10" does not, so the label "10" wraps to two
+            // lines.
             var renderer = new ParagraphRenderer(new Paragraph([new TextRun("ab ", Fresh(10)), reference]));
             var box = new LayoutBox(0, 0, 22, 100);
 
@@ -213,7 +217,8 @@ public sealed class PageReferencePlacementTests
             Assert.Equal(1, renderer.LineCountAt(22));
             Assert.Equal(2, renderer.WrapCalls);
 
-            // A layout that answers Nothing, then a draw: the lines of the wrap that was replaced are
+            // A layout that answers Nothing, then a draw: the lines of the wrap that was replaced
+            // are
             // not drawn, and the renderer does not index past the lines it holds now.
             Assert.Equal(LayoutResult.Outcome.Nothing, renderer.Layout(new LayoutContext(new LayoutBox(0, 0, 22, 0.5))).Status);
             var page = pdf.AddPage(new PdfRectangle(0, 0, 100, 100));

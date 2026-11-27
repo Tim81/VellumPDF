@@ -64,7 +64,8 @@ public sealed class PageReferenceTests
         using var literal = ForwardTo(12, label: "12");
 
         // The one difference is the link the reference is. The literal label is a run of its own
-        // style instance, as the reference's label is, so both draw it in a show operator of its own.
+        // style instance, as the reference's label is, so both draw it in a show operator of its
+        // own.
         var a = ContentStreamReadback.TextPlacements(Content(Save(reference)));
         var b = ContentStreamReadback.TextPlacements(Content(Save(literal)));
         Assert.Equal(b, a);
@@ -133,9 +134,11 @@ public sealed class PageReferenceTests
 
     // ── A label that changes the layout ──────────────────────────────────────
 
-    // Ten 12pt lines make a page. The paragraph that holds the reference is one line while its label
+    // Ten 12pt lines make a page. The paragraph that holds the reference is one line while its
+    // label
     // is as narrow as the placeholder and two lines when it is wider, and the target is the 100th
-    // line when it is one line, which is the last of page 10, and the 101st when it is two, which is
+    // line when it is one line, which is the last of page 10, and the 101st when it is two, which
+    // is
     // the first of page 11. The page of the target is the label of the reference, so the label
     // 10 puts the target on page 11 and the label 11 keeps it there.
     private static Document Growing(string? literal = null, PageLabelRange? range = null, int lines = 100)
@@ -168,7 +171,8 @@ public sealed class PageReferenceTests
         var a = ContentStreamReadback.TextPlacements(Content(Save(reference)));
         var b = ContentStreamReadback.TextPlacements(Content(Save(literal)));
 
-        // The wrap of the first paragraph is two lines, and everything after it is where the literal
+        // The wrap of the first paragraph is two lines, and everything after it is where the
+        // literal
         // document puts it.
         Assert.Equal(b, a);
         Assert.Equal(2, a.Count(p => p.Text is "ab" or "11"));
@@ -209,7 +213,8 @@ public sealed class PageReferenceTests
     {
         string[][] script = [["1", "12"], ["3", "4"], ["11", "2"], ["11", "2"]];
 
-        // A comparison of the joined strings would see run 3 as run 1, "112" and "112", and refuse a
+        // A comparison of the joined strings would see run 3 as run 1, "112" and "112", and refuse
+        // a
         // document that settles at run 4.
         Assert.Equal(string.Concat(script[0]), string.Concat(script[2]));
         Assert.Equal(-1, PageReferenceTable.RepeatedRun(script));

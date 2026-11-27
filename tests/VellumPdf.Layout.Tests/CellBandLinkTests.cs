@@ -49,7 +49,8 @@ public sealed class CellBandLinkTests
             Assert.Equal(lines[i].X, links[i].X0, 3);
             Assert.Equal(lines[i].X + Width(lines[i].Text), links[i].X1, 3);
 
-            // The line box is as tall as the leading, and its top is one font size above the baseline.
+            // The line box is as tall as the leading, and its top is one font size above the
+            // baseline.
             Assert.Equal(lines[i].Y + 12, links[i].Y1, 3);
             Assert.Equal(lines[i].Y + 12 - 14.4, links[i].Y0, 3);
         }
@@ -130,7 +131,8 @@ public sealed class CellBandLinkTests
         // Two pages, two bands: four annotations, one per band per page.
         Assert.Equal(4, links.Count);
 
-        // The header band is 18.4pt tall (the leading and 4) from the top margin; the footer sits on
+        // The header band is 18.4pt tall (the leading and 4) from the top margin; the footer sits
+        // on
         // the bottom margin.
         var headers = links.Where(l => l.Y1 > 300).ToList();
         var footers = links.Where(l => l.Y1 <= 300).ToList();

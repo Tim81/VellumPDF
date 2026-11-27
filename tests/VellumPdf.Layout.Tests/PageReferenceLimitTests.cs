@@ -111,7 +111,8 @@ public sealed class PageReferenceLimitTests
     public void ALongPrefix_isCountedFromTheRangesOfTheDocument()
     {
         // A 300-character prefix is known before any layout runs, so the bound counts it for every
-        // reference. With the limit at 300, a paragraph whose literal label is that long is near the
+        // reference. With the limit at 300, a paragraph whose literal label is that long is near
+        // the
         // limit, and so is the one that holds the reference, whatever the words before it.
         var prefix = new string('p', 300);
         var matches = 0;

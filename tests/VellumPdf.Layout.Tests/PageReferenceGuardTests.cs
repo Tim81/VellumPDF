@@ -59,7 +59,8 @@ public sealed class PageReferenceGuardTests
     [Fact]
     public void ARendererThatAnswersDifferentlyTheLaterTime_failsTheSave_withAReference_andASecondSaveSaysItCannotBeSavedAgain()
     {
-        // Without the reference the document saves, and the drawing pass puts the heading on another
+        // Without the reference the document saves, and the drawing pass puts the heading on
+        // another
         // page than the measuring run did: the plans differ in a page index.
         var literal = ARendererThatChangesItsMind(reference: false);
         literal.Footer = new RunningBand("{page}");

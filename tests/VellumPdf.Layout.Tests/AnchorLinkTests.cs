@@ -68,7 +68,8 @@ public sealed class AnchorLinkTests
 
         var links = Dests(doc);
 
-        // The heading, the two list items (their runs), the string cell, the run cell and the footer
+        // The heading, the two list items (their runs), the string cell, the run cell and the
+        // footer
         // on each of the two pages. The markers of the default list style carry the style of the
         // list, not the runs, so they add none.
         foreach (var link in links) AssertDestLink(link);
@@ -131,7 +132,7 @@ public sealed class AnchorLinkTests
     }
 
     [Fact]
-    public void ADefaultCellStyleThatALinkingCellStyleOverrides_isNotRead()
+    public void ALinkingDefaultCellStyle_thatACellStyleOverrides_isNotRead()
     {
         var doc = ShortPage();
         var table = new TableElement { DefaultCellStyle = Style(anchor: "missing") }.SetColumnWidths(100);
