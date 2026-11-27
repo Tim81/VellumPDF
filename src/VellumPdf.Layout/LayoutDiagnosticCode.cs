@@ -237,8 +237,10 @@ public enum LayoutDiagnosticCode
     /// layout too. On its own it reports <see cref="ListEntryPartDropped"/> and not this code.
     /// When the continuation limit or a document-wide cause also lays it out as its twin, it
     /// reports this code, because the twin does not look for such an entry and counts that list's
-    /// entries as it counts any other's, and reports <see cref="ListEntryPartDropped"/> only when
-    /// an entry is also dropped.</item>
+    /// entries as it counts any other's. It reports <see cref="ListEntryPartDropped"/> only for a
+    /// part it placed and could not draw. An entry whose text the clamp would have narrowed is
+    /// counted here instead, so the same entries can report 208 alone, and 207 alone once a
+    /// renderer of yours is added to the document.</item>
     /// </list>
     /// <para>A moved entry is counted by the piece of the list that starts it, in the layout the
     /// list was given, so the count of a list that runs over several pages adds up its pieces and
