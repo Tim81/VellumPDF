@@ -1,5 +1,4 @@
-// Copyright © Timothy van der Ham (@Tim81)
-// SPDX-License-Identifier: Apache-2.0
+// Copyright © Timothy van der Ham (@Tim81) SPDX-License-Identifier: Apache-2.0
 
 using System.Globalization;
 using VellumPdf.Layout.Core;
@@ -52,8 +51,7 @@ internal sealed class PageReferenceEntry(TextRun run, ElementSite site)
     /// <summary>
     /// The run a renderer lays out in place of the reference: the label, in the reference's linked
     /// style. Replaced when the label changes, so a wrap made from it is told from one made from
-    /// the
-    /// next label.
+    /// the next label.
     /// </summary>
     internal TextRun Effective => _effective ??= new TextRun(Label, Run.LinkedStyle);
 
@@ -84,9 +82,9 @@ internal sealed class ReferenceReads(PageReferenceTable table)
     }
 
     /// <summary>
-    /// True when the table is the one the strings were read from and every one of them is still
-    /// the string it holds. The epoch answers the common case, a table no label of which changed,
-    /// with one comparison.
+    /// True when the table is the one the strings were read from and every one of them is still the
+    /// string it holds. The epoch answers the common case, a table no label of which changed, with
+    /// one comparison.
     /// </summary>
     internal bool IsCurrent()
     {
@@ -134,8 +132,8 @@ internal sealed class PageReferenceTable : IPlanDependent
 
     /// <summary>
     /// The most characters a label can hold, so a bound on the continuations an element can need
-    /// holds for the label the loop settles on: the longest prefix any range of the document
-    /// has, and a numeral. See <see cref="NumeralBound"/>.
+    /// holds for the label the loop settles on: the longest prefix any range of the document has,
+    /// and a numeral. See <see cref="NumeralBound"/>.
     /// </summary>
     internal int LabelBound { get; set; }
 
@@ -143,8 +141,7 @@ internal sealed class PageReferenceTable : IPlanDependent
     /// What the bound allows a page numeral. A decimal numeral of 16 digits is out of reach of a
     /// document counting pages from 1, but a range that starts at a large <c>FirstNumber</c>, or a
     /// letter or Roman style a long way in, prints a numeral longer than this, and the label is
-    /// then
-    /// counted at the allowance.
+    /// then counted at the allowance.
     /// </summary>
     internal const int NumeralBound = 16;
 
@@ -221,8 +218,8 @@ internal sealed class PageReferenceTable : IPlanDependent
     internal int RepeatedRun() => RepeatedRun(_states);
 
     /// <summary>
-    /// <see cref="RepeatedRun()"/> for the strings of each run in turn. Two runs are the same
-    /// state when every string equals the one at its position.
+    /// <see cref="RepeatedRun()"/> for the strings of each run in turn. Two runs are the same state
+    /// when every string equals the one at its position.
     /// </summary>
     internal static int RepeatedRun(IReadOnlyList<string[]> states)
     {
@@ -235,8 +232,7 @@ internal sealed class PageReferenceTable : IPlanDependent
 
     /// <summary>
     /// The message for a plan that does not settle: each reference whose strings changed in the
-    /// last
-    /// two runs, by site and anchor, with the strings it read in each run.
+    /// last two runs, by site and anchor, with the strings it read in each run.
     /// </summary>
     internal string DescribeUnstable(string cause)
     {
@@ -255,11 +251,12 @@ internal sealed class PageReferenceTable : IPlanDependent
         }
 
         var more = unstable > named ? $", and {(unstable - named).ToString(CultureInfo.InvariantCulture)} more" : "";
-        var detail = parts.Count > 0 ? string.Join("; ", parts) + more : "the labels kept moving";
-        return $"Pagination did not settle: {cause}: {detail}. " +
+        var detail = parts.Count > 0 ? ": " + string.Join("; ", parts) + more : "";
+        return $"Pagination did not settle: {cause}{detail}. " +
             "A label that depends on where its anchor lands can change the layout and so move that " +
             "anchor, and here the passes keep changing it instead of settling. " +
-            "A Document cannot be saved again after a layout that threw.";
+            "A Document cannot be saved again after a layout that threw; a DocumentRenderer " +
+            "needs a new renderer and a new PdfDocument.";
     }
 
     /// <summary>

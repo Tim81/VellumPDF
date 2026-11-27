@@ -30,8 +30,8 @@ internal sealed class NavigationPlan
 
     internal bool HasAnchors => _anchors.Count > 0;
 
-    // Every name a style or a page reference links to, with where it sits, for the check at the
-    // end of the walk. Null until the first one, so a document with none allocates nothing.
+    // Every name a style or a page reference links to, with where it sits, for the check at the end
+    // of the walk. Null until the first one, so a document with none allocates nothing.
     private List<(string Name, ElementSite Site)>? _uses;
     private bool _underUa;
 
@@ -56,8 +56,7 @@ internal sealed class NavigationPlan
     /// The walk, which also reads every text style that links to an anchor and every page
     /// reference, and refuses before any layout what the elements alone decide: a link under a
     /// PDF/UA-1 claim, a style that sets two links, a name no element holds, and a name only an
-    /// item
-    /// below the second level of a list holds. The running bands are read through
+    /// item below the second level of a list holds. The running bands are read through
     /// <paramref name="header"/> and <paramref name="footer"/>.
     /// </summary>
     internal static NavigationPlan Build(

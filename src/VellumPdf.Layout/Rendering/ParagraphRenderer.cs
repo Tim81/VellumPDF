@@ -55,9 +55,9 @@ public sealed partial class ParagraphRenderer : IRenderer, IPageBreakSource, IKe
     private int _tabStopsBeyond;
 
     // The labels of the page references the wrap read, or null when it read none. A wrap whose
-    // labels the table no longer holds is made again. The pieces a split returns carry the wrap
-    // but not this, so a piece never wraps again: its labels cannot change within the pass that
-    // made it.
+    // labels the table no longer holds is made again. The pieces a split returns carry the wrap but
+    // not this, so a piece never wraps again: its labels cannot change within the pass that made
+    // it.
     private ReferenceReads? _reads;
 
     // Pagination window: only lines[_startLine.._endLine) are in this renderer.
@@ -128,20 +128,16 @@ public sealed partial class ParagraphRenderer : IRenderer, IPageBreakSource, IKe
     /// save.</para>
     /// <para><b>A page reference laid out outside a save is refused.</b> The wrap reads the label
     /// of each <see cref="TextRun.PageReference(string, TextStyle)"/> from the pagination of the
-    /// layout in progress, and makes the wrap again when a label it read has changed. Called
-    /// from anywhere else, this method throws <see cref="InvalidOperationException"/> naming the
-    /// anchor, because there is no pagination to read. Called from a renderer of yours inside a
-    /// save, it reads the placeholder label, and the save refuses the reference after the layout.
-    /// <b>Do not pass</b> a paragraph that holds a page reference to a renderer you lay out
-    /// yourself.
-    /// </para>
+    /// layout in progress, and makes the wrap again when a label it read has changed. Called from
+    /// anywhere else, this method throws <see cref="InvalidOperationException"/> naming the anchor,
+    /// because there is no pagination to read. Called from a renderer of yours inside a save, it
+    /// reads the placeholder label, and the save refuses the reference after the layout.</para>
     /// </remarks>
     /// <exception cref="InvalidOperationException">
     /// A page reference is laid out outside a save. A run that yields text has a <see
-    /// cref="TextStyle.FontSize"/> or <see cref="TextStyle.Color"/>
-    /// that is refused; see those members. It is also raised when the paragraph has a tab stop with
-    /// a leader and a run has a font size the leader cannot be drawn at; see
-    /// <see cref="Paragraph.TabStops"/>.
+    /// cref="TextStyle.FontSize"/> or <see cref="TextStyle.Color"/> that is refused; see those
+    /// members. It is also raised when the paragraph has a tab stop with a leader and a run has a
+    /// font size the leader cannot be drawn at; see <see cref="Paragraph.TabStops"/>.
     /// </exception>
     /// <exception cref="ArgumentException">
     /// Text this method measures in an embedded font holds an unpaired surrogate; see

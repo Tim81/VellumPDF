@@ -225,8 +225,7 @@ public sealed class DrawContext
     /// <see cref="AddUriLinkAnnotation"/> registers one to a URI: the same rectangle, the same
     /// registration, so a context with no page throws the same <see cref="ArgumentNullException"/>.
     /// A destination is named, not given as a GoTo action, because ISO 32000-1, 12.6.4.2 prefers
-    /// the
-    /// direct form.
+    /// the direct form.
     /// </summary>
     /// <exception cref="InvalidOperationException">
     /// The document claims PDF/UA-1, which a link to an anchor breaks without a Link structure
@@ -248,12 +247,9 @@ public sealed class DrawContext
     /// <summary>
     /// Registers a link to <paramref name="uri"/> or to the anchor <paramref name="anchor"/> over
     /// <paramref name="box"/> for a table cell or a running band, and says whether it did. A
-    /// context
-    /// with no page writes none, and so does a box whose rectangle the annotation would write with
-    /// a
-    /// value that is not finite; neither is reported. Removed in 3.0 (#688), which refuses both
-    /// where
-    /// the box is made.
+    /// context with no page writes none, and so does a box whose rectangle the annotation would
+    /// write with a value that is not finite; neither is reported. Removed in 3.0 (#688), which
+    /// refuses both where the box is made.
     /// </summary>
     internal bool TryAddLinkAnnotation(LayoutBox box, string? uri, string? anchor, LinkOwner owner)
     {
@@ -475,8 +471,8 @@ public sealed class DrawContext
 }
 
 /// <summary>
-/// What a link annotation is drawn for. The registration takes it so the tagging of a link
-/// (#550) can attach a Link structure element and its quad points to the right owner.
+/// What a link annotation is drawn for. The registration takes it so the tagging of a link (#550)
+/// can attach a Link structure element and its quad points to the right owner.
 /// </summary>
 internal enum LinkOwner
 {

@@ -285,8 +285,8 @@ public sealed class TextStyle
     /// full URI string (e.g. "https://example.com").
     /// </summary>
     /// <remarks>
-    /// <b>Attention</b>: the string is not validated. Empty and <c>not a uri</c> are
-    /// written into a <c>/URI</c> action as given, and so is an absolute URI of any scheme, such as
+    /// <b>Attention</b>: the string is not validated. Empty and <c>not a uri</c> are written into a
+    /// <c>/URI</c> action as given, and so is an absolute URI of any scheme, such as
     /// <c>javascript:alert(1)</c>. Non-ASCII characters are percent-encoded as UTF-8, and an
     /// unpaired surrogate becomes U+FFFD first.
     /// <para><b>A cell or band link is not written under a PDF/UA-1 claim.</b> A table cell given
@@ -307,14 +307,12 @@ public sealed class TextStyle
     /// <para>The style of a cell built from runs does not style those runs, so this property on a
     /// cell's style links a string cell only; a cell built from runs is linked by the runs' own
     /// styles, as <see cref="VellumPdf.Layout.Elements.Table.Cell"/> says. In a list item the
-    /// marker
-    /// is linked as well as the text.</para>
+    /// marker is linked as well as the text.</para>
     /// <para>A link in a paragraph, heading, list item or cell run is written untagged and without
     /// an alternate description, whatever the conformance, and no exception reports it. In a
-    /// document whose <c>Conformance</c> is PDF/UA-1, the link breaks ISO 14289-1, 7.18.5
-    /// (#550). A link whose rectangle lies wholly outside the page's crop box is exempt: clause
-    /// 7.18.1 lifts the
-    /// requirements of clause 7.18 for it. On a justified line, in a standard-14 or an embedded
+    /// document whose <c>Conformance</c> is PDF/UA-1, the link breaks ISO 14289-1, 7.18.5 (#550). A
+    /// link whose rectangle lies wholly outside the page's crop box is exempt: clause 7.18.1 lifts
+    /// the requirements of clause 7.18 for it. On a justified line, in a standard-14 or an embedded
     /// face, the link's rectangle starts where the linked text's first glyph is drawn and ends
     /// where the text that follows it on the line starts, spaces stretched included, or, when the
     /// linked text closes the line, where its last glyph ends. A space that closes the linked run
@@ -340,9 +338,8 @@ public sealed class TextStyle
     /// <exception cref="ArgumentException">
     /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
     /// from this property, when linked text of a paragraph, heading, list item or cell run is
-    /// placed at a non-finite position, for example through
-    /// a bottom of negative infinity in a renderer's result (see <see cref="LayoutResult.Full"/>). The link's rectangle
-    /// is written
+    /// placed at a non-finite position, for example through a bottom of negative infinity in a
+    /// renderer's result (see <see cref="LayoutResult.Full"/>). The link's rectangle is written
     /// outside the content stream, and the save refuses a non-finite coordinate there. Without a
     /// link, the same paragraph or list-item text saves. A heading placed at a non-finite height
     /// throws either way, from its bookmark; see
@@ -356,27 +353,25 @@ public sealed class TextStyle
     /// </summary>
     /// <remarks>
     /// <b>A name no element holds is refused.</b> <see cref="Document.Save(System.IO.Stream)"/>
-    /// throws
-    /// <see cref="InvalidOperationException"/> naming the anchor and the style's site before any
-    /// layout runs, so the document can still be saved once the name is fixed. So does a style that
-    /// sets both this and <see cref="LinkUri"/>, and any style with this set when the document's
-    /// <c>Conformance</c> is PDF/UA-1, whose links need a Link structure element the library does
-    /// not
-    /// write for them; PDF/A-2a and PDF/A-2u accept the link. A name only an item below the second
-    /// level of a list holds is refused too, because that item is never drawn. An anchor whose
-    /// element the layout does not draw is refused after the layout, and the document cannot be
-    /// saved
-    /// again. A renderer of yours that registers such a link is refused where it registers it,
-    /// after
-    /// the layout started. <see cref="VellumPdf.Layout.Elements.Preformatted"/> refuses a style
-    /// with
-    /// this set from its constructor, with <see cref="ArgumentException"/>.
-    /// <para><b>A style the layout never draws is not read, so it is neither refused nor
-    /// linked:</b> the style of a list item below the second level, and
-    /// <see cref="VellumPdf.Layout.Elements.Table.Cell.Style"/> or
+    /// throws <see cref="InvalidOperationException"/> naming the anchor and the style's site before
+    /// any layout runs, so the document can still be saved once the name is fixed. So does a style
+    /// that sets both this and <see cref="LinkUri"/>, and any style with this set when the
+    /// document's <c>Conformance</c> is PDF/UA-1, whose links need a Link structure element the
+    /// library does not write for them; PDF/A-2a and PDF/A-2u accept the link. A name only an item
+    /// below the second level of a list holds is refused too, because that item is never drawn. An
+    /// anchor whose element the layout does not draw is refused after the layout, and the document
+    /// cannot be saved again. A renderer of yours that draws a link to a name no element holds is
+    /// refused where it registers the link, after the layout started, and the document cannot be
+    /// saved again. <see cref="VellumPdf.Layout.Elements.Preformatted"/> refuses a style with this
+    /// set from its constructor, with <see cref="ArgumentException"/>.
+    /// <para><b>The save reads the styles the elements hold, not the text they draw.</b> The style
+    /// of every run, string cell and band, and of each item of the first two levels of a list, is
+    /// refused as above even where it draws no text, as an empty run, an empty cell or an empty
+    /// band template does. The save does not read the style of an item below the second level or of
+    /// that item's runs, <see cref="VellumPdf.Layout.Elements.Table.Cell.Style"/> or
     /// <see cref="VellumPdf.Layout.Elements.Table.TableElement.DefaultCellStyle"/> on a cell built
-    /// from runs. A name no element holds, or a PDF/UA-1 claim, does not refuse the save
-    /// there.</para>
+    /// from runs, or a default cell style that the cell's own style replaces. There a name no
+    /// element holds, or a PDF/UA-1 claim, does not refuse the save, and no link is written.</para>
     /// <para>The link is written as a named destination, <c>/Dest (name)</c>, and not as a GoTo
     /// action, because ISO 32000-1, 12.6.4.2 prefers the direct form. It covers the text the way a
     /// <see cref="LinkUri"/> does, in a paragraph, a heading, a list item (the marker included), a
@@ -389,9 +384,8 @@ public sealed class TextStyle
     /// </exception>
     /// <exception cref="ArgumentException">
     /// Raised from the constructor of <see cref="VellumPdf.Layout.Elements.Preformatted"/>, not
-    /// from
-    /// this property, and from the save when linked text is placed at a non-finite position; see
-    /// <see cref="LinkUri"/>.
+    /// from this property, and from the save when linked text is placed at a non-finite position;
+    /// see <see cref="LinkUri"/>.
     /// </exception>
     public string? LinkAnchor { get; init; }
 

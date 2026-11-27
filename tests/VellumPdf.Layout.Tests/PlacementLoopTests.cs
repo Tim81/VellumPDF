@@ -368,7 +368,8 @@ public sealed class PlacementLoopTests
             "Pagination did not settle after 5 layout passes: the text for 'target' read " +
             "'1', '2', '1', '2', '1'. A string that depends on where its target lands can change " +
             "the layout and so move that target, and here the passes keep changing it instead of " +
-            "settling. A Document cannot be saved again after a layout that threw.",
+            "settling. A Document cannot be saved again after a layout that threw; a " +
+            "DocumentRenderer needs a new renderer and a new PdfDocument.",
             ex.Message);
         // The drawing pass never ran: the document was refused before any page was added.
         Assert.Null(renderer.DrawPlan);

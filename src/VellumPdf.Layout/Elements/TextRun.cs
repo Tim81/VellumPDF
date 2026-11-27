@@ -109,37 +109,35 @@ public sealed class TextRun(string Text, TextStyle Style)
     /// <see cref="TextStyle.LinkUri"/> or <see cref="TextStyle.LinkAnchor"/>. <see cref="Text"/> is
     /// empty, so the label is in no <c>Paragraph.Text</c>, outline entry, bookmark title or
     /// <c>{chapter}</c>. The same instance in two places prints one label.</para>
-    /// <para><b>Pagination that does not settle is refused after the layout.</b> The save lays the
-    /// document out at most five times. It throws <see cref="InvalidOperationException"/> naming
-    /// the references when the labels are still changing after the fifth, and earlier when the
-    /// labels
-    /// of all references, taken together, are the labels of a pass two or more passes back. One
-    /// label
-    /// returning to an earlier value while another differs is not a repeat.</para>
-    /// <para><b>A label that is empty or only white space is refused</b> after the layout, because
-    /// it
-    /// prints nothing. A reference in an item below the second level of a list is ignored, as the
-    /// item is; see <see cref="TextStyle.LinkAnchor"/>.</para>
+    /// <para><b>Pagination that does not settle is refused once the layout has started.</b> The
+    /// save measures the document at most five times before the pass that draws it, and throws
+    /// <see cref="InvalidOperationException"/> while it measures: earlier when the labels of all
+    /// references, taken together, are the labels of a pass two or more passes back, and at the
+    /// fifth pass when they are still changing.</para>
+    /// <para><b>A label that is empty or only white space is refused</b> once the labels settle, because
+    /// it prints nothing. A reference in an item below the second level of a list is ignored, as
+    /// the item is; see <see cref="TextStyle.LinkAnchor"/>.</para>
     /// <para>The document decides before any layout whether an element after a list can need about
     /// as many page continuations as one element may take, and no label is known then. It counts
     /// each reference as the longest prefix of the document's label ranges plus 16 characters,
-    /// whatever the reference prints. An element can be treated as near the limit where the same
-    /// text written out is not, when its text written out is within that allowance, once for each
-    /// reference it holds, of the limit. A label longer than that bound, such as a letter style a
-    /// long way in or a range that starts at a large first number, is counted at the bound.</para>
-    /// <para>A document that holds one compares the drawing pass with the last layout. A renderer
-    /// of
-    /// yours that answers differently on the later call makes the save throw
-    /// <see cref="InvalidOperationException"/> naming a change of pagination, and after any layout
-    /// refusal the document cannot be saved again. <b>Do not pass</b> a reference to a renderer you
-    /// lay out yourself, or one renderer that holds a reference to two documents at the same
+    /// whatever the reference prints. An element whose text written out comes within that
+    /// allowance, times the references it holds, of the limit can be treated as near it where the
+    /// same text written out is not. A label longer than that bound, such as a letter style a long
+    /// way in or a range that starts at a large first number, is counted at the bound.</para>
+    /// <para><b>A reference held by a renderer the document did not add is refused after the
+    /// layout</b>, naming the anchor, because the save does not look inside a renderer of yours and
+    /// never resolves its label; see <see cref="Document.Add(IRenderer)"/>. Laid out outside a
+    /// save, it is refused by the renderer's <c>Layout</c>. A document that holds a reference
+    /// compares the drawing pass with the last measuring pass: a renderer of yours that answers
+    /// differently on the later call makes the save throw <see cref="InvalidOperationException"/>
+    /// naming a change of pagination, and after any layout refusal the document cannot be saved
+    /// again. <b>Do not pass</b> one renderer that holds a reference to two documents at the same
     /// time: a renderer keeps the wrap it made from the labels it read.</para>
     /// </remarks>
     /// <param name="anchor">The anchor to print the page of.</param>
     /// <param name="style">The style of the label.</param>
     /// <exception cref="ArgumentNullException"><paramref name="anchor"/> or <paramref
-    /// name="style"/>
-    /// is <see langword="null"/>.</exception>
+    /// name="style"/> is <see langword="null"/>.</exception>
     /// <exception cref="ArgumentException"><paramref name="anchor"/> is empty, longer than 127
     /// characters, or holds a character outside <c>A-Z a-z 0-9 . _ - :</c>.</exception>
     /// <exception cref="InvalidOperationException">

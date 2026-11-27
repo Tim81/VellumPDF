@@ -236,9 +236,8 @@ public sealed class LayoutImage
     /// The rule, the refusals and the position are those of <see cref="Paragraph.Anchor"/>.
     /// <para>A <see cref="TextStyle.LinkAnchor"/> or a
     /// <see cref="TextRun.PageReference(string, TextStyle)"/> names an anchor; the refusals and
-    /// their
-    /// limits are on <see cref="TextStyle.LinkAnchor"/>. A reference prints the page this element
-    /// starts on.</para>
+    /// their limits are on <see cref="TextStyle.LinkAnchor"/>. A reference prints the page this
+    /// element starts on.</para>
     /// </remarks>
     /// <inheritdoc cref="Paragraph.Anchor" path="/exception"/>
     public string? Anchor

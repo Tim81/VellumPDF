@@ -80,9 +80,8 @@ public sealed class TableElement
     /// Null means <see cref="TextStyle.Default"/> for cells that have no style of their own.
     /// Refusals on size, leading, font and text colour are on <see cref="TextStyle"/> and are
     /// raised from the save. A <see cref="TextStyle.LinkUri"/> or <see
-    /// cref="TextStyle.LinkAnchor"/>
-    /// in it links every string cell that takes it, and a cell built from runs ignores it; see
-    /// <see cref="Cell.Style"/>.
+    /// cref="TextStyle.LinkAnchor"/> in it links every string cell that takes it, and a cell built
+    /// from runs ignores it; see <see cref="Cell.Style"/>.
     /// <para>A table with no default cell style does not take
     /// <see cref="Document.SetDefaultFont"/>; its cells take <see cref="TextStyle.Default"/>. The
     /// font is then Helvetica, which is not embedded. While <see cref="Document.Conformance"/> is
@@ -222,8 +221,7 @@ public sealed class TableElement
     /// that splits across pages is anchored on the page of its first row.
     /// <para>A <see cref="TextStyle.LinkAnchor"/> or a
     /// <see cref="TextRun.PageReference(string, TextStyle)"/> names an anchor; the refusals and
-    /// their
-    /// limits are on <see cref="TextStyle.LinkAnchor"/>. A reference prints the page this
+    /// their limits are on <see cref="TextStyle.LinkAnchor"/>. A reference prints the page this
     /// element's first row is on.</para>
     /// </remarks>
     /// <inheritdoc cref="Paragraph.Anchor" path="/exception"/>

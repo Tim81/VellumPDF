@@ -213,8 +213,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   - The runs are read as one string. Line ends, other white-space control characters and the
     break points between words are those of a string cell, and a run boundary inside a word draws
     no space. A cell of runs that share one `TextStyle` instance and hold text draws the text,
-    positions and operators of the string cell of the same text and style, and since #475 a
-    `LinkUri` in that style links both.
+    positions and operators of the string cell of the same text and style.
   - Each line is as tall as the largest leading among the runs that hold text, and the first
     baseline lies one largest font size of those runs below the top of the cell's content,
     padding included. A run that holds only a line end or white space counts. `Cell.Style` and
@@ -544,9 +543,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
     the page's label range. `Text` stays empty, so the label is in no `Paragraph.Text`, heading text,
     outline title or `{chapter}`. The run is always a link to its anchor. It works in a paragraph, a
     heading, a list item and a run cell. The label is resolved by laying the document out until the
-    labels stop changing (at most five passes), so a forward reference needs no second pass from the
-    caller. Labels that all return together to the values of an earlier pass, or that are still changing
-    after five passes, are refused after the layout, naming the references.
+    labels stop changing (at most five measuring passes, then the drawing pass), so a forward
+    reference needs no second pass from the caller. Pagination that does not settle is refused once the layout has started: when the labels of a
+    pass are those of a pass two or more back, or are still changing after five measuring passes.
   - A page reference or a link to an anchor under a PDF/UA-1 claim is refused before layout, naming
     the element: the link would be untagged. PDF/A-2a and PDF/A-2u save it.
   - **Attention:** once a document holds a page reference, the drawing pass is compared with the

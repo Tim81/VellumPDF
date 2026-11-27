@@ -293,10 +293,8 @@ public enum LayoutDiagnosticCode
     /// <see cref="Elements.Table.TableElement.DefaultCellStyle"/> or of a running band was not
     /// written, because the document's conformance is PDF/UA-1, where an untagged link breaks ISO
     /// 14289-1, 7.18.5. <see cref="LayoutDiagnostic.Count"/> is the number of links not written:
-    /// the
-    /// lines of the table's cells that would have carried one, or, for a band, the pages it was
-    /// drawn
-    /// on.
+    /// the lines of the table's cells that would have carried one, or, for a band, the pages it was
+    /// drawn on.
     /// </summary>
     /// <remarks>
     /// The text is drawn, and only the link is left out, as it was before cells and bands wrote

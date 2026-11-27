@@ -106,8 +106,7 @@ public sealed class TableRenderer : IRenderer, IPageBreakSource, IKeepSource, IP
     private (double[] MinW, double[] MaxW)? _content;
 
     // What _oneLine was decided for: the table width and the vertical extent of the two fresh
-    // boxes.
-    // A renderer that carries the decision to the next page reuses it, with the grid and the
+    // boxes. A renderer that carries the decision to the next page reuses it, with the grid and the
     // heights it was made with, when it lays out at the same width and heights; Layout says what
     // that leaves out. The boxes' x is left out of the key: the decision never reads it, and
     // mirrored margins move it on every other page. A table that holds a page reference adds the
@@ -260,15 +259,14 @@ public sealed class TableRenderer : IRenderer, IPageBreakSource, IKeepSource, IP
     /// See <see cref="TableElement"/>.</para>
     /// </remarks>
     /// <exception cref="InvalidOperationException">
-    /// The table resolves to no columns, or a cell's span, padding or font size, or the table's border
-    /// width when it is not finite, is refused; see <see cref="TableElement.Rows"/>, <see cref="Cell.ColSpan"/>,
-    /// <see cref="Cell.Padding"/>, <see cref="TableElement.BorderWidth"/>. A cell's text colour, and a negative
-    /// border width, are refused the same way where the cell is drawn. The retry on a new page also
-    /// throws it, saying the element is too tall, when the rows that remain cannot be placed on a
-    /// page; the message then ends with the rows or the cell it names. A cell built from runs
-    /// holds a
-    /// page reference and this method runs outside a save; see
-    /// <see cref="ListRenderer.Layout"/>.
+    /// The table resolves to no columns, or a cell's span, padding or font size, or the table's
+    /// border width when it is not finite, is refused; see <see cref="TableElement.Rows"/>,
+    /// <see cref="Cell.ColSpan"/>, <see cref="Cell.Padding"/>,
+    /// <see cref="TableElement.BorderWidth"/>. A cell's text colour, and a negative border width,
+    /// are refused the same way where the cell is drawn. The retry on a new page also throws it,
+    /// saying the element is too tall, when the rows that remain cannot be placed on a page; the
+    /// message then ends with the rows or the cell it names. A cell built from runs holds a page
+    /// reference and this method runs outside a save; see <see cref="ListRenderer.Layout"/>.
     /// </exception>
     /// <exception cref="ArgumentException">
     /// <see cref="VellumPdf.Canvas.PdfCanvas"/> refuses a non-finite <see cref="Cell.Background"/> or
@@ -1675,9 +1673,8 @@ public sealed class TableRenderer : IRenderer, IPageBreakSource, IKeepSource, IP
     /// draws, and a cell built from runs links the runs whose style sets one. A string cell's link
     /// writes nothing through a <see cref="DrawContext"/> built with no page and nothing for a
     /// rectangle that would be written with a value that is not finite, and reports neither; a
-    /// run's link throws <see cref="ArgumentNullException"/> without a page, as a paragraph's
-    /// does. <b>Do not pass</b> a context with no page or a box that large; 3.0 refuses
-    /// both.</para>
+    /// run's link throws <see cref="ArgumentNullException"/> without a page, as a paragraph's does.
+    /// <b>Do not pass</b> a context with no page or a box that large; 3.0 refuses both.</para>
     /// </remarks>
     /// <exception cref="ArgumentNullException">
     /// A run of a cell built from runs links, and this method is drawn through a
@@ -1689,14 +1686,12 @@ public sealed class TableRenderer : IRenderer, IPageBreakSource, IKeepSource, IP
     /// <see cref="IRenderer.Draw"/>.
     /// </exception>
     /// <exception cref="InvalidOperationException">
-    /// <b>A cell's text colour with a non-finite channel, and a negative table border width, are refused
-    /// here and not in <see cref="Layout"/>,</b> because each is checked where it is written; a table
-    /// that is laid out and not drawn is not refused for either. See <see cref="Document"/>. A
-    /// style
-    /// of a cell or run sets <see cref="TextStyle.LinkAnchor"/>, and the document is PDF/UA-1 or
-    /// the
-    /// layout in progress holds no element with that anchor; see
-    /// <see cref="ParagraphRenderer.Draw"/>.
+    /// <b>A cell's text colour with a non-finite channel, and a negative table border width, are
+    /// refused here and not in <see cref="Layout"/>,</b> because each is checked where it is
+    /// written; a table that is laid out and not drawn is not refused for either. See
+    /// <see cref="Document"/>. A style of a cell or run sets <see cref="TextStyle.LinkAnchor"/>,
+    /// and the document is PDF/UA-1 or the layout in progress holds no element with that anchor;
+    /// see <see cref="ParagraphRenderer.Draw"/>.
     /// </exception>
     /// <exception cref="ArgumentException">
     /// A cell background, the table's border colour or a coordinate written here is <c>NaN</c> or
@@ -1923,10 +1918,9 @@ public sealed class TableRenderer : IRenderer, IPageBreakSource, IKeepSource, IP
     }
 
     // The link of a string cell's style over one drawn line, cut to the cell like a run's. Where
-    // the
-    // document has no page to put it on, or the rectangle would be written with a value that is not
-    // finite, nothing is written and nothing is reported. Under a PDF/UA-1 claim a URI link is not
-    // written, because it would be untagged, and the drop is reported. Both are removed in 3.0
+    // the document has no page to put it on, or the rectangle would be written with a value that is
+    // not finite, nothing is written and nothing is reported. Under a PDF/UA-1 claim a URI link is
+    // not written, because it would be untagged, and the drop is reported. Both are removed in 3.0
     // (#688), which refuses what they drop where the cell is built.
     private static void LinkCellLine(
         DrawContext ctx, TextStyle style, double x, double width, double lineTop, double lineHeight,
@@ -2115,8 +2109,7 @@ public sealed class TableRenderer : IRenderer, IPageBreakSource, IKeepSource, IP
                 TextEmitter.Show(canvas, openStyle, line);
 
                 // A string cell is a link through its own style, over the line it drew. A cell
-                // built
-                // from runs links through its runs, so its style's link is not drawn here.
+                // built from runs links through its runs, so its style's link is not drawn here.
                 if (runLines is null && line.Length > 0)
                     LinkCellLine(ctx, cs, innerBox.X + txOffset, lineW, innerBox.Y + lineIdx * lineHeight, lineHeight,
                         cellX, cellY, colW, h);

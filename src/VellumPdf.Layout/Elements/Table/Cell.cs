@@ -375,8 +375,7 @@ public sealed class Cell
     /// style of its run. A space is measured in the style of the run that holds it. Adjacent runs
     /// that share one <see cref="TextStyle"/> instance and hold text are one piece of text, drawn
     /// in one show operator, so a cell of such runs draws the string cell of the text they hold in
-    /// that style, links included: the string cell links the text through the style of the cell
-    /// itself and the run cell through the style of its runs.</para>
+    /// that style. Which links are written is on <see cref="TextStyle.LinkUri"/>.</para>
     /// <para>Every line of the cell is as tall as the largest <see
     /// cref="TextStyle.EffectiveLeading"/> among the runs that hold text, and the first baseline
     /// lies one largest font size of those runs below the top of the cell's content, padding
@@ -384,15 +383,14 @@ public sealed class Cell
     /// holds only small text is as tall as its neighbours and sits as low as they do. A run that
     /// holds only a line end or white space counts, as any run that holds text does.</para>
     /// <para>A run is a link through its own <see cref="TextStyle.LinkUri"/> or
-    /// <see cref="TextStyle.LinkAnchor"/>, or as a page reference. The annotation covers
-    /// the width the run's text is drawn at on each line it is on, as tall as the line, and is cut
-    /// to the cell's box. A run that draws no glyph, or whose text measures zero wide, as Symbol
-    /// text does, gets none. <b>The links of a cell are not tagged</b>, whatever the document's
+    /// <see cref="TextStyle.LinkAnchor"/>, or as a page reference. The annotation covers the width
+    /// the run's text is drawn at on each line it is on, as tall as the line, and is cut to the
+    /// cell's box. A run that draws no glyph, or whose text measures zero wide, as Symbol text
+    /// does, gets none. <b>The links of a cell are not tagged</b>, whatever the document's
     /// conformance, and no exception reports it. A <see cref="TextStyle.LinkUri"/> or
     /// <see cref="TextStyle.LinkAnchor"/> on <see cref="Style"/> does not link a cell built from
-    /// runs: that style styles none of its runs, as <see cref="Style"/> says. A run's link
-    /// reaches the file through a context with a page, and throws <see
-    /// cref="ArgumentNullException"/>
+    /// runs: that style styles none of its runs, as <see cref="Style"/> says. A run's link reaches
+    /// the file through a context with a page, and throws <see cref="ArgumentNullException"/>
     /// through one with none, as a paragraph's does.</para>
     /// <para><b>A run that holds text is refused when its colour has a channel that is not finite
     /// or lies outside 0 to 1.</b> The constructor throws

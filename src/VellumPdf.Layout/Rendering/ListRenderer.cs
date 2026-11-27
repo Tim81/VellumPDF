@@ -74,9 +74,8 @@ public sealed class ListRenderer : IRenderer, IPageBreakSource, IKeepSource, IPl
     private sealed class Built(long save, List<Entry> items, int indentClamped, int clampSkipped, ReferenceReads? reads)
     {
         // The labels of the page references the entries were built from, or null when they hold
-        // none.
-        // A layout that finds one of them changed builds the entries again, so the gutter and the
-        // wrap are those of the label the list now holds.
+        // none. A layout that finds one of them changed builds the entries again, so the gutter and
+        // the wrap are those of the label the list now holds.
         internal ReferenceReads? Reads { get; } = reads;
 
         // The save that built the entries, as a number and not the run, so that a renderer a caller
@@ -329,9 +328,9 @@ public sealed class ListRenderer : IRenderer, IPageBreakSource, IKeepSource, IPl
     /// item, so <see cref="ArgumentOutOfRangeException"/> reaches the save only from a renderer
     /// you construct with a negative start and add yourself.</para>
     /// <para><b>A page reference in an item is read when the entries are built, and the entries are
-    /// built again when a label they read has changed.</b> The gutter, the wrap and the position
-    /// of the text are then those of the label the list now holds, as for the same text written as
-    /// a literal. A reference laid out outside a save is refused with
+    /// built again when a label they read has changed.</b> The gutter, the wrap and the position of
+    /// the text are then those of the label the list now holds, as for the same text written as a
+    /// literal. A reference laid out outside a save is refused with
     /// <see cref="InvalidOperationException"/> naming the anchor.</para>
     /// </remarks>
     /// <exception cref="ArgumentOutOfRangeException">
@@ -721,8 +720,7 @@ public sealed class ListRenderer : IRenderer, IPageBreakSource, IKeepSource, IPl
     /// </exception>
     /// <exception cref="InvalidOperationException">
     /// A style of an item sets <see cref="TextStyle.LinkAnchor"/>, and the document is PDF/UA-1 or
-    /// the
-    /// layout in progress holds no element with that anchor; see
+    /// the layout in progress holds no element with that anchor; see
     /// <see cref="ParagraphRenderer.Draw"/>.
     /// </exception>
     /// <exception cref="ArgumentException">

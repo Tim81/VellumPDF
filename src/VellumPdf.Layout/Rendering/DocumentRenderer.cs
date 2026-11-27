@@ -334,26 +334,22 @@ public sealed class DocumentRenderer
     /// <para>This method has no strict switch and exposes no <c>Diagnostics</c>: it never applies
     /// <see cref="Document.StrictDiagnostics"/>, so none of that refusal reaches you from
     /// here.</para>
-    /// <para><b>A page reference or a link to an anchor can refuse this call.</b> A name no element
-    /// holds, a style that sets two links, and a link under a PDF/UA-1 claim throw
-    /// <see cref="InvalidOperationException"/> before any layout, naming the element, so a retry
-    /// after the fix saves. A label that prints nothing, a reference held by a renderer this
-    /// instance was not given as an element, a link a renderer registers for a name no element
-    /// holds,
-    /// and pagination that does not settle throw it after the layout started. In a renderer that
-    /// holds a page reference, an element that answers differently the later time, or a
-    /// <see cref="Header"/> or <see cref="Footer"/> replaced while it renders, makes the call throw
-    /// "Pagination changed between the measuring and the drawing pass". <b>Do not replace</b>
-    /// <see cref="Header"/> or <see cref="Footer"/> while this call runs; 3.0 reads them
-    /// once.</para>
+    /// <para><b>A page reference or a link to an anchor can refuse this call.</b> The refusals, and
+    /// which of them leave the document saveable, are on <see cref="TextStyle.LinkAnchor"/> and
+    /// <see cref="TextRun.PageReference(string, TextStyle)"/>. In a renderer that holds a page
+    /// reference, a <see cref="Header"/> or <see cref="Footer"/> replaced while this call runs also
+    /// makes it throw "Pagination changed between the measuring and the drawing pass". <b>Do not
+    /// replace</b> <see cref="Header"/> or <see cref="Footer"/> while this call runs; 3.0 reads
+    /// them once.</para>
     /// </remarks>
     /// <exception cref="InvalidOperationException">
     /// An element needs more than <b>50,000</b> page continuations or is too tall for one page, or
     /// the kernel document has no pages, or this document has already been written, or the kernel
     /// document's conformance level refuses its encryption settings, or an element's input cannot
-    /// be laid out, or a registered font lacks a table the write needs. It is also thrown, by the
-    /// final write and so after the layout, when the kernel document holds a link on one of
-    /// its pages whose <see cref="VellumPdf.Annotations.PdfLinkAnnotation.DestName"/> no
+    /// be laid out, or a registered font lacks a table the write needs, or a link to an anchor or a
+    /// page reference is refused; see the remarks. It is also thrown, by the final write and so
+    /// after the layout, when the kernel document holds a link on one of its pages whose
+    /// <see cref="VellumPdf.Annotations.PdfLinkAnnotation.DestName"/> no
     /// <see cref="PdfDocument.AddNamedDestination"/> call added, or a
     /// <see cref="PdfDocument.AddPageLabelRange"/> range that starts at or after the number of
     /// pages the layout produced. The layout's pages are then already in the kernel document, which
@@ -509,8 +505,7 @@ public sealed class DocumentRenderer
         // What the elements alone decide about anchors and label ranges is refused here too, so the
         // document stays saveable: a repeated anchor, and a labelled break with nothing after it.
         // The same walk reads every link to an anchor and every page reference, so a name no
-        // element
-        // holds, and a link under a PDF/UA-1 claim, are refused here too.
+        // element holds, and a link under a PDF/UA-1 claim, are refused here too.
         _navigation = NavigationPlan.Build(_renderers, _pdf.Conformance, Header, Footer);
         listRun.Navigation = _navigation;
         if (_navigation.References is { } references)
@@ -1108,7 +1103,7 @@ public sealed class DocumentRenderer
             // vector is compared string by string, never joined.
             if (references is not null && references.RepeatedRun() >= 0)
                 throw new InvalidOperationException(references.DescribeUnstable(
-                    "a label returns to the value it had in an earlier layout pass"));
+                    "the labels of this pass are those of a pass two or more passes back"));
 
             var pages = RunPass(measure: true, totalPages: 0);
             pageCounts.Add(pages);
@@ -1156,14 +1151,16 @@ public sealed class DocumentRenderer
             $"Pagination did not settle after {MaxMeasureRuns} layout passes: {cause}. " +
             "A string that depends on where its target lands can change the layout and so move " +
             "that target, and here the passes keep changing it instead of settling. " +
-            "A Document cannot be saved again after a layout that threw.");
+            "A Document cannot be saved again after a layout that threw; a DocumentRenderer " +
+            "needs a new renderer and a new PdfDocument.");
     }
 
     private static InvalidOperationException PaginationChanged() =>
         new("Pagination changed between the measuring and the drawing pass: the drawing pass " +
             "reported a placement that differs from the last measuring run's, so a renderer " +
             "answered differently the later time. " +
-            "A Document cannot be saved again after a layout that threw.");
+            "A Document cannot be saved again after a layout that threw; a DocumentRenderer " +
+            "needs a new renderer and a new PdfDocument.");
 
     // FreshPageArea is the area of the page a Nothing answer is retried on: the next page, or, for
     // the retry itself, the page it is already on. Under mirrored margins the two differ in x.

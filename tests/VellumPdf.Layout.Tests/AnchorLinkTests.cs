@@ -132,6 +132,68 @@ public sealed class AnchorLinkTests
     }
 
     [Fact]
+    public void AStyleThatDrawsNoText_isReadAsAnyOtherIs()
+    {
+        var bad = Style(anchor: "missing");
+        void Refused(Action<Document> add, string site)
+        {
+            var doc = ShortPage();
+            add(doc);
+            var ex = Assert.Throws<InvalidOperationException>(() => Save(doc));
+            Assert.Contains(site, ex.Message, StringComparison.Ordinal);
+            Assert.Contains("\"missing\"", ex.Message, StringComparison.Ordinal);
+        }
+
+        Refused(d => d.Add(new Paragraph([new TextRun("", bad), new TextRun("x")])), "Paragraph 0");
+        Refused(d => d.SetFooter("", bad), "Footer band");
+        Refused(d =>
+        {
+            var table = new TableElement().SetColumnWidths(100);
+            table.AddRow().AddCell(new Cell("") { Style = bad });
+            d.Add(table);
+        }, "row 0, cell 0");
+
+        // A name an element holds saves, and the empty run writes no link.
+        var known = ShortPage();
+        known.Add(new Paragraph([new TextRun("", Go), new TextRun("x")]));
+        AddTarget(known);
+        Assert.Empty(Links(Save(known)).Where(l => l.Dest == "t"));
+    }
+
+    [Fact]
+    public void AnEmptyRunWithALink_isRefusedUnderPdfUa1BeforeAnyLayout()
+    {
+        var doc = ShortPage();
+        doc.Conformance = PdfConformance.PdfUA1;
+        doc.Tagged = true;
+        doc.Language = "en-US";
+        doc.Info.Title = "t";
+        doc.Add(new Paragraph([new TextRun("", Go), new TextRun("x")]));
+        AddTarget(doc);
+
+        Assert.Contains("Paragraph 0", Assert.Throws<InvalidOperationException>(() => Save(doc)).Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void TheStyleOfAnItemBelowTheSecondLevel_andOfARunCellsOwnStyle_isNotRead()
+    {
+        var bad = Style(anchor: "missing");
+        var leaf = new ListItem("deep", bad);
+        var middle = new ListItem("middle");
+        middle.AddChild(leaf);
+        var top = new ListItem("top");
+        top.AddChild(middle);
+        var table = new TableElement().SetColumnWidths(100);
+        table.AddRow().AddCell(new Cell([new TextRun("x", Style())]) { Style = bad });
+
+        var doc = ShortPage();
+        doc.Add(new ListElement().Add(top));
+        doc.Add(table);
+
+        Assert.NotEmpty(Save(doc));
+    }
+
+    [Fact]
     public void ALinkingDefaultCellStyle_thatACellStyleOverrides_isNotRead()
     {
         var doc = ShortPage();

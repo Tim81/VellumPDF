@@ -237,8 +237,7 @@ public sealed class Preformatted
     /// as they are on <see cref="Paragraph.Anchor"/>.</para>
     /// <para>A <see cref="TextStyle.LinkAnchor"/> or a
     /// <see cref="TextRun.PageReference(string, TextStyle)"/> names an anchor; the refusals and
-    /// their
-    /// limits are on <see cref="TextStyle.LinkAnchor"/>. A reference prints the page this
+    /// their limits are on <see cref="TextStyle.LinkAnchor"/>. A reference prints the page this
     /// element's first line is on.</para>
     /// </remarks>
     /// <exception cref="ArgumentException">
@@ -272,17 +271,15 @@ public sealed class Preformatted
     /// line feed, for U+2028 and U+2029, and for an unpaired surrogate; <c>ParamName</c> is
     /// <c>text</c> and the message names the UTF-16 index and the code point, an unpaired surrogate
     /// by its code unit. It throws <see cref="ArgumentException"/> with <c>ParamName</c>
-    /// <c>style</c> for each of these: a
-    /// <see cref="TextStyle.FontSize"/> that is not finite, is below 0.000005, which
-    /// <c>PdfCanvas</c> would write as zero, or is above 1e30;
-    /// a <see cref="TextStyle.Leading"/> that is not finite
-    /// (zero and negative still mean automatic leading); a <see cref="TextStyle.Color"/> channel
-    /// that is not a number from 0 to 1, the range ISO 32000-2:2020, 8.6.8 gives each <c>rg</c> and
-    /// <c>RG</c> operand; a <see cref="TextStyle.FontRef"/> that is a <see cref="Standard14"/>
-    /// value the enumeration does not name, or Symbol or ZapfDingbats, which have no
-    /// WinAnsiEncoding glyphs and measure as zero wide; and a <see cref="TextStyle.LinkUri"/> or a
-    /// <see cref="TextStyle.LinkAnchor"/>, because a link on a block that is not drawn as text runs
-    /// would be dropped without a word.
+    /// <c>style</c> for each of these: a <see cref="TextStyle.FontSize"/> that is not finite, is
+    /// below 0.000005, which <c>PdfCanvas</c> would write as zero, or is above 1e30; a
+    /// <see cref="TextStyle.Leading"/> that is not finite (zero and negative still mean automatic
+    /// leading); a <see cref="TextStyle.Color"/> channel that is not a number from 0 to 1, the
+    /// range ISO 32000-2:2020, 8.6.8 gives each <c>rg</c> and <c>RG</c> operand; a
+    /// <see cref="TextStyle.FontRef"/> that is a <see cref="Standard14"/> value the enumeration
+    /// does not name, or Symbol or ZapfDingbats, which have no WinAnsiEncoding glyphs and measure
+    /// as zero wide; and a <see cref="TextStyle.LinkUri"/> or a <see cref="TextStyle.LinkAnchor"/>,
+    /// because a link on a block that is not drawn as text runs would be dropped without a word.
     /// <para><b>The 1e30 ceiling on the font size is there for ISO 32000-1, Annex C, Table C.1.</b>
     /// It gives a real number a magnitude of at most 3.403 × 10^38, and PDF/A-2, 6.1.13 applies the
     /// limit. The block writes the size in <c>Tf</c> and in each baseline, and writes the marker's
