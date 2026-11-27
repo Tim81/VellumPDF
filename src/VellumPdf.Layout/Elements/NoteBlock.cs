@@ -41,7 +41,8 @@ namespace VellumPdf.Layout.Elements;
 /// same page, unless it is the first of its piece.</para>
 /// <para><b>Tagging.</b> In a tagged document the block is one structure element that holds the
 /// structure elements of its paragraphs, also when it spans pages: <c>Aside</c> in a document
-/// whose <see cref="Document.Conformance"/> is <see cref="VellumPdf.Document.PdfConformance.None"/>,
+/// whose <see cref="Document.Conformance"/> is <see
+/// cref="VellumPdf.Document.PdfConformance.None"/>,
 /// which is written as PDF 2.0, and <c>Div</c> under every conformance claim, which is written as
 /// PDF 1.7, where <c>Aside</c> is not defined. The background and the border are drawn as an
 /// artifact, so they are outside the structure tree and outside extracted text. The block is
@@ -131,7 +132,8 @@ public sealed class NoteBlock
         return this;
     }
 
-    /// <summary>Appends a paragraph built from the text and returns this block for chaining.</summary>
+    /// <summary>Appends a paragraph built from the text and returns this block for
+    /// chaining.</summary>
     /// <remarks>
     /// Creates the paragraph with <see cref="Paragraph(string, TextStyle)"/> and adds it. A null
     /// <paramref name="style"/> gives <see cref="TextStyle.Default"/>, not the style that

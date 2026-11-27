@@ -8,6 +8,27 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- **`NoteBlock` sets paragraphs apart with a background, a border and padding (#703).** A note, a
+  warning or a tip no longer has to be a one-cell table that the structure tree calls a table. A
+  `NoteBlock` holds paragraphs, so a bold lead-in run, a link and a page reference work in it as
+  they do in a paragraph, and `Document.Add(NoteBlock)` places it. `Background`, `BorderColor`,
+  `BorderWidth` and `Padding` draw the box, inside the content width, with the text starting at
+  the left edge plus the border plus the left padding. A block that splits across pages keeps its
+  background and its left and right border on every page. The top border and padding are on the
+  first page and the bottom ones on the last, so the frame is open at a page break, and the last
+  page always holds a line of text with the bottom padding, never padding alone. `BreakBefore`,
+  `KeepWithNext`, `KeepTogether`, `Anchor` and `SpaceAfter` read as on the other elements. A
+  paragraph inside keeps its own `KeepTogether`, `KeepWithNext`, line counts, `SpaceAfter` and
+  anchor within the block. In a tagged document the block is one `Aside` structure element in a
+  file with no conformance claim, which is written as PDF 2.0, and one `Div` under a PDF/A or
+  PDF/UA claim, which is written as PDF 1.7; the paragraphs are its children, and the background
+  and border are an artifact. It is never tagged as a table or as `Note`. A negative or non-finite
+  `BorderWidth` or padding edge throws `ArgumentOutOfRangeException` from the setter, a null
+  paragraph throws `ArgumentNullException`, and a paragraph that asks for a page break throws
+  `ArgumentException` when it is added. A block with no paragraph is refused by the save before
+  any layout. Lists, tables, headings and preformatted text cannot be added to a block. A document
+  that does not use the block saves to the same bytes as before.
+
 - **`SpaceAfter` sets the gap after a block element (#700).** `Paragraph`, `Heading`,
   `ListElement`, `Preformatted`, `TableElement`, `LayoutImage`, `LineSeparator` and `PieChart` take
   a `SpaceAfter` in points, so a caller sets the gap between two elements once, on the first,

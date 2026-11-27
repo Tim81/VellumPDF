@@ -28,7 +28,8 @@ internal sealed class NoteBlockRenderer : IRenderer, IPageBreakSource, IKeepSour
         internal PdfStructElem? Structure;
     }
 
-    // A paragraph, or the rest of one, placed in a piece, with where its renderer put it. A renderer
+    // A paragraph, or the rest of one, placed in a piece, with where its renderer put it. A
+    // renderer
     // that answered Full is the shared one, and a later layout of the block, a probe for a keep
     // request for one, writes over what it holds, so the piece restores its own placement before it
     // reports or draws.
@@ -100,7 +101,8 @@ internal sealed class NoteBlockRenderer : IRenderer, IPageBreakSource, IKeepSour
     }
 
     /// <summary>
-    /// The width the paragraphs are laid out in when the block is offered <paramref name="boxWidth"/>,
+    /// The width the paragraphs are laid out in when the block is offered <paramref
+    /// name="boxWidth"/>,
     /// before any paragraph's own margins.
     /// </summary>
     internal double ContentWidthIn(double boxWidth) =>
@@ -262,7 +264,8 @@ internal sealed class NoteBlockRenderer : IRenderer, IPageBreakSource, IKeepSour
             return result;
 
         // The piece ends before paragraph i. A paragraph that asks to stay with the next one does
-        // not end the piece alone: it goes on to the next page with the one it was kept with, unless
+        // not end the piece alone: it goes on to the next page with the one it was kept with,
+        // unless
         // it is all the piece holds.
         while (result.Placed.Count > 1 && children[i - 1].Paragraph.KeepWithNext)
         {
@@ -329,7 +332,8 @@ internal sealed class NoteBlockRenderer : IRenderer, IPageBreakSource, IKeepSour
             ctx.RegisterStructElemTree(structure!);
     }
 
-    // The fill, then the border, as an artifact in a tagged document: neither is content, so neither
+    // The fill, then the border, as an artifact in a tagged document: neither is content, so
+    // neither
     // enters the structure tree or the extracted text. The border is four bars filled in one path,
     // so an edge a page break leaves open is left out and the corners need no join. The background
     // fills the whole box, border included, so no hairline shows between the two.
