@@ -289,33 +289,33 @@ public sealed class LayoutImage
     /// The call throws <see cref="ArgumentException"/> for an empty array and
     /// <see cref="InvalidDataException"/> for an unknown signature, because a format that cannot be
     /// read from the data cannot be loaded. The message of the second names the first eight bytes
-    /// found, in hex. The signatures are the ones the loaders check first: the PNG signature, the
-    /// JPEG start-of-image marker, <c>II</c> or <c>MM</c> followed by 42 for TIFF, <c>BM</c>,
-    /// <c>GIF87a</c> and <c>GIF89a</c>, the JBIG2 ID string, and the JP2 signature box or the JPEG
-    /// 2000 start-of-codestream marker. Data that ends before a signature does, with every byte
-    /// agreeing so far, is refused with a message that says so.
+    /// found, in hex. The signatures are the PNG signature, the JPEG start-of-image marker,
+    /// <c>II</c> or <c>MM</c> followed by 42 for TIFF, <c>BM</c>, <c>GIF87a</c> and <c>GIF89a</c>,
+    /// the JBIG2 file ID string, and for JPEG 2000 the 12-byte JP2 signature box or the
+    /// start-of-codestream marker. The box is matched whole, length field included, so a JP2 file
+    /// whose signature box declares another length is refused here although
+    /// <see cref="JpxImageLoader"/> reads it. Data that ends before a signature does, with every
+    /// byte agreeing so far, is refused with a message that says so.
     /// <para>The data then goes to the loader a caller would have called by hand, so a file loads
     /// to the same image as with <see cref="PngImageLoader"/>, <see cref="JpegImageLoader"/>,
     /// <see cref="TiffImageLoader"/>, <see cref="BmpImageLoader"/>, <see cref="GifImageLoader"/>,
-    /// <see cref="Jbig2ImageLoader"/> or <see cref="JpxImageLoader"/>, and what that loader refuses
-    /// is refused here with the same exception type and message. A JPEG is passed through as
-    /// <c>/DCTDecode</c>, never decoded or re-encoded. The format is read from the data, not from a
-    /// file name.</para>
+    /// <see cref="Jbig2ImageLoader"/> or <see cref="JpxImageLoader"/>. What that loader refuses,
+    /// and every limit it applies, is the loader's own: it reaches the caller with the same
+    /// exception type and message, and the loader's documentation is where to read it. A JPEG is
+    /// passed through as <c>/DCTDecode</c>, never decoded or re-encoded. The format is read from
+    /// the data, not from a file name.</para>
     /// <para>Two kinds of data have no signature to read and are not loaded here. A JBIG2 stream in
     /// the embedded form used inside a PDF starts straight at its first segment, and CCITT Group 3
     /// and Group 4 data carries no header and needs its width, height and coding parameters. Load
     /// them with <see cref="Jbig2ImageLoader"/> and <see cref="CcittImageLoader"/> and pass the
-    /// result to the constructor. A TIFF whose strips hold CCITT data does load here, since the
-    /// TIFF tags carry the parameters. A JBIG2 file with the full Annex D header is read as
-    /// <see cref="Jbig2ImageLoader"/> reads it, so it is refused when its bytes after the ID string
-    /// do not read as segments.</para>
+    /// result to the constructor. Data that begins with the JBIG2 file ID string is handed to
+    /// <see cref="Jbig2ImageLoader"/> as it is, whatever follows the string.</para>
     /// <para>For a JPEG the image keeps a reference to <paramref name="data"/>, not a copy.
     /// <b>Do not change the array</b> before the document is saved; the output holds whatever the
     /// array holds then.</para>
-    /// <para>The loaders other than the JPEG loader refuse an image of more than 100,000,000 pixels;
-    /// see <see cref="JpegImageLoader.Load(byte[])"/> for the JPEG case. The array itself has no
-    /// bound here. A TIFF can make its loader allocate much more than the file holds before the
-    /// loader refuses it (#534), and this method reaches the same code.</para>
+    /// <para>The array itself has no bound here. <see cref="TiffImageLoader"/> can allocate much
+    /// more than the file holds before it refuses the file (#534), and this method reaches the
+    /// same code.</para>
     /// </remarks>
     /// <exception cref="ArgumentNullException"><paramref name="data"/> is <see langword="null"/>.</exception>
     /// <exception cref="ArgumentException"><paramref name="data"/> is empty.</exception>
@@ -338,16 +338,19 @@ public sealed class LayoutImage
     /// <param name="options">The options passed to the loader that reads the data.</param>
     /// <returns>An element with the default size, margins and alignment.</returns>
     /// <remarks>
-    /// <b>A member the data's loader never reads is refused unless it has its default value.</b> The
-    /// call throws <see cref="ArgumentException"/> with <c>ParamName</c> <c>options</c> and a
-    /// message naming the format and the member, rather than dropping the request without a word.
-    /// <see cref="ImageLoadOptions.BitDepth"/> is read for PNG and TIFF.
-    /// <see cref="ImageLoadOptions.DecodeMode"/> is read for TIFF, JBIG2 and JPEG 2000. JPEG, BMP and
-    /// GIF read neither. A member the loader reads is applied as that loader applies it, including
-    /// where it reads the member only in part, such as <see cref="ImageLoadOptions.DecodeMode"/> for
-    /// a TIFF with no CCITT data.
-    /// <para>The default options, <see cref="ImageLoadOptions.Default"/>, are accepted for every
-    /// format. <b>Do not pass</b> options meant for one format when the data may be another: pass the
+    /// <b>The options go to the data's loader exactly as an explicit call passes them.</b> What
+    /// the loader does with each member, including a member it ignores for some inputs, is in the
+    /// remarks of <see cref="PngImageLoader.Load(byte[], ImageLoadOptions)"/>,
+    /// <see cref="TiffImageLoader.Load(byte[], ImageLoadOptions)"/>,
+    /// <see cref="Jbig2ImageLoader.Load(byte[], ImageLoadOptions)"/> and
+    /// <see cref="JpxImageLoader.Load(byte[], ImageLoadOptions)"/>, and is not repeated here.
+    /// <para><b>Options for a loader that takes none are refused.</b> JPEG, BMP and GIF are read by
+    /// loaders with no <see cref="ImageLoadOptions"/>, so for them the call throws
+    /// <see cref="ArgumentException"/> with <c>ParamName</c> <c>options</c> unless the options equal
+    /// <see cref="ImageLoadOptions.Default"/>. A member that is not a defined
+    /// <see cref="ImageBitDepth"/> or <see cref="ImageDecodeMode"/> value is refused with
+    /// <see cref="ArgumentOutOfRangeException"/> for every format, after the signature is read.
+    /// <b>Do not pass</b> options meant for one format when the data may be another: pass the
     /// default, or call <see cref="FromBytes(byte[])"/>. A GIF takes the options of
     /// <see cref="FromBytes(byte[], GifLoadOptions)"/>, not these.</para>
     /// <para>Everything else is as for <see cref="FromBytes(byte[])"/>.</para>
@@ -357,14 +360,16 @@ public sealed class LayoutImage
     /// both null reports <paramref name="data"/>.
     /// </exception>
     /// <exception cref="ArgumentException">
-    /// <paramref name="data"/> is empty, or <paramref name="options"/> sets a member the data's
-    /// loader does not read.
+    /// <paramref name="data"/> is empty, or the data is JPEG, BMP or GIF and
+    /// <paramref name="options"/> differs from <see cref="ImageLoadOptions.Default"/>.
+    /// </exception>
+    /// <exception cref="ArgumentOutOfRangeException">
+    /// A member of <paramref name="options"/> is not a defined enumeration value.
     /// </exception>
     /// <exception cref="InvalidDataException">As for <see cref="FromBytes(byte[])"/>.</exception>
     /// <exception cref="NotSupportedException">
-    /// As for <see cref="FromBytes(byte[])"/>, and for a JPEG 2000 file with
-    /// <see cref="ImageDecodeMode.DecodeToRaster"/>, which <see cref="JpxImageLoader"/> does not
-    /// support.
+    /// As for <see cref="FromBytes(byte[])"/>, and whatever the loader throws for the options it is
+    /// given.
     /// </exception>
     public static LayoutImage FromBytes(byte[] data, ImageLoadOptions options)
     {
@@ -381,20 +386,21 @@ public sealed class LayoutImage
     /// <param name="options">The options passed to the GIF loader when the data is a GIF.</param>
     /// <returns>An element with the default size, margins and alignment.</returns>
     /// <remarks>
-    /// <b>Options for a format that is not GIF are refused unless they have the default value.</b>
-    /// Only the GIF loader reads <see cref="GifLoadOptions.PlaceOnLogicalScreen"/>. For any other
-    /// format the call throws <see cref="ArgumentException"/> with <c>ParamName</c>
-    /// <c>options</c> when it is set, and accepts <see cref="GifLoadOptions.Default"/>.
-    /// <b>Do not pass</b> a set <see cref="GifLoadOptions.PlaceOnLogicalScreen"/> unless the data is
-    /// a GIF. Everything else is as for <see cref="FromBytes(byte[])"/>.
+    /// <b>Options for a format that is not GIF are refused unless they equal
+    /// <see cref="GifLoadOptions.Default"/>.</b> Only <see cref="GifImageLoader"/> takes
+    /// <see cref="GifLoadOptions"/>, so for any other format the call throws
+    /// <see cref="ArgumentException"/> with <c>ParamName</c> <c>options</c>. For a GIF the options
+    /// go to the loader as given; see <see cref="GifImageLoader.Load(byte[], GifLoadOptions)"/>.
+    /// <b>Do not pass</b> options that differ from the default unless the data is a GIF. Everything
+    /// else is as for <see cref="FromBytes(byte[])"/>.
     /// </remarks>
     /// <exception cref="ArgumentNullException">
     /// <paramref name="data"/> or <paramref name="options"/> is <see langword="null"/>. A call with
     /// both null reports <paramref name="data"/>.
     /// </exception>
     /// <exception cref="ArgumentException">
-    /// <paramref name="data"/> is empty, or <paramref name="options"/> asks for placement and the
-    /// data is not a GIF.
+    /// <paramref name="data"/> is empty, or the data is not a GIF and <paramref name="options"/>
+    /// differs from <see cref="GifLoadOptions.Default"/>.
     /// </exception>
     /// <exception cref="InvalidDataException">As for <see cref="FromBytes(byte[])"/>.</exception>
     /// <exception cref="NotSupportedException">As for <see cref="FromBytes(byte[])"/>.</exception>
@@ -414,19 +420,23 @@ public sealed class LayoutImage
     /// <b>A file of more than 268,435,456 bytes (256 MiB) is refused</b> with
     /// <see cref="InvalidDataException"/> before it is read. Read it yourself and pass the bytes to
     /// <see cref="FromBytes(byte[])"/>, which has no bound of its own. An empty file is refused with
-    /// <see cref="ArgumentException"/>. The file is opened for reading with other readers allowed
-    /// and closed before the call returns; one that another process holds open for writing, or
-    /// locks, fails with <see cref="IOException"/>. The format is read from the bytes, not from the
-    /// extension. Everything else is as for <see cref="FromBytes(byte[])"/>.
+    /// <see cref="ArgumentException"/>. The file is opened for reading, allowing other readers, and
+    /// closed before the call returns. An exception that <see cref="FileStream"/> throws for the
+    /// path propagates unchanged, so whether another process's hold on the file blocks the read,
+    /// and the <see cref="IOException"/> that reports it, are those of the platform. The format is
+    /// read from the bytes, not from the extension. Everything else is as for
+    /// <see cref="FromBytes(byte[])"/>.
     /// </remarks>
     /// <exception cref="ArgumentNullException"><paramref name="path"/> is <see langword="null"/>.</exception>
     /// <exception cref="ArgumentException">
-    /// <paramref name="path"/> is empty or not a valid path, or the file holds no bytes.
+    /// <paramref name="path"/> is empty or contains a null character, or the file holds no bytes.
     /// </exception>
     /// <exception cref="FileNotFoundException">The file does not exist.</exception>
     /// <exception cref="DirectoryNotFoundException">A directory of the path does not exist.</exception>
-    /// <exception cref="UnauthorizedAccessException">The caller may not read the file.</exception>
-    /// <exception cref="IOException">The file is locked or cannot be read.</exception>
+    /// <exception cref="UnauthorizedAccessException">
+    /// The caller may not read the file, or the path names a directory.
+    /// </exception>
+    /// <exception cref="IOException">The file cannot be opened or read.</exception>
     /// <exception cref="InvalidDataException">
     /// The file is larger than the bound, begins with no known signature, or the loader refuses it.
     /// </exception>
@@ -452,13 +462,18 @@ public sealed class LayoutImage
     /// <paramref name="path"/> or <paramref name="options"/> is <see langword="null"/>.
     /// </exception>
     /// <exception cref="ArgumentException">
-    /// As for <see cref="FromFile(string)"/>, or <paramref name="options"/> sets a member the file's
-    /// loader does not read.
+    /// As for <see cref="FromFile(string)"/>, or the file is JPEG, BMP or GIF and
+    /// <paramref name="options"/> differs from <see cref="ImageLoadOptions.Default"/>.
+    /// </exception>
+    /// <exception cref="ArgumentOutOfRangeException">
+    /// A member of <paramref name="options"/> is not a defined enumeration value.
     /// </exception>
     /// <exception cref="FileNotFoundException">The file does not exist.</exception>
     /// <exception cref="DirectoryNotFoundException">A directory of the path does not exist.</exception>
-    /// <exception cref="UnauthorizedAccessException">The caller may not read the file.</exception>
-    /// <exception cref="IOException">The file is locked or cannot be read.</exception>
+    /// <exception cref="UnauthorizedAccessException">
+    /// The caller may not read the file, or the path names a directory.
+    /// </exception>
+    /// <exception cref="IOException">The file cannot be opened or read.</exception>
     /// <exception cref="InvalidDataException">As for <see cref="FromFile(string)"/>.</exception>
     /// <exception cref="NotSupportedException">
     /// As for <see cref="FromBytes(byte[], ImageLoadOptions)"/>.
@@ -486,13 +501,15 @@ public sealed class LayoutImage
     /// <paramref name="path"/> or <paramref name="options"/> is <see langword="null"/>.
     /// </exception>
     /// <exception cref="ArgumentException">
-    /// As for <see cref="FromFile(string)"/>, or <paramref name="options"/> asks for placement and
-    /// the file is not a GIF.
+    /// As for <see cref="FromFile(string)"/>, or the file is not a GIF and
+    /// <paramref name="options"/> differs from <see cref="GifLoadOptions.Default"/>.
     /// </exception>
     /// <exception cref="FileNotFoundException">The file does not exist.</exception>
     /// <exception cref="DirectoryNotFoundException">A directory of the path does not exist.</exception>
-    /// <exception cref="UnauthorizedAccessException">The caller may not read the file.</exception>
-    /// <exception cref="IOException">The file is locked or cannot be read.</exception>
+    /// <exception cref="UnauthorizedAccessException">
+    /// The caller may not read the file, or the path names a directory.
+    /// </exception>
+    /// <exception cref="IOException">The file cannot be opened or read.</exception>
     /// <exception cref="InvalidDataException">As for <see cref="FromFile(string)"/>.</exception>
     /// <exception cref="NotSupportedException">As for <see cref="FromBytes(byte[])"/>.</exception>
     public static LayoutImage FromFile(string path, GifLoadOptions options)
@@ -510,17 +527,21 @@ public sealed class LayoutImage
     /// <returns>An element with the default size, margins and alignment.</returns>
     /// <remarks>
     /// <b>A stream with more than 268,435,456 bytes (256 MiB) left is refused</b> with
-    /// <see cref="InvalidDataException"/>. A stream that reports its length is refused before a byte
-    /// is read. Any other stream is read until one byte past the bound arrives, so an endless stream
-    /// costs the call memory of the order of the bound before it throws. Read the bytes yourself and pass them
-    /// to <see cref="FromBytes(byte[])"/> for a larger image. A stream with nothing left to read is
-    /// refused with <see cref="ArgumentException"/>, and so is one that cannot be read, such as a
-    /// disposed one.
+    /// <see cref="InvalidDataException"/>. A seekable stream whose <c>Length</c> says so is refused
+    /// before a byte is read. Every stream is also read in chunks and refused once one byte past
+    /// the bound has arrived, so a stream whose length is wrong, or one that never ends, costs the
+    /// call the memory of the chunks read, and one more copy of what it keeps. Read the bytes
+    /// yourself and pass them to <see cref="FromBytes(byte[])"/> for a larger image. A stream with
+    /// nothing left to read is refused with <see cref="ArgumentException"/>, and so is one whose
+    /// <c>CanRead</c> is false, such as a disposed <see cref="MemoryStream"/>.
     /// <para>The stream need not be seekable. It is read from the position it is at, not from the
-    /// start, so a caller who has read something off the front passes what is left, and the bytes
-    /// before the position take no part in the signature. The position afterwards is the end of the
-    /// stream. A call that throws because of the bound leaves a seekable stream where it was; after
-    /// any other refusal the position is unspecified.</para>
+    /// start, so the bytes before the position take no part in the signature. After a successful
+    /// call the position is the end of the stream. After a refusal it is: unchanged, when the
+    /// stream had nothing left or its <c>Length</c> showed it over the bound; one byte past the
+    /// bound from where the call began, when the bound was found by reading; at the end of the
+    /// stream, for any refusal that follows the read, such as an unknown signature, the options or
+    /// the loader. An exception the stream itself throws propagates unchanged and leaves the
+    /// position wherever the stream left it.</para>
     /// <para><b>The stream is not disposed or closed.</b> It belongs to the caller before and after
     /// the call, and the image holds no reference to it. Everything else is as for
     /// <see cref="FromBytes(byte[])"/>.</para>
@@ -531,10 +552,16 @@ public sealed class LayoutImage
     /// left.
     /// </exception>
     /// <exception cref="IOException">Reading the stream fails.</exception>
+    /// <exception cref="ObjectDisposedException">
+    /// The stream throws it, for a stream that is disposed but still reports <c>CanRead</c>.
+    /// </exception>
     /// <exception cref="InvalidDataException">
     /// The stream is larger than the bound, begins with no known signature, or the loader refuses it.
     /// </exception>
-    /// <exception cref="NotSupportedException">As for <see cref="FromBytes(byte[])"/>.</exception>
+    /// <exception cref="NotSupportedException">
+    /// As for <see cref="FromBytes(byte[])"/>, or the stream throws it, for instance from a
+    /// <c>Length</c> it does not support.
+    /// </exception>
     public static LayoutImage FromStream(Stream stream)
     {
         ArgumentNullException.ThrowIfNull(stream);
@@ -559,10 +586,14 @@ public sealed class LayoutImage
     /// <paramref name="stream"/> or <paramref name="options"/> is <see langword="null"/>.
     /// </exception>
     /// <exception cref="ArgumentException">
-    /// As for <see cref="FromStream(Stream)"/>, or <paramref name="options"/> sets a member the
-    /// stream's loader does not read.
+    /// As for <see cref="FromStream(Stream)"/>, or the stream holds JPEG, BMP or GIF and
+    /// <paramref name="options"/> differs from <see cref="ImageLoadOptions.Default"/>.
+    /// </exception>
+    /// <exception cref="ArgumentOutOfRangeException">
+    /// A member of <paramref name="options"/> is not a defined enumeration value.
     /// </exception>
     /// <exception cref="IOException">Reading the stream fails.</exception>
+    /// <exception cref="ObjectDisposedException">As for <see cref="FromStream(Stream)"/>.</exception>
     /// <exception cref="InvalidDataException">As for <see cref="FromStream(Stream)"/>.</exception>
     /// <exception cref="NotSupportedException">
     /// As for <see cref="FromBytes(byte[], ImageLoadOptions)"/>.
@@ -592,10 +623,11 @@ public sealed class LayoutImage
     /// <paramref name="stream"/> or <paramref name="options"/> is <see langword="null"/>.
     /// </exception>
     /// <exception cref="ArgumentException">
-    /// As for <see cref="FromStream(Stream)"/>, or <paramref name="options"/> asks for placement and
-    /// the stream does not hold a GIF.
+    /// As for <see cref="FromStream(Stream)"/>, or the stream does not hold a GIF and
+    /// <paramref name="options"/> differs from <see cref="GifLoadOptions.Default"/>.
     /// </exception>
     /// <exception cref="IOException">Reading the stream fails.</exception>
+    /// <exception cref="ObjectDisposedException">As for <see cref="FromStream(Stream)"/>.</exception>
     /// <exception cref="InvalidDataException">As for <see cref="FromStream(Stream)"/>.</exception>
     /// <exception cref="NotSupportedException">As for <see cref="FromBytes(byte[])"/>.</exception>
     public static LayoutImage FromStream(Stream stream, GifLoadOptions options)

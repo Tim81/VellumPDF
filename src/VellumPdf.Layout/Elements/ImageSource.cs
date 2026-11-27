@@ -7,28 +7,32 @@ using VellumPdf.Images;
 namespace VellumPdf.Layout.Elements;
 
 /// <summary>
-/// Reads an image's format from its first bytes and hands the data to the loader a caller would
-/// have chosen by hand. The signatures are the ones the loaders themselves check first, so a
-/// file this class names as a format is one that loader starts to read, and a file it refuses
-/// is one no loader would have taken as that format.
+/// Reads an image's format from its first bytes and hands the data to that format's loader. A
+/// byte string that matches a signature below goes to the loader and everything after that is
+/// the loader's; one that matches none is refused here. Some data a loader would read has no
+/// signature row and is refused here for that reason: JBIG2 in its embedded form, and a JP2 file
+/// whose signature box length is not 12.
 /// </summary>
 internal static class ImageSource
 {
     /// <summary>The most a stream or a file may hold, in bytes (256 MiB).</summary>
     internal const long MaxBytes = 256L * 1024 * 1024;
 
-    private const int InitialChunk = 81_920;
+    private const int FirstChunk = 64 * 1024;
+    private const int LastChunk = 4 * 1024 * 1024;
 
     private enum Format { Png, Jpeg, Tiff, Bmp, Gif, Jbig2, Jpx }
 
     private readonly record struct Signature(Format Format, string Name, byte[] Bytes);
 
-    // Each row is what the loader checks before it reads anything else. PNG: the PNG signature,
-    // W3C PNG 3rd edition section 5.2. JPEG: the start-of-image marker every interchange stream
-    // begins with, ITU-T T.81 Annex B. TIFF: byte order "II" or "MM", then 42, TIFF 6.0 section 2.
-    // BMP: "BM". GIF: "GIF" and a version, GIF89a specification section 17. JBIG2: the 8-byte file
-    // ID string, ITU-T T.88 D.4.1. JPEG 2000: the 12-byte signature box and the start-of-codestream
-    // marker, exactly as JpxImageLoader tests them; ISO/IEC 15444-1 is not among the held texts.
+    // PNG: the PNG signature, W3C PNG 3rd edition section 5.2. JPEG: the start-of-image marker
+    // every interchange stream begins with, ITU-T T.81 Annex B. TIFF: byte order "II" or "MM",
+    // then 42, TIFF 6.0 section 2. BMP: "BM". GIF: "GIF" and a version, GIF89a specification
+    // section 17. JBIG2: the 8-byte file ID string, ITU-T T.88 D.4.1. JPEG 2000: the 12-byte JP2
+    // signature box, and the start-of-codestream marker. ISO/IEC 15444-1 is not among the held
+    // texts, so those two rows were not read against it. The signature box row also pins its
+    // length field to 12, which JpxImageLoader does not check; a file that differs only there
+    // loads through the loader and is refused here.
     private static readonly Signature[] Signatures =
     [
         new(Format.Png, "PNG", [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A]),
@@ -49,12 +53,28 @@ internal static class ImageSource
     {
         var format = Sniff(data);
         if (imageOptions is not null)
-            RefuseUnreadMembers(format, imageOptions);
+        {
+            // New API refuses an enum value that names nothing, whichever loader gets the options.
+            if (!Enum.IsDefined(imageOptions.BitDepth))
+                throw new ArgumentOutOfRangeException("options", imageOptions.BitDepth,
+                    "ImageLoadOptions.BitDepth is not a defined ImageBitDepth.");
+            if (!Enum.IsDefined(imageOptions.DecodeMode))
+                throw new ArgumentOutOfRangeException("options", imageOptions.DecodeMode,
+                    "ImageLoadOptions.DecodeMode is not a defined ImageDecodeMode.");
+        }
+
+        // The rule depends on the format alone: a loader that takes no options of this type is
+        // given none, and a request that differs from the default is refused rather than dropped.
+        // What a loader that does take them does with each member is that loader's own business.
+        var takesImageOptions = format is Format.Png or Format.Tiff or Format.Jbig2 or Format.Jpx;
+        if (imageOptions is not null && !takesImageOptions && imageOptions != ImageLoadOptions.Default)
+            throw new ArgumentException(
+                $"The data is {NameOf(format)}, whose loader takes no ImageLoadOptions. " +
+                "Pass ImageLoadOptions.Default or no options.", "options");
         if (gifOptions is not null && format != Format.Gif && gifOptions != GifLoadOptions.Default)
             throw new ArgumentException(
-                $"The data is {NameOf(format)}, which does not read GifLoadOptions, so " +
-                "PlaceOnLogicalScreen would be ignored. Pass the default GIF options or none.",
-                "options");
+                $"The data is {NameOf(format)}, whose loader takes no GifLoadOptions. " +
+                "Pass GifLoadOptions.Default or no options.", "options");
 
         return format switch
         {
@@ -71,25 +91,6 @@ internal static class ImageSource
             _ => imageOptions is null
                 ? JpxImageLoader.Load(data) : JpxImageLoader.Load(data, imageOptions),
         };
-    }
-
-    // A member the chosen loader never reads would be dropped without a word, so a value other
-    // than the default is refused. The default is what the loader uses anyway.
-    private static void RefuseUnreadMembers(Format format, ImageLoadOptions options)
-    {
-        var readsBitDepth = format is Format.Png or Format.Tiff;
-        var readsDecodeMode = format is Format.Tiff or Format.Jbig2 or Format.Jpx;
-        if (!readsBitDepth && options.BitDepth != ImageBitDepth.Preserve)
-            throw new ArgumentException(
-                $"The data is {NameOf(format)}, whose loader never reads ImageLoadOptions.BitDepth, " +
-                $"so {options.BitDepth} would be ignored. Pass the default or no options.",
-                nameof(options));
-        if (!readsDecodeMode && options.DecodeMode != ImageDecodeMode.Passthrough)
-            throw new ArgumentException(
-                $"The data is {NameOf(format)}, whose loader never reads " +
-                $"ImageLoadOptions.DecodeMode, so {options.DecodeMode} would be ignored. " +
-                "Pass the default or no options.",
-                nameof(options));
     }
 
     private static string NameOf(Format format)
@@ -146,47 +147,50 @@ internal static class ImageSource
         return ReadAll(file, maxBytes, nameof(path), "file");
     }
 
-    // Reads from the stream's position to its end. A seekable stream says how much is left, which
-    // sizes the buffer once and refuses an oversized one before a byte is read. Any other stream
-    // grows a buffer by doubling, and the read stops with a refusal the moment one byte past the
-    // bound has arrived, so an endless stream costs at most the bound.
+    // Reads from the stream's position to its end, for every kind of stream the same way: in
+    // chunks that grow from 64 KiB to 4 MiB, never more than one byte past the bound, and then
+    // one copy into an array of the exact length. The bytes read are therefore held twice at the
+    // end, and an endless stream stops after bound + 1 bytes. The stream's Length is never used
+    // to size a buffer, since a stream can report anything (a growing file, a /proc file that
+    // reports 0). It is used for one thing, to refuse early: a seekable stream that says more
+    // than the bound is left, is refused before a byte is read, and so keeps its position.
     internal static byte[] ReadAll(Stream stream, long maxBytes, string paramName, string what)
     {
         if (!stream.CanRead)
             throw new ArgumentException($"The {what} cannot be read.", paramName);
+        if (stream.CanSeek && stream.Length - stream.Position > maxBytes)
+            throw TooLarge(what, maxBytes);
 
-        long initial = InitialChunk;
-        if (stream.CanSeek)
-        {
-            var remaining = stream.Length - stream.Position;
-            if (remaining > maxBytes) throw TooLarge(what, maxBytes);
-            initial = Math.Max(remaining, 0);
-        }
-
-        var buffer = new byte[Math.Min(initial, maxBytes)];
-        var total = 0;
+        var chunks = new List<(byte[] Buffer, int Count)>();
+        long total = 0;
+        var size = FirstChunk;
         while (true)
         {
-            if (total == buffer.Length)
+            var buffer = new byte[(int)Math.Min(size, maxBytes + 1 - total)];
+            var filled = 0;
+            while (filled < buffer.Length)
             {
-                var probe = stream.ReadByte();
-                if (probe < 0) break;
-                if (buffer.Length >= maxBytes) throw TooLarge(what, maxBytes);
-                Array.Resize(ref buffer,
-                    (int)Math.Min(maxBytes, Math.Max(InitialChunk, (long)buffer.Length * 2)));
-                buffer[total++] = (byte)probe;
-                continue;
+                var n = stream.Read(buffer, filled, buffer.Length - filled);
+                if (n == 0) break;
+                filled += n;
             }
-            var n = stream.Read(buffer, total, buffer.Length - total);
-            if (n == 0) break;
-            total += n;
+            total += filled;
+            if (total > maxBytes) throw TooLarge(what, maxBytes);
+            if (filled > 0) chunks.Add((buffer, filled));
+            if (filled < buffer.Length) break;
+            size = Math.Min(size * 2, LastChunk);
         }
 
         if (total == 0)
             throw new ArgumentException($"The {what} has no bytes to read.", paramName);
-        if (total != buffer.Length)
-            Array.Resize(ref buffer, total);
-        return buffer;
+        var all = new byte[total];
+        var at = 0;
+        foreach (var (buffer, count) in chunks)
+        {
+            Buffer.BlockCopy(buffer, 0, all, at, count);
+            at += count;
+        }
+        return all;
     }
 
     private static InvalidDataException TooLarge(string what, long maxBytes) =>

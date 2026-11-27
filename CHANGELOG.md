@@ -15,14 +15,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   the document saves to the same bytes as one built with that loader. A JPEG is passed through as
   `/DCTDecode`. CCITT data and JBIG2 in its embedded form have no signature and still go through
   `CcittImageLoader` and `Jbig2ImageLoader`. Each factory also takes `ImageLoadOptions` or
-  `GifLoadOptions`. A member the data's loader never reads is refused with `ArgumentException`
-  unless it has its default value, instead of being dropped. Empty data and data with an unknown
-  signature are refused at the call, and the message for an unknown signature names the first
-  bytes in hex. What a loader refuses keeps its exception type and message. A stream is read from
-  its current position to its end, need not be seekable, and is left open; a stream or file over
-  a fixed bound is refused with `InvalidDataException`, and `FromBytes` has no bound. A TIFF can
-  still make its loader allocate far more than the file holds (#534), and the factories reach the
-  same code.
+  `GifLoadOptions`, which go to the loader as an explicit call would pass them; what a loader does
+  with each member is in that loader's documentation. Options for a loader that takes none (any
+  `ImageLoadOptions` other than the default for JPEG, BMP and GIF, and any `GifLoadOptions` other
+  than the default for every other format) are refused with `ArgumentException`, and a member
+  that is not a defined enumeration value is refused with `ArgumentOutOfRangeException`. Empty
+  data and data with an unknown signature are refused at the call, and the message for an unknown
+  signature names the first bytes in hex. What a loader refuses keeps its exception type and
+  message. A stream is read from its current position to its end, need not be seekable, and is
+  left open; a stream or file over a fixed bound is refused with `InvalidDataException`, and
+  `FromBytes` has no bound. A TIFF can still make its loader allocate far more than the file
+  holds (#534), and the factories reach the same code.
 - **`SpaceAfter` sets the gap after a block element (#700).** `Paragraph`, `Heading`,
   `ListElement`, `Preformatted`, `TableElement`, `LayoutImage`, `LineSeparator` and `PieChart` take
   a `SpaceAfter` in points, so a caller sets the gap between two elements once, on the first,

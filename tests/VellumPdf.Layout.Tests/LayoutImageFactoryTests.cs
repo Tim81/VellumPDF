@@ -200,38 +200,31 @@ public sealed class LayoutImageFactoryTests : IDisposable
         }
     }
 
-    // ── Options a loader never reads are refused, not dropped ────────────────────────────
+    // ── Options go to the loader as given; a loader with none is refused any ───────────────
 
-    public static TheoryData<string, string, ImageLoadOptions> UnreadImageOptions() => new()
+    public static TheoryData<string, ImageLoadOptions> OptionsForLoadersThatTakeNone() => new()
     {
-        { "JPEG", "BitDepth", new() { BitDepth = ImageBitDepth.ReduceToEight } },
-        { "JPEG", "DecodeMode", new() { DecodeMode = ImageDecodeMode.DecodeToRaster } },
-        { "BMP", "BitDepth", new() { BitDepth = ImageBitDepth.ReduceToEight } },
-        { "BMP", "DecodeMode", new() { DecodeMode = ImageDecodeMode.DecodeToRaster } },
-        { "GIF89a", "BitDepth", new() { BitDepth = ImageBitDepth.ReduceToEight } },
-        { "GIF89a", "DecodeMode", new() { DecodeMode = ImageDecodeMode.DecodeToRaster } },
-        { "PNG", "DecodeMode", new() { DecodeMode = ImageDecodeMode.DecodeToRaster } },
-        { "JBIG2", "BitDepth", new() { BitDepth = ImageBitDepth.ReduceToEight } },
-        { "JP2", "BitDepth", new() { BitDepth = ImageBitDepth.ReduceToEight } },
-        { "JPEG 2000 codestream", "BitDepth", new() { BitDepth = ImageBitDepth.ReduceToEight } },
+        { "JPEG", new() { BitDepth = ImageBitDepth.ReduceToEight } },
+        { "JPEG", new() { DecodeMode = ImageDecodeMode.DecodeToRaster } },
+        { "BMP", new() { BitDepth = ImageBitDepth.ReduceToEight } },
+        { "BMP", new() { DecodeMode = ImageDecodeMode.DecodeToRaster } },
+        { "GIF89a", new() { BitDepth = ImageBitDepth.ReduceToEight } },
+        { "GIF89a", new() { DecodeMode = ImageDecodeMode.DecodeToRaster } },
     };
 
     [Theory]
-    [MemberData(nameof(UnreadImageOptions))]
-    public void ImageLoadOptions_AMemberTheLoaderNeverReads_IsRefusedAtTheCall(
-        string name, string member, ImageLoadOptions options)
+    [MemberData(nameof(OptionsForLoadersThatTakeNone))]
+    public void ImageLoadOptions_ForAFormatWhoseLoaderTakesNone_AreRefusedAtTheCall(
+        string name, ImageLoadOptions options)
     {
         var data = Get(name).Data;
-        var formatName = name.StartsWith("GIF", StringComparison.Ordinal) ? "GIF"
-            : name is "JP2" or "JPEG 2000 codestream" ? "JPEG 2000" : name;
-        var expectedValue = member == "BitDepth" ? nameof(ImageBitDepth.ReduceToEight)
-            : nameof(ImageDecodeMode.DecodeToRaster);
+        var formatName = name.StartsWith("GIF", StringComparison.Ordinal) ? "GIF" : name;
 
         var ex = Assert.Throws<ArgumentException>(() => LayoutImage.FromBytes(data, options));
 
         Assert.Equal("options", ex.ParamName);
-        Assert.StartsWith($"The data is {formatName}, whose loader never reads ImageLoadOptions.{member}, " +
-            $"so {expectedValue} would be ignored.", ex.Message, StringComparison.Ordinal);
+        Assert.StartsWith($"The data is {formatName}, whose loader takes no ImageLoadOptions. " +
+            "Pass ImageLoadOptions.Default or no options.", ex.Message, StringComparison.Ordinal);
         Assert.Equal("options", Assert.Throws<ArgumentException>(
             () => LayoutImage.FromFile(Write(data), options)).ParamName);
         using var s = new MemoryStream(data);
@@ -239,9 +232,91 @@ public sealed class LayoutImageFactoryTests : IDisposable
             () => LayoutImage.FromStream(s, options)).ParamName);
     }
 
+    public static TheoryData<string> FormatsWhoseLoadersTakeImageLoadOptions() =>
+        new() { "PNG", "TIFF little-endian", "JBIG2", "JP2", "JPEG 2000 codestream" };
+
+    [Theory]
+    [MemberData(nameof(FormatsWhoseLoadersTakeImageLoadOptions))]
+    public void ImageLoadOptions_ForAFormatWhoseLoaderTakesThem_GoThroughWhateverTheMember(string name)
+    {
+        // Each loader decides what a member means for its input, a member it ignores included;
+        // the factory refuses none of the four combinations, and the result is the loader's.
+        var c = Get(name);
+        foreach (var options in new[]
+        {
+            new ImageLoadOptions { BitDepth = ImageBitDepth.ReduceToEight },
+            new ImageLoadOptions { DecodeMode = ImageDecodeMode.DecodeToRaster },
+        })
+        {
+            var expected = Outcome(() => Save(new LayoutImage(Invoke(c, options))));
+            var actual = Outcome(() => Save(LayoutImage.FromBytes(c.Data, options)));
+
+            Assert.Equal(expected.GetType(), actual.GetType());
+            Assert.Equal(expected is byte[] e ? e : null, actual is byte[] a ? a : null);
+            Assert.Equal((expected as Exception)?.Message, (actual as Exception)?.Message);
+        }
+    }
+
+    private static PdfImageXObject Invoke(Case c, ImageLoadOptions options) => c.Name switch
+    {
+        "PNG" => PngImageLoader.Load(c.Data, options),
+        "JBIG2" => Jbig2ImageLoader.Load(c.Data, options),
+        "JP2" or "JPEG 2000 codestream" => JpxImageLoader.Load(c.Data, options),
+        _ => TiffImageLoader.Load(c.Data, options),
+    };
+
+    [Fact]
+    public void ATiffStripTheLoaderPassesThrough_GivesTheExplicitBytes_WhateverTheOptionsAsk()
+    {
+        var raster = new ImageLoadOptions { DecodeMode = ImageDecodeMode.DecodeToRaster };
+        var reduce = new ImageLoadOptions { BitDepth = ImageBitDepth.ReduceToEight };
+        foreach (var tiff in new[] { ImageFixtures.TiffGroup4(), ImageFixtures.TiffJpegStrip() })
+        {
+            foreach (var options in new[] { raster, reduce, ImageLoadOptions.Default })
+            {
+                Assert.Equal(
+                    Save(new LayoutImage(TiffImageLoader.Load(tiff, options))),
+                    Save(LayoutImage.FromBytes(tiff, options)));
+            }
+        }
+        // The two fixtures keep their compressed filters, so the requests above were passed on and
+        // not met.
+        Assert.Contains("/CCITTFaxDecode", Encoding.Latin1.GetString(
+            Save(LayoutImage.FromBytes(ImageFixtures.TiffGroup4(), raster))), StringComparison.Ordinal);
+        Assert.Contains("/DCTDecode", Encoding.Latin1.GetString(
+            Save(LayoutImage.FromBytes(ImageFixtures.TiffJpegStrip(), raster))), StringComparison.Ordinal);
+    }
+
+    public static TheoryData<string> AllFormats() => CaseNames();
+
+    [Theory]
+    [MemberData(nameof(AllFormats))]
+    public void AnUndefinedEnumValue_InAnyMember_IsRefusedAtTheCall_ForEveryFormat(string name)
+    {
+        var data = Get(name).Data;
+        var badDepth = new ImageLoadOptions { BitDepth = (ImageBitDepth)7 };
+        var badMode = new ImageLoadOptions { DecodeMode = (ImageDecodeMode)9 };
+
+        var depth = Assert.Throws<ArgumentOutOfRangeException>(() => LayoutImage.FromBytes(data, badDepth));
+        var mode = Assert.Throws<ArgumentOutOfRangeException>(() => LayoutImage.FromBytes(data, badMode));
+
+        Assert.Equal("options", depth.ParamName);
+        Assert.StartsWith("ImageLoadOptions.BitDepth is not a defined ImageBitDepth.", depth.Message,
+            StringComparison.Ordinal);
+        Assert.Equal(badDepth.BitDepth, depth.ActualValue);
+        Assert.Equal("options", mode.ParamName);
+        Assert.StartsWith("ImageLoadOptions.DecodeMode is not a defined ImageDecodeMode.", mode.Message,
+            StringComparison.Ordinal);
+        Assert.Equal(badMode.DecodeMode, mode.ActualValue);
+        Assert.Throws<ArgumentOutOfRangeException>(
+            () => LayoutImage.FromFile(Write(data), badDepth));
+        using var s = new MemoryStream(data);
+        Assert.Throws<ArgumentOutOfRangeException>(() => LayoutImage.FromStream(s, badMode));
+    }
+
     [Theory]
     [MemberData(nameof(CaseNames))]
-    public void GifLoadOptions_PlacementOnAFormatThatIsNotGif_IsRefused(string name)
+    public void GifLoadOptions_ThatDifferFromTheDefault_ForAFormatThatIsNotGif_AreRefused(string name)
     {
         var data = Get(name).Data;
         var place = new GifLoadOptions { PlaceOnLogicalScreen = true };
@@ -254,8 +329,7 @@ public sealed class LayoutImageFactoryTests : IDisposable
         var ex = Assert.Throws<ArgumentException>(() => LayoutImage.FromBytes(data, place));
 
         Assert.Equal("options", ex.ParamName);
-        Assert.StartsWith("The data is ", ex.Message, StringComparison.Ordinal);
-        Assert.Contains("does not read GifLoadOptions, so PlaceOnLogicalScreen would be ignored.",
+        Assert.Contains("whose loader takes no GifLoadOptions. Pass GifLoadOptions.Default or no options.",
             ex.Message, StringComparison.Ordinal);
         Assert.Equal("options", Assert.Throws<ArgumentException>(
             () => LayoutImage.FromFile(Write(data), place)).ParamName);
@@ -265,8 +339,10 @@ public sealed class LayoutImageFactoryTests : IDisposable
     }
 
     [Fact]
-    public void ImageLoadOptions_OnTiff_BothMembersAreRead_SoNeitherIsRefused()
+    public void ImageLoadOptions_OnAnUncompressedEightBitTiff_AreAccepted()
     {
+        // The loader reads neither member for this file; the test pins only that the factory
+        // does not refuse a TIFF for options.
         var tiff = ImageFixtures.TiffGrey(true, 8);
 
         Assert.NotNull(LayoutImage.FromBytes(tiff, new ImageLoadOptions
@@ -274,6 +350,17 @@ public sealed class LayoutImageFactoryTests : IDisposable
             BitDepth = ImageBitDepth.ReduceToEight,
             DecodeMode = ImageDecodeMode.DecodeToRaster,
         }));
+    }
+
+    [Fact]
+    public void AJp2WhoseSignatureBoxLengthIsNotTwelve_IsRefusedHere_AlthoughTheLoaderReadsIt()
+    {
+        var jp2 = ImageFixtures.Jp2(signatureBoxLength: 0x0D);
+
+        Assert.Equal(16, JpxImageLoader.Load(jp2).Width);
+        var ex = Assert.Throws<InvalidDataException>(() => LayoutImage.FromBytes(jp2));
+        Assert.StartsWith("The image data is not a format with a signature this library reads: " +
+            "it begins 00 00 00 0D 6A 50 20 20.", ex.Message, StringComparison.Ordinal);
     }
 
     // ── Refusals at the call ──────────────────────────────────────────────────────────────
@@ -451,6 +538,12 @@ public sealed class LayoutImageFactoryTests : IDisposable
         Assert.IsType<NotSupportedException>(expected);
         Assert.Equal(expected.GetType(), actual.GetType());
         Assert.Equal(expected.Message, actual.Message);
+    }
+
+    private static object Outcome(Func<byte[]> action)
+    {
+        try { return action(); }
+        catch (Exception e) { return e; }
     }
 
     private static Exception Capture(Action action)
@@ -690,9 +783,8 @@ public sealed class LayoutImageFactoryTests : IDisposable
             $"The stream holds more than {bound} bytes, which is the most this method reads. " +
             "Read the bytes yourself and pass them to the byte-array overload.",
             ex.Message);
-        // It reads one byte past the bound and then stops; the buffer sizes in between are the
-        // reader's own, so the allowance is one doubling step.
-        Assert.InRange(s.Produced, bound + 1, 2 * bound + 81_920);
+        // The reader asks for no more than one byte past the bound, whatever its chunk sizes.
+        Assert.Equal(bound + 1, s.Produced);
     }
 
     [Theory]
@@ -722,6 +814,121 @@ public sealed class LayoutImageFactoryTests : IDisposable
         Assert.Equal(new byte[10], ImageSource.ReadFile(Write(new byte[10]), 10));
     }
 
+    // A seekable stream that reports a Length and then serves its own bytes, whatever the Length.
+    private sealed class LyingLengthStream(long claimed, byte[] bytes) : Stream
+    {
+        private readonly MemoryStream _inner = new(bytes);
+        public override bool CanRead => true;
+        public override bool CanSeek => true;
+        public override bool CanWrite => false;
+        public override long Length => claimed;
+        public override long Position
+        {
+            get => _inner.Position;
+            set => _inner.Position = value;
+        }
+        public override void Flush() { }
+        public override int Read(byte[] buffer, int offset, int count) => _inner.Read(buffer, offset, count);
+        public override long Seek(long offset, SeekOrigin origin) => _inner.Seek(offset, origin);
+        public override void SetLength(long value) => throw new NotSupportedException();
+        public override void Write(byte[] buffer, int offset, int count) => throw new NotSupportedException();
+    }
+
+    [Fact]
+    public void ALengthThatClaimsTheBound_ForAFewBytes_CostsTheBytes_NotTheBound()
+    {
+        var png = ImageFixtures.Png();
+        var s = new LyingLengthStream(ImageSource.MaxBytes, png);
+
+        var before = GC.GetAllocatedBytesForCurrentThread();
+        var all = ImageSource.ReadAll(s, ImageSource.MaxBytes, "stream", "stream");
+        var allocated = GC.GetAllocatedBytesForCurrentThread() - before;
+
+        Assert.Equal(png, all);
+        Assert.True(allocated < 512 * 1024, $"allocated {allocated} bytes for {png.Length}");
+    }
+
+    [Fact]
+    public void ALengthThatClaimsZero_ForMoreThanTheBound_IsRefusedAfterReadingOneBytePast()
+    {
+        var s = new LyingLengthStream(0, new byte[101]) { Position = 0 };
+
+        Assert.Throws<InvalidDataException>(() => ImageSource.ReadAll(s, 100, "stream", "stream"));
+
+        Assert.Equal(101, s.Position);
+    }
+
+    [Fact]
+    public void ThePositionAfterEachOutcome_IsTheOneTheDocsName()
+    {
+        var png = ImageFixtures.Png();
+
+        // success: the end
+        var ok = new MemoryStream(png);
+        _ = LayoutImage.FromStream(ok);
+        Assert.Equal(png.Length, ok.Position);
+
+        // Length over the bound: unchanged, nothing read
+        var over = new ClaimsLengthStream(ImageSource.MaxBytes + 6) { Position = 5 };
+        Assert.Throws<InvalidDataException>(() => LayoutImage.FromStream(over));
+        Assert.Equal(5, over.Position);
+
+        // nothing left: unchanged
+        var spent = new MemoryStream(png) { Position = png.Length };
+        Assert.Throws<ArgumentException>(() => LayoutImage.FromStream(spent));
+        Assert.Equal(png.Length, spent.Position);
+
+        // bound found by reading: one byte past the bound from where the call began
+        var found = new LyingLengthStream(0, new byte[300]) { Position = 10 };
+        Assert.Throws<InvalidDataException>(() => ImageSource.ReadAll(found, 100, "stream", "stream"));
+        Assert.Equal(111, found.Position);
+
+        // a refusal after the read (unknown signature, options, loader): the end
+        var unknown = new MemoryStream([1, 2, 3, 4, 5]);
+        Assert.Throws<InvalidDataException>(() => LayoutImage.FromStream(unknown));
+        Assert.Equal(5, unknown.Position);
+        var badOptions = new MemoryStream(ImageFixtures.Bmp());
+        Assert.Throws<ArgumentException>(() => LayoutImage.FromStream(
+            badOptions, new ImageLoadOptions { BitDepth = ImageBitDepth.ReduceToEight }));
+        Assert.Equal(badOptions.Length, badOptions.Position);
+        var malformed = new MemoryStream([0xFF, 0xD8]);
+        Assert.Throws<InvalidDataException>(() => LayoutImage.FromStream(malformed));
+        Assert.Equal(2, malformed.Position);
+    }
+
+    private sealed class ThrowingStream(Exception toThrow, bool seekable) : Stream
+    {
+        public override bool CanRead => true;
+        public override bool CanSeek => seekable;
+        public override bool CanWrite => false;
+        public override long Length => seekable ? throw toThrow : throw new NotSupportedException();
+        public override long Position
+        {
+            get => 0;
+            set { }
+        }
+        public override void Flush() { }
+        public override int Read(byte[] buffer, int offset, int count) => throw toThrow;
+        public override long Seek(long offset, SeekOrigin origin) => 0;
+        public override void SetLength(long value) { }
+        public override void Write(byte[] buffer, int offset, int count) { }
+    }
+
+    [Fact]
+    public void AnExceptionTheStreamItselfThrows_PropagatesUnchanged()
+    {
+        var disposed = new ObjectDisposedException("stream");
+        var unsupported = new NotSupportedException("no length");
+        var io = new IOException("read failed");
+
+        Assert.Same(disposed, Assert.Throws<ObjectDisposedException>(
+            () => LayoutImage.FromStream(new ThrowingStream(disposed, seekable: false))));
+        Assert.Same(unsupported, Assert.Throws<NotSupportedException>(
+            () => LayoutImage.FromStream(new ThrowingStream(unsupported, seekable: true))));
+        Assert.Same(io, Assert.Throws<IOException>(
+            () => LayoutImage.FromStream(new ThrowingStream(io, seekable: false))));
+    }
+
     // ── Files ─────────────────────────────────────────────────────────────────────────────
 
     [Fact]
@@ -742,7 +949,7 @@ public sealed class LayoutImageFactoryTests : IDisposable
     }
 
     [Fact]
-    public void AFileOpenForWritingElsewhere_ThrowsIOException()
+    public void AFileOpenedWithNoSharingElsewhere_ThrowsIOException()
     {
         var path = Write(ImageFixtures.Png());
         using var holder = new FileStream(path, FileMode.Open, FileAccess.ReadWrite, FileShare.None);

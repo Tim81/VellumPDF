@@ -50,6 +50,30 @@ internal static class ImageFixtures
         var pixels = bitsPerSample == 16
             ? (littleEndian ? new byte[] { 0x34, 0x12, 0xCD, 0xAB } : new byte[] { 0x12, 0x34, 0xAB, 0xCD })
             : new byte[] { 0x10, 0xF0 };
+        return TiffStrip(littleEndian, bitsPerSample, compression: 1, photometric: 1, 2, 1, pixels);
+    }
+
+    /// <summary>A bilevel TIFF whose one strip is Group 4 (Compression 4): 8 by 8, all one colour.</summary>
+    public static byte[] TiffGroup4() =>
+        TiffStrip(true, 1, compression: 4, photometric: 0, 8, 8, [0xFF]);
+
+    /// <summary>A greyscale TIFF whose one strip is a JPEG stream (Compression 7).</summary>
+    public static byte[] TiffJpegStrip() =>
+        TiffStrip(true, 8, compression: 7, photometric: 1, 8, 4, JpegGrey(8, 4));
+
+    /// <summary>A 1-component baseline JPEG header: start of image, SOF0, end of image.</summary>
+    public static byte[] JpegGrey(int width, int height) =>
+    [
+        0xFF, 0xD8, 0xFF, 0xC0, 0x00, 0x0B, 0x08,
+        (byte)(height >> 8), (byte)height, (byte)(width >> 8), (byte)width,
+        0x01, 0x01, 0x11, 0x00, 0xFF, 0xD9,
+    ];
+
+    // One strip, one sample per pixel, tags in the order TIFF 6.0 section 2 requires (ascending).
+    private static byte[] TiffStrip(
+        bool littleEndian, int bitsPerSample, int compression, int photometric,
+        int width, int height, byte[] strip)
+    {
         const int entries = 9;
         var dataOffset = 8 + 2 + entries * 12 + 4;
         using var ms = new MemoryStream();
@@ -57,17 +81,17 @@ internal static class ImageFixtures
         U16(ms, 42, littleEndian);
         U32(ms, 8, littleEndian);
         U16(ms, entries, littleEndian);
-        Entry(ms, 256, 3, 2, littleEndian);                 // ImageWidth
-        Entry(ms, 257, 3, 1, littleEndian);                 // ImageLength
+        Entry(ms, 256, 3, width, littleEndian);             // ImageWidth
+        Entry(ms, 257, 3, height, littleEndian);            // ImageLength
         Entry(ms, 258, 3, bitsPerSample, littleEndian);     // BitsPerSample
-        Entry(ms, 259, 3, 1, littleEndian);                 // Compression: none
-        Entry(ms, 262, 3, 1, littleEndian);                 // PhotometricInterpretation: BlackIsZero
+        Entry(ms, 259, 3, compression, littleEndian);       // Compression
+        Entry(ms, 262, 3, photometric, littleEndian);       // PhotometricInterpretation
         Entry(ms, 273, 4, dataOffset, littleEndian);        // StripOffsets
         Entry(ms, 277, 3, 1, littleEndian);                 // SamplesPerPixel
-        Entry(ms, 278, 3, 1, littleEndian);                 // RowsPerStrip
-        Entry(ms, 279, 4, pixels.Length, littleEndian);     // StripByteCounts
+        Entry(ms, 278, 3, height, littleEndian);            // RowsPerStrip
+        Entry(ms, 279, 4, strip.Length, littleEndian);      // StripByteCounts
         U32(ms, 0, littleEndian);
-        ms.Write(pixels);
+        ms.Write(strip);
         return ms.ToArray();
     }
 
@@ -146,10 +170,12 @@ internal static class ImageFixtures
     }
 
     /// <summary>A JP2 file: signature box, ftyp, jp2h with ihdr and colr, and a jp2c box.</summary>
-    public static byte[] Jp2(int width = 16, int height = 16)
+    public static byte[] Jp2(int width = 16, int height = 16, byte signatureBoxLength = 0x0C)
     {
         var buf = new List<byte>();
-        buf.AddRange([0x00, 0x00, 0x00, 0x0C, 0x6A, 0x50, 0x20, 0x20, 0x0D, 0x0A, 0x87, 0x0A]);
+        buf.AddRange([0x00, 0x00, 0x00, signatureBoxLength, 0x6A, 0x50, 0x20, 0x20, 0x0D, 0x0A, 0x87, 0x0A]);
+        // A longer signature box carries that many extra payload bytes, so the boxes still tile.
+        buf.AddRange(new byte[signatureBoxLength - 0x0C]);
         buf.AddRange(Box("ftyp"u8, [.. "jp2 "u8, 0, 0, 0, 0, .. "jp2 "u8]));
         var ihdr = new List<byte>();
         Be32(ihdr, height);
