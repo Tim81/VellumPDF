@@ -63,6 +63,22 @@ internal static class ConformanceAuditG1Support
         /// <summary>The object number a page dictionary has, by page index.</summary>
         internal int PageObjectNumber(int index) => Reader.GetPage(index).ObjectNumber!.Value;
 
+        /// <summary>The decoded content of page <paramref name="index"/>, its content streams joined.</summary>
+        internal string Page(int index)
+        {
+            var contents = Reader.GetPage(index).Dictionary.Get(PdfName.Contents);
+            var refs = Resolve(contents) is PdfArray array ? array.Items().ToList() : [contents!];
+            var sb = new StringBuilder();
+            foreach (var item in refs)
+            {
+                var reference = Assert.IsType<PdfIndirectReference>(item);
+                var stream = Reader.ResolveStream(reference)!;
+                sb.AppendLine(Encoding.Latin1.GetString(Reader.GetDecodedStreamData(stream)!));
+            }
+
+            return sb.ToString();
+        }
+
         public void Dispose() => Reader.Dispose();
     }
 
@@ -418,6 +434,23 @@ internal static class ConformanceAuditG1Support
             OracleGate.Unavailable("pdftotext");
         Assert.True(exit == 0 && !timedOut, $"pdftotext exit {exit}, stderr: {stderr}");
         return Regex.Replace(text, @"\s+", " ");
+    }
+
+    /// <summary>
+    /// The words poppler finds on page <paramref name="page"/> (counted from 0) with the top of each
+    /// word's box, in PDF user space (the page height less poppler's top-down yMin).
+    /// </summary>
+    internal static List<(string Text, double Top)> PopplerWords(byte[] pdf, int page, double pageHeight = 500)
+    {
+        using var dir = new TempDir();
+        var path = dir.Path("subject.pdf");
+        File.WriteAllBytes(path, pdf);
+        var number = (page + 1).ToString(System.Globalization.CultureInfo.InvariantCulture);
+        if (!ExternalTool.TryRun("pdftotext", ["-bbox", "-f", number, "-l", number, path, "-"], out var exit, out var text, out var stderr, out var timedOut))
+            OracleGate.Unavailable("pdftotext");
+        Assert.True(exit == 0 && !timedOut, $"pdftotext -bbox exit {exit}, stderr: {stderr}");
+        return [.. Regex.Matches(text, "<word xMin=\"[^\"]+\" yMin=\"(?<y>[^\"]+)\" xMax=\"[^\"]+\" yMax=\"[^\"]+\">(?<t>[^<]*)</word>")
+            .Select(m => (m.Groups["t"].Value, pageHeight - double.Parse(m.Groups["y"].Value, System.Globalization.CultureInfo.InvariantCulture)))];
     }
 
     /// <summary>The page number poppler resolves each named destination to, from <c>pdfinfo -dests</c>.</summary>
