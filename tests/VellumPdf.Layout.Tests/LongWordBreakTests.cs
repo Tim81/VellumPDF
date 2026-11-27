@@ -330,6 +330,41 @@ public sealed class LongWordBreakTests
         }
     }
 
+    [Fact]
+    public void TheWidthsACountHoldsOverAreSoundForACutWord()
+    {
+        // A cached count answers every width inside its interval, so a width inside it must wrap
+        // into the same lines as the width it was found at, whichever comparison narrowed it.
+        var style = Courier();
+        string[] words =
+        [
+            Path, "https://example.org/aaa/bbbb/cc/ddddddd/eee", @"C:\Users\Name\Documents\report-2024-final.txt",
+            "ab12/34cdefghijkl", "x-1-2-3-4-5-6-7-8-9-0-1-2-3",
+        ];
+        foreach (var text in words)
+        {
+            var widths = Enumerable.Range(0, 200).Select(i => 3.1 + i * 0.6).ToArray();
+            var found = widths.Select(w =>
+            {
+                var count = TableRenderer.CountLines(text, style, w, true, out var from, out var below);
+                return (Width: w, Count: count, From: from, Below: below);
+            }).ToArray();
+            foreach (var a in found)
+            {
+                foreach (var b in found)
+                {
+                    if (a.From <= b.Width && b.Width < a.Below)
+                    {
+                        Assert.True(
+                            TableRenderer.WordWrapLines(text, style, a.Width, true)
+                                .SequenceEqual(TableRenderer.WordWrapLines(text, style, b.Width, true)),
+                            $"{text}: width {b.Width} is inside [{a.From}, {a.Below}) found at {a.Width}");
+                    }
+                }
+            }
+        }
+    }
+
     // ── Links ────────────────────────────────────────────────────────────────
 
     [Fact]
