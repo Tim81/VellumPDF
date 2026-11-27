@@ -140,8 +140,11 @@ public sealed class RunningBand
     /// <remarks>
     /// A null style passed to the constructor is replaced by <see cref="TextStyle.Default"/>; any
     /// other is stored as given. Refusals on size, leading, font and text colour are on
-    /// <see cref="TextStyle"/> and are raised from the save. A <see cref="TextStyle.LinkUri"/> in
-    /// it is ignored.
+    /// <see cref="TextStyle"/> and are raised from the save. A <see cref="TextStyle.LinkUri"/> or
+    /// <see cref="TextStyle.LinkAnchor"/> in it links the text the band draws, once per page; what
+    /// the link covers and when it is left out, a band of only white space and a PDF/UA-1 claim
+    /// included, are on <see cref="TextStyle.LinkUri"/>, and the refusals of a
+    /// <see cref="TextStyle.LinkAnchor"/> are on that property.
     /// <para>A non-finite channel in <see cref="TextStyle.Color"/> is refused where it is written; see
     /// <see cref="Document"/>. A band that draws nothing, because its template is empty or no part of
     /// it fits the content width, writes no colour, so the channel is not refused there. <b>Do not pass</b> a non-finite channel: 3.0 refuses

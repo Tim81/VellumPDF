@@ -467,7 +467,7 @@ public sealed class TableCellRunsTests
     /// A linked run that draws no glyph gets no annotation, and neither does a cell style's link.
     /// </summary>
     [Fact]
-    public void NoAnnotation_forAnEmptyLinkedRun_orForTheCellStylesOwnLink()
+    public void NoAnnotation_forAnEmptyLinkedRun_andTheStringCellBesideItIsLinkedByItsOwnStyle()
     {
         using var doc = ShortPage();
         var t = Table12();
@@ -475,7 +475,9 @@ public sealed class TableCellRunsTests
         t.AddRow().AddCell(new Cell([Run("a", Plain()), Run("", link)])).AddCell(new Cell("b") { Style = link });
         doc.Add(t);
 
-        Assert.Empty(Links(Save(doc)));
+        // The run cell has no linked text, so its one link is the string cell's own (#475).
+        var links = Links(Save(doc));
+        Assert.Single(links);
     }
 
     /// <summary>A run that measures zero wide has no area to link and gets no annotation.</summary>
@@ -496,7 +498,7 @@ public sealed class TableCellRunsTests
     /// string cell of its text: the run cell links the text and the string cell drops the link.
     /// </summary>
     [Fact]
-    public void ASharedStyleWithALink_linksTheRunCell_andNotTheStringCell()
+    public void ASharedStyleWithALink_linksTheRunCell_andTheStringCell()
     {
         var link = new TextStyle { FontRef = Helv, FontSize = 12, LinkUri = "https://h.example/" };
         byte[] Build(Cell cell)
@@ -512,19 +514,19 @@ public sealed class TableCellRunsTests
         var text = Build(new Cell("ab cd") { Style = link });
 
         Assert.Single(Links(run));
-        Assert.Empty(Links(text));
+        Assert.Single(Links(text));
         Assert.Equal(Content(text), Content(run));
     }
 
     [Fact]
-    public void AStringCell_isStillNotLinked()
+    public void AStringCell_isLinkedThroughItsStyle()
     {
         using var doc = ShortPage();
         var t = Table12();
         t.AddRow().AddCell(new Cell("b") { Style = new TextStyle { FontRef = Helv, FontSize = 12, LinkUri = "https://f.example/" } });
         doc.Add(t);
 
-        Assert.Empty(Links(Save(doc)));
+        Assert.Single(Links(Save(doc)));
     }
 
     // ── Rows, headers, spans, pages ──────────────────────────────────────────

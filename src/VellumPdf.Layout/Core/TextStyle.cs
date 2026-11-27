@@ -281,25 +281,38 @@ public sealed class TextStyle
         Leading > 0 && double.IsFinite(Leading) ? Leading : FontSize * 1.2;
 
     /// <summary>
-    /// When non-null, text rendered with this style will be wrapped in a /Link annotation pointing
-    /// to this URI, except in running bands and as the style of a table cell. Use a full URI string
-    /// (e.g. "https://example.com").
+    /// When non-null, text drawn in this style is a /Link annotation pointing to this URI. Use a
+    /// full URI string (e.g. "https://example.com").
     /// </summary>
     /// <remarks>
-    /// <b>Attention</b>: the string is not validated. Empty and <c>not a uri</c> are
-    /// written into a <c>/URI</c> action as given, and so is an absolute URI of any scheme, such as
+    /// <b>Attention</b>: the string is not validated. Empty and <c>not a uri</c> are written into a
+    /// <c>/URI</c> action as given, and so is an absolute URI of any scheme, such as
     /// <c>javascript:alert(1)</c>. Non-ASCII characters are percent-encoded as UTF-8, and an
-    /// unpaired surrogate becomes U+FFFD first. Running bands silently drop the link (#475), and so
-    /// does a table cell given this style through <see
-    /// cref="VellumPdf.Layout.Elements.Table.Cell.Style"/> or <see
-    /// cref="VellumPdf.Layout.Elements.Table.TableElement.DefaultCellStyle"/>. A run of a cell
-    /// built from runs is a link over its own text; the constructor of <see
-    /// cref="VellumPdf.Layout.Elements.Table.Cell"/> that takes runs states the rule. In a list
-    /// item the marker is linked as well as the text. The link is written untagged and without an
-    /// alternate description, whatever the conformance, and no exception reports it. In a document
-    /// whose <c>Conformance</c> is PDF/UA-1, the link breaks ISO 14289-1, 7.18.5 (#550). A link
-    /// whose rectangle lies wholly outside the page's crop box is exempt: clause 7.18.1 lifts the
-    /// requirements of clause 7.18 for it. On a justified line, in a standard-14 or an embedded
+    /// unpaired surrogate becomes U+FFFD first.
+    /// <para><b>A cell or band link is not written under a PDF/UA-1 claim.</b> A table cell given
+    /// this style through <see cref="VellumPdf.Layout.Elements.Table.Cell.Style"/> or
+    /// <see cref="VellumPdf.Layout.Elements.Table.TableElement.DefaultCellStyle"/> links each line
+    /// it draws, over the width <see cref="MeasureString"/> gives that line, cut to the cell. A
+    /// running band given this style links the text it draws, over the height of the band, once per
+    /// page. A line of only spaces, a band of only white space and a band that draws no text write
+    /// no link and report nothing. In a document whose <c>Conformance</c> is PDF/UA-1 the link
+    /// would be untagged, so it is left out, the text is drawn, and the save reports
+    /// <see cref="VellumPdf.Layout.LayoutDiagnosticCode.LinkNotWritten"/>, which
+    /// <see cref="VellumPdf.Layout.Document.StrictDiagnostics"/> refuses. A context with no page,
+    /// and a rectangle that would be written with a value that is not finite, write no cell or band
+    /// link and report nothing. A link in a paragraph, heading or list item is written whatever the
+    /// conformance, and a context with no page makes it throw <see cref="ArgumentNullException"/>.
+    /// <b>Do not pass</b> this style to a cell or band of a PDF/UA-1 document, or rely on a cell or
+    /// band link that is dropped without a report; 3.0 refuses both where the style is set.</para>
+    /// <para>The style of a cell built from runs does not style those runs, so this property on a
+    /// cell's style links a string cell only; a cell built from runs is linked by the runs' own
+    /// styles, as <see cref="VellumPdf.Layout.Elements.Table.Cell"/> says. In a list item the
+    /// marker is linked as well as the text.</para>
+    /// <para>A link in a paragraph, heading, list item or cell run is written untagged and without
+    /// an alternate description, whatever the conformance, and no exception reports it. In a
+    /// document whose <c>Conformance</c> is PDF/UA-1, the link breaks ISO 14289-1, 7.18.5 (#550). A
+    /// link whose rectangle lies wholly outside the page's crop box is exempt: clause 7.18.1 lifts
+    /// the requirements of clause 7.18 for it. On a justified line, in a standard-14 or an embedded
     /// face, the link's rectangle starts where the linked text's first glyph is drawn and ends
     /// where the text that follows it on the line starts, spaces stretched included, or, when the
     /// linked text closes the line, where its last glyph ends. A space that closes the linked run
@@ -309,23 +322,82 @@ public sealed class TextStyle
     /// not open a line takes no rectangle, because those spaces are drawn in the style of the run
     /// before them; a link on a leading tab with no stop to its right takes none either, because
     /// the space is dropped at the start of a line. A line that is not justified, and the last line
-    /// of a justified paragraph, use the unstretched widths they are drawn with.
+    /// of a justified paragraph, use the unstretched widths they are drawn with.</para>
     /// <para>Do not pass a value that is not an absolute URI. A later major version will refuse
     /// one.</para>
     /// <para>A <see cref="VellumPdf.Layout.Elements.Preformatted"/> refuses any value from its
     /// constructor, with <see cref="ArgumentException"/>.</para>
     /// </remarks>
+    /// <exception cref="InvalidOperationException">
+    /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
+    /// from this property, when <see cref="Document.StrictDiagnostics"/> is set and a cell or band
+    /// link is left out under a PDF/UA-1 claim, and for a style that also sets
+    /// <see cref="LinkAnchor"/>. The document cannot be saved again, except when the style is
+    /// refused before any layout runs.
+    /// </exception>
     /// <exception cref="ArgumentException">
     /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
-    /// from this property, when linked text is placed at a non-finite position, for example through
-    /// a bottom of negative infinity in a renderer's result (see <see cref="LayoutResult.Full"/>). The link's rectangle
-    /// is written
+    /// from this property, when linked text of a paragraph, heading, list item or cell run is
+    /// placed at a non-finite position, for example through a bottom of negative infinity in a
+    /// renderer's result (see <see cref="LayoutResult.Full"/>). The link's rectangle is written
     /// outside the content stream, and the save refuses a non-finite coordinate there. Without a
     /// link, the same paragraph or list-item text saves. A heading placed at a non-finite height
     /// throws either way, from its bookmark; see
     /// <see cref="VellumPdf.Layout.Elements.Heading.Margins"/>.
     /// </exception>
     public string? LinkUri { get; init; }
+
+    /// <summary>
+    /// When non-null, text in this style links to the anchor of that name: the page and position of
+    /// the element whose <c>Anchor</c> property holds the name.
+    /// </summary>
+    /// <remarks>
+    /// <b>A name no element holds is refused.</b> <see cref="Document.Save(System.IO.Stream)"/>
+    /// throws <see cref="InvalidOperationException"/> naming the anchor and the style's site before
+    /// any layout runs, so the document can still be saved once the name is fixed. So does a style
+    /// that sets both this and <see cref="LinkUri"/>, and any style with this set when the
+    /// document's <c>Conformance</c> is PDF/UA-1, whose links need a Link structure element the
+    /// library does not write for them; PDF/A-2a and PDF/A-2u accept the link. A name only an item
+    /// below the second level of a list holds is refused too, because that item is never drawn. An
+    /// anchor whose element the layout does not draw is refused after the layout, and the document
+    /// cannot be saved again.
+    /// <para><b>The save checks every style an element of the document holds</b>, wherever it sits
+    /// and whether or not the layout draws it; a style that is checked and not drawn writes no
+    /// link. The one style it cannot check is a style held inside a renderer of yours. A link such
+    /// a renderer draws to a name no element holds, or to any anchor under PDF/UA-1, is refused
+    /// where it registers the link, after the layout started, and the document cannot be saved
+    /// again. <see cref="VellumPdf.Layout.Elements.Preformatted"/> refuses a style with this set
+    /// from its constructor, with <see cref="ArgumentException"/>.</para>
+    /// <para>The link is written as a named destination, <c>/Dest (name)</c>, and not as a GoTo
+    /// action, because ISO 32000-1, 12.6.4.2 prefers the direct form. It covers the text the way a
+    /// <see cref="LinkUri"/> does, in a paragraph, a heading, a list item (the marker included), a
+    /// string cell, a run of a cell built from runs, and a running band.</para>
+    /// <para>The name is held as written; see the <c>Anchor</c> property of the element for what a
+    /// name may contain. A name is not checked here.</para>
+    /// </remarks>
+    /// <exception cref="InvalidOperationException">
+    /// Raised from the save, not from this property, for the refusals above.
+    /// </exception>
+    /// <exception cref="ArgumentException">
+    /// Raised from the constructor of <see cref="VellumPdf.Layout.Elements.Preformatted"/>, not
+    /// from this property, and from the save when linked text is placed at a non-finite position;
+    /// see <see cref="LinkUri"/>.
+    /// </exception>
+    public string? LinkAnchor { get; init; }
+
+    /// <summary>
+    /// A copy of this style that links to <paramref name="anchor"/>. It copies every public
+    /// property that can be set, and clears <see cref="LinkUri"/>, which a link to an
+    /// anchor replaces.
+    /// </summary>
+    internal TextStyle WithLinkAnchor(string anchor) => new()
+    {
+        FontRef = FontRef,
+        FontSize = FontSize,
+        Leading = Leading,
+        Color = Color,
+        LinkAnchor = anchor,
+    };
 
     /// <summary>Measures a string using whichever font this style references.</summary>
     /// <remarks>

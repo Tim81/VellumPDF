@@ -216,6 +216,92 @@ public sealed class DrawContext
         _document.RegisterLinkAnnotation(_page, annot);
     }
 
+    /// <summary>The conformance level of the document this context draws into.</summary>
+    internal VellumPdf.Document.PdfConformance Conformance =>
+        _document?.Conformance ?? VellumPdf.Document.PdfConformance.None;
+
+    /// <summary>
+    /// Registers a link annotation to the named destination <paramref name="name"/>, as
+    /// <see cref="AddUriLinkAnnotation"/> registers one to a URI: the same rectangle, the same
+    /// registration, so a context with no page throws the same <see cref="ArgumentNullException"/>.
+    /// A destination is named, not given as a GoTo action, because ISO 32000-1, 12.6.4.2 prefers
+    /// the direct form.
+    /// </summary>
+    /// <exception cref="InvalidOperationException">
+    /// The document claims PDF/UA-1, which a link to an anchor breaks without a Link structure
+    /// element, or the layout in progress is for this document and no element of it holds
+    /// the anchor.
+    /// </exception>
+    internal void AddAnchorLinkAnnotation(LayoutBox box, string name, LinkOwner owner = LinkOwner.Run)
+    {
+        GuardAnchorLink(name, owner);
+        var (x, y, w, h) = ToPdfRect(box);
+        var annot = new PdfLinkAnnotation
+        {
+            Rect = new VellumPdf.Document.PdfRectangle(x, y, x + w, y + h),
+            DestName = name,
+        };
+        _document.RegisterLinkAnnotation(_page, annot);
+    }
+
+    /// <summary>
+    /// Registers a link to <paramref name="uri"/> or to the anchor <paramref name="anchor"/> over
+    /// <paramref name="box"/> for a table cell or a running band, and says whether it did. A
+    /// context with no page writes none, and so does a box whose rectangle the annotation would
+    /// write with a value that is not finite; neither is reported. Removed in 3.0 (#688), which
+    /// refuses both where the box is made.
+    /// </summary>
+    internal bool TryAddLinkAnnotation(LayoutBox box, string? uri, string? anchor, LinkOwner owner)
+    {
+        if (_page is null) return false;
+        var (x, y, w, h) = ToPdfRect(box);
+        if (!double.IsFinite(x) || !double.IsFinite(y) || !double.IsFinite(x + w) || !double.IsFinite(y + h))
+            return false;
+        if (anchor is not null)
+        {
+            GuardAnchorLink(anchor, owner);
+            _document.RegisterLinkAnnotation(_page, new PdfLinkAnnotation
+            {
+                Rect = new VellumPdf.Document.PdfRectangle(x, y, x + w, y + h),
+                DestName = anchor,
+            });
+            return true;
+        }
+
+        if (uri is null) return false;
+        _document.RegisterLinkAnnotation(_page, new PdfLinkAnnotation
+        {
+            Rect = new VellumPdf.Document.PdfRectangle(x, y, x + w, y + h),
+            Uri = uri,
+        });
+        return true;
+    }
+
+    private static string Describe(LinkOwner owner) => owner switch
+    {
+        LinkOwner.Cell => "a table cell",
+        LinkOwner.Band => "a running band",
+        _ => "a run of text",
+    };
+
+    // A link to an anchor is refused under PDF/UA-1, whose links need a Link structure element this
+    // library does not write yet, and when the layout of this document knows the names its elements
+    // hold and this is not one of them. With no layout in progress for this document the name is
+    // left to the kernel document's save check.
+    private void GuardAnchorLink(string name, LinkOwner owner)
+    {
+        if (_document.Conformance == VellumPdf.Document.PdfConformance.PdfUA1)
+            throw new InvalidOperationException(
+                $"A link in {Describe(owner)} to the anchor \"{name}\" is refused under a PDF/UA-1 claim, because it would be an " +
+                "untagged link, which ISO 14289-1, 7.18.5 does not allow. Remove the link, or the claim.");
+        if (ListLayoutRun.Current is { Navigation: { } plan } run
+            && ReferenceEquals(run.Pdf, _document) && !plan.Declares(name))
+            throw new InvalidOperationException(
+                $"A link in {Describe(owner)} names the anchor \"{name}\", which no element of this document holds. " +
+                "The layout has already run, so this document cannot be saved again; create a new " +
+                "Document and give an element that anchor.");
+    }
+
     /// <summary>
     /// Registers a document-outline (bookmark) entry pointing to the current page.
     /// <paramref name="layoutY"/> is the layout-space Y of the target position.
@@ -382,4 +468,20 @@ public sealed class DrawContext
         if (Tagged)
             elem.Page = _page;
     }
+}
+
+/// <summary>
+/// What a link annotation is drawn for. The registration takes it so the tagging of a link (#550)
+/// can attach a Link structure element and its quad points to the right owner.
+/// </summary>
+internal enum LinkOwner
+{
+    /// <summary>A run of text, in a paragraph, heading, list item or cell.</summary>
+    Run,
+
+    /// <summary>A table cell's own style, over a line of a string cell.</summary>
+    Cell,
+
+    /// <summary>A running band.</summary>
+    Band,
 }

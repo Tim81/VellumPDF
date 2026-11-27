@@ -114,29 +114,29 @@ public sealed class Document : IDisposable
     /// <see cref="LayoutDiagnosticCode.NullGrandchildText"/> and
     /// <see cref="LayoutDiagnosticCode.NullGrandchild"/> (a null below the second level of a list),
     /// <see cref="LayoutDiagnosticCode.ListIndentClamped"/> (an indent that left list text no
-    /// width),
-    /// <see cref="LayoutDiagnosticCode.ListIndentClampSkipped"/> (a list laid out without that
-    /// clamp, and without moving entries to the next page, because that would have taken it past
-    /// the continuation limit, because the document holds a renderer of yours, an entry in a font
-    /// it cannot draw, or an element after a list that can need about as many continuations as the
-    /// limit allows),
-    /// <see cref="LayoutDiagnosticCode.ListEntryPartDropped"/> (a list entry placed with its marker
-    /// or its text not drawn),
+    /// width), <see cref="LayoutDiagnosticCode.ListIndentClampSkipped"/> (a list laid out without
+    /// that clamp, and without moving entries to the next page, because that would have taken it
+    /// past the continuation limit, because the document holds a renderer of yours, an entry in a
+    /// font it cannot draw, or an element after a list that can need about as many continuations as
+    /// the limit allows), <see cref="LayoutDiagnosticCode.ListEntryPartDropped"/> (a list entry
+    /// placed with its marker or its text not drawn),
     /// <see cref="LayoutDiagnosticCode.NotdefGlyph"/> (a character an embedded font has no glyph
     /// for, written as glyph 0), <see cref="LayoutDiagnosticCode.UnembeddedFont"/> (an element that
     /// selects a Standard 14 font under a conformance claim),
+    /// <see cref="LayoutDiagnosticCode.LinkNotWritten"/> (a link in the style of a table cell or a
+    /// running band that a PDF/UA-1 claim left unwritten),
     /// <see cref="LayoutDiagnosticCode.BandTruncated"/> (mirroring <see cref="BandTruncations"/>),
-    /// <see cref="LayoutDiagnosticCode.PreformattedLineWrapped"/> (a preformatted line split with
-    /// a marker; a warning, which <see cref="StrictDiagnostics"/> saves),
+    /// <see cref="LayoutDiagnosticCode.PreformattedLineWrapped"/> (a preformatted line split with a
+    /// marker; a warning, which <see cref="StrictDiagnostics"/> saves),
     /// <see cref="LayoutDiagnosticCode.CellWhiteSpaceDropped"/> (a table cell's tab, line break or
     /// other control white space left out of what is drawn; also a warning),
     /// <see cref="LayoutDiagnosticCode.KeepWithNextRelaxed"/>,
     /// <see cref="LayoutDiagnosticCode.KeepTogetherRelaxed"/> and
     /// <see cref="LayoutDiagnosticCode.MinLinesRelaxed"/> (a request to keep elements together or
     /// to keep a number of lines that the pages could not hold; warnings, which
-    /// <see cref="StrictDiagnostics"/> saves)
-    /// and <see cref="LayoutDiagnosticCode.DiagnosticsDropped"/>. Every other one saves by
-    /// default; only <see cref="StrictDiagnostics"/> refuses it, and a later major version refuses
+    /// <see cref="StrictDiagnostics"/> saves) and
+    /// <see cref="LayoutDiagnosticCode.DiagnosticsDropped"/>. Every other one saves by default;
+    /// only <see cref="StrictDiagnostics"/> refuses it, and a later major version refuses
     /// them all.</para>
     /// <para>The channel stores at most 1,000 distinct items, and adds
     /// <see cref="LayoutDiagnosticCode.DiagnosticsDropped"/> after them when it dropped any, so the
@@ -276,6 +276,12 @@ public sealed class Document : IDisposable
     /// <para>A value the enumeration does not name is accepted and stamped as PDF/A-2b.</para>
     /// <para>Do not pass a value the enumeration does not name. A later major version will refuse
     /// it.</para>
+    /// <para>Under PDF/UA-1, a link to an anchor or a page reference is refused (see
+    /// <see cref="TextStyle.LinkAnchor"/> and
+    /// <see cref="TextRun.PageReference(string, TextStyle)"/>), and a
+    /// <see cref="TextStyle.LinkUri"/> in the style of a table cell or running band is left out and
+    /// reported as <see cref="LayoutDiagnosticCode.LinkNotWritten"/> (see
+    /// <see cref="TextStyle.LinkUri"/>).</para>
     /// <para>Combined with <see cref="Encrypt"/>, the save throws
     /// <see cref="InvalidOperationException"/> for every PDF/A level, because ISO 19005-2 §6.1.3
     /// forbids the <c>Encrypt</c> key in a PDF/A file. For PDF/UA-1 it throws only when the
@@ -1191,6 +1197,15 @@ public sealed class Document : IDisposable
     /// <para>A renderer you wrote yourself has no gap after it either, and an element it holds has
     /// none; the library's public renderers read their element's <c>SpaceAfter</c>. See
     /// <see cref="Paragraph.SpaceAfter"/>.</para>
+    /// <para><b>A page reference this renderer holds is refused after the layout.</b> The walk that
+    /// finds the references does not see inside a renderer of yours, so the label of one it holds
+    /// is never resolved and the save throws <see cref="InvalidOperationException"/> naming the
+    /// anchor, once the layout has run. A link it registers for a name no element holds, or under
+    /// PDF/UA-1, throws the same way, and in a document that holds a page reference a renderer that
+    /// answers differently the later time makes the save throw naming a change of pagination. <b>Do
+    /// not pass</b> a renderer that holds a page reference, or whose layout depends on how many
+    /// times it was called, to a document that holds one; 3.0 refuses the first when it is added
+    /// and lays the passes out alike.</para>
     /// </remarks>
     /// <exception cref="ArgumentNullException">
     /// <paramref name="renderer"/> is <see langword="null"/>.
@@ -1684,6 +1699,9 @@ public sealed class Document : IDisposable
     /// <see cref="Document"/>. </para>
     /// <para>A document with no pages throws as well. Add at least one element before you
     /// save.</para>
+    /// <para><b>A page reference or a link to an anchor can refuse the save.</b> The refusals, and
+    /// which of them leave the document saveable, are on <see cref="TextStyle.LinkAnchor"/> and
+    /// <see cref="TextRun.PageReference(string, TextStyle)"/>.</para>
     /// </remarks>
     /// <exception cref="ArgumentNullException">
     /// <paramref name="destination"/> is <see langword="null"/>. This is checked before the layout
@@ -1710,13 +1728,13 @@ public sealed class Document : IDisposable
     /// The document has already been written, or has no pages, or an element's input cannot be laid
     /// out, or <see cref="Encrypt"/> is combined with a PDF/A <see cref="Conformance"/>, or with
     /// PDF/UA-1 when the settings leave out <see cref="PdfPermissions.Extract"/>; see
-    /// <see cref="Conformance"/>. It is also raised when two elements hold the same
-    /// <c>Anchor</c> or a <see cref="PageBreak"/> holds a <see cref="PageBreak.PageLabel"/> with no
-    /// element after it, both before any layout, so the document stays saveable; and when an anchor's
-    /// element was never drawn, after the layout, so the document cannot be saved again. It is also
-    /// raised when a font registered with
-    /// <see cref="UseTrueTypeFont"/> lacks a table the save needs, and by every save after one whose
-    /// save threw once its layout had started. For the element inputs, the boundary
+    /// <see cref="Conformance"/>. It is also raised when two elements hold the same <c>Anchor</c>
+    /// or a <see cref="PageBreak"/> holds a <see cref="PageBreak.PageLabel"/> with no element after
+    /// it, both before any layout, so the document stays saveable; and when an anchor's element was
+    /// never drawn, after the layout, so the document cannot be saved again. It is also raised when
+    /// a font registered with <see cref="UseTrueTypeFont"/> lacks a table the save needs, for a
+    /// link to an anchor or a page reference that the remarks name, and by every save after one
+    /// whose save threw once its layout had started. For the element inputs, the boundary
     /// documentation on the property you set says which values reach this. It is also raised when
     /// <see cref="StrictDiagnostics"/> is <see langword="true"/> and the layout reported an item
     /// whose <see cref="LayoutDiagnostic.Severity"/> is
@@ -1822,6 +1840,9 @@ public sealed class Document : IDisposable
     /// above does not hold for that stream, which was truncated when you opened it.
     /// <see cref="SaveAsync(System.IO.Stream, System.Threading.CancellationToken)"/> builds the whole
     /// PDF in a <see cref="MemoryStream"/> instead, whose capacity is about 2 GB.</para>
+    /// <para><b>A page reference or a link to an anchor can refuse the save.</b> The refusals, and
+    /// which of them leave the document saveable, are on <see cref="TextStyle.LinkAnchor"/> and
+    /// <see cref="TextRun.PageReference(string, TextStyle)"/>.</para>
     /// </remarks>
     /// <exception cref="ArgumentNullException">
     /// <paramref name="path"/> is <see langword="null"/>. A null that an element or a written Kernel
@@ -1855,9 +1876,9 @@ public sealed class Document : IDisposable
     /// The document has already been written, or has no pages, or an element's input cannot be laid
     /// out, or <see cref="Encrypt"/> is combined with a PDF/A <see cref="Conformance"/>, or with
     /// PDF/UA-1 when the settings leave out <see cref="PdfPermissions.Extract"/>, or a registered
-    /// font lacks a table the save needs, or <see cref="StrictDiagnostics"/> is
-    /// <see langword="true"/> and the layout reported an error item. None of these touches the
-    /// file at the path; see the remarks.
+    /// font lacks a table the save needs, or a link to an anchor or a page reference is refused, or
+    /// <see cref="StrictDiagnostics"/> is <see langword="true"/> and the layout reported an error
+    /// item. None of these touches the file at the path; see the remarks.
     /// </exception>
     public void Save(string path)
     {
@@ -1947,6 +1968,9 @@ public sealed class Document : IDisposable
     /// <see cref="Document"/>. </para>
     /// <para>A document with no pages throws as well. Add at least one element before you
     /// save.</para>
+    /// <para><b>A page reference or a link to an anchor can refuse the save.</b> The refusals, and
+    /// which of them leave the document saveable, are on <see cref="TextStyle.LinkAnchor"/> and
+    /// <see cref="TextRun.PageReference(string, TextStyle)"/>.</para>
     /// </remarks>
     /// <inheritdoc cref="Save(System.IO.Stream)" path="/exception[@cref='T:System.ArgumentNullException' or @cref='T:System.InvalidOperationException' or @cref='T:System.IO.IOException' or @cref='T:System.ArgumentOutOfRangeException' or @cref='T:System.NullReferenceException' or @cref='T:System.IndexOutOfRangeException' or @cref='T:System.IO.InvalidDataException' or @cref='T:System.OverflowException' or @cref='T:System.OutOfMemoryException']"/>
     /// <exception cref="NotSupportedException">
@@ -2023,6 +2047,9 @@ public sealed class Document : IDisposable
     /// during the copy can leave the file truncated. Everything <see cref="Save(string)"/> says
     /// about symbolic links, permissions, the advisory lock, the extra in-memory copy of the PDF, which
     /// has no 2 GB limit, and the final copy not being atomic applies here too.</para>
+    /// <para><b>A page reference or a link to an anchor can refuse the save.</b> The refusals, and
+    /// which of them leave the document saveable, are on <see cref="TextStyle.LinkAnchor"/> and
+    /// <see cref="TextRun.PageReference(string, TextStyle)"/>.</para>
     /// </remarks>
     /// <inheritdoc cref="Save(string)" path="/exception[@cref='T:System.ArgumentNullException' or @cref='T:System.IO.DirectoryNotFoundException' or @cref='T:System.UnauthorizedAccessException' or @cref='T:System.IO.IOException' or @cref='T:System.InvalidOperationException']"/>
     /// <inheritdoc cref="Save(System.IO.Stream)" path="/exception[@cref='T:System.ObjectDisposedException' or @cref='T:System.ArgumentOutOfRangeException' or @cref='T:System.NotSupportedException' or @cref='T:System.NullReferenceException' or @cref='T:System.IndexOutOfRangeException' or @cref='T:System.IO.InvalidDataException' or @cref='T:System.OverflowException' or @cref='T:System.OutOfMemoryException']"/>

@@ -54,6 +54,12 @@ public sealed partial class ParagraphRenderer : IRenderer, IPageBreakSource, IKe
     // only when its text holds a tab; reported once from Draw, like _nullStyleRuns.
     private int _tabStopsBeyond;
 
+    // The labels of the page references the wrap read, or null when it read none. A wrap whose
+    // labels the table no longer holds is made again. The pieces a split returns carry the wrap but
+    // not this, so a piece never wraps again: its labels cannot change within the pass that
+    // made it.
+    private ReferenceReads? _reads;
+
     // Pagination window: only lines[_startLine.._endLine) are in this renderer.
     private readonly int _startLine;
     private int _endLine;  // exclusive
@@ -124,12 +130,18 @@ public sealed partial class ParagraphRenderer : IRenderer, IPageBreakSource, IKe
     /// throw by setting them.</para>
     /// <para>When the document calls this method, the exceptions it lists reach you from the
     /// save.</para>
+    /// <para><b>A page reference laid out outside a save is refused.</b> The wrap reads the label
+    /// of each <see cref="TextRun.PageReference(string, TextStyle)"/> from the pagination of the
+    /// layout in progress, and makes the wrap again when a label it read has changed. Called from
+    /// anywhere else, this method throws <see cref="InvalidOperationException"/> naming the anchor,
+    /// because there is no pagination to read. Called from a renderer of yours inside a save, it
+    /// reads the placeholder label, and the save refuses the reference after the layout.</para>
     /// </remarks>
     /// <exception cref="InvalidOperationException">
-    /// A run that yields text has a <see cref="TextStyle.FontSize"/> or <see cref="TextStyle.Color"/>
-    /// that is refused; see those members. It is also raised when the paragraph has a tab stop with
-    /// a leader and a run has a font size the leader cannot be drawn at; see
-    /// <see cref="Paragraph.TabStops"/>.
+    /// A page reference is laid out outside a save. A run that yields text has a
+    /// <see cref="TextStyle.FontSize"/> or <see cref="TextStyle.Color"/> that is refused; see those
+    /// members. It is also raised when the paragraph has a tab stop with a leader and a run has a
+    /// font size the leader cannot be drawn at; see <see cref="Paragraph.TabStops"/>.
     /// </exception>
     /// <exception cref="ArgumentException">
     /// Text this method measures in an embedded font holds an unpaired surrogate; see
@@ -248,13 +260,23 @@ public sealed partial class ParagraphRenderer : IRenderer, IPageBreakSource, IKe
     [System.Diagnostics.CodeAnalysis.MemberNotNull(nameof(_lines), nameof(_lineEnds))]
     private void EnsureWrapped(double width)
     {
-        if (_lines is not null && _lineEnds is not null) return;
+        if (_lines is not null && _lineEnds is not null)
+        {
+            if (_reads is null || _reads.IsCurrent()) return;
+
+            // A label this wrap read has changed, so the wrap, the line height taken from it and
+            // the placement it made are all of the earlier text.
+            _lineHeightTaken = false;
+            ClearPlacement();
+        }
 
         // The document checks this before any layout for its own paragraphs; a renderer of
         // yours that lays one out meets it here.
         LayoutValidation.ValidateLeaderSizes(_para);
         var stops = StopsWithin(_para, width, out _tabStopsBeyond);
-        (_lines, _lineEnds) = WordWrap(_para.Runs, width, out var nullStyleRuns, stops);
+        _reads = null;
+        var runs = PageReferences.Effective(_para.Runs, ref _reads);
+        (_lines, _lineEnds) = WordWrap(runs, width, out var nullStyleRuns, stops);
         _nullStyleRuns = nullStyleRuns;
         WrapCalls++;
     }
@@ -330,6 +352,16 @@ public sealed partial class ParagraphRenderer : IRenderer, IPageBreakSource, IKe
     /// <remarks>See <see cref="IRenderer.Draw"/>.</remarks>
     /// <exception cref="ArgumentOutOfRangeException">
     /// The renderer was constructed with a negative start line.
+    /// </exception>
+    /// <exception cref="InvalidOperationException">
+    /// A run's style sets <see cref="TextStyle.LinkAnchor"/>, and the document is PDF/UA-1, or the
+    /// layout in progress for it holds no element with that anchor. <b>A link to an anchor is
+    /// checked where it is registered</b>, so a renderer of yours that the walk over the added
+    /// elements cannot see is refused here, after the layout started.
+    /// </exception>
+    /// <exception cref="ArgumentNullException">
+    /// A linked run is drawn through a <see cref="DrawContext"/> built with a null page;
+    /// <c>ParamName</c> is <c>key</c>, whether the link is to a URI or to an anchor.
     /// </exception>
     /// <exception cref="ArgumentException">
     /// A position written here is <c>NaN</c> or infinite, which
@@ -536,11 +568,13 @@ public sealed partial class ParagraphRenderer : IRenderer, IPageBreakSource, IKe
                     // on a line that is not justified, so ordinary lines advance as before.
                     var drawnWidth = frag.Width + (CountSpaces(frag.Text) * wordSpacing);
 
-                    // Register link annotation for this fragment if it has a URI.
-                    if (frag.Text.Length > 0 && frag.Style.LinkUri is not null)
+                    // Register link annotation for this fragment if it has a URI or an anchor.
+                    if (frag.Text.Length > 0)
                     {
-                        var fragBox = new LayoutBox(curX, lineLayoutTop, drawnWidth, leading);
-                        ctx.AddUriLinkAnnotation(fragBox, frag.Style.LinkUri);
+                        if (frag.Style.LinkUri is not null)
+                            ctx.AddUriLinkAnnotation(new LayoutBox(curX, lineLayoutTop, drawnWidth, leading), frag.Style.LinkUri);
+                        else if (frag.Style.LinkAnchor is not null)
+                            ctx.AddAnchorLinkAnnotation(new LayoutBox(curX, lineLayoutTop, drawnWidth, leading), frag.Style.LinkAnchor);
                     }
 
                     curX += drawnWidth;
@@ -602,11 +636,14 @@ public sealed partial class ParagraphRenderer : IRenderer, IPageBreakSource, IKe
     {
         for (var i = 0; i < fragments.Length; i++)
         {
-            if (fragments[i].Style.LinkUri is null || !spans[i].Drawn)
+            if (!spans[i].Drawn || (fragments[i].Style.LinkUri is null && fragments[i].Style.LinkAnchor is null))
                 continue;
 
             var box = new LayoutBox(spans[i].Start, lineTop, spans[i].End - spans[i].Start, lineHeight);
-            ctx.AddUriLinkAnnotation(box, fragments[i].Style.LinkUri!);
+            if (fragments[i].Style.LinkUri is { } uri)
+                ctx.AddUriLinkAnnotation(box, uri);
+            else
+                ctx.AddAnchorLinkAnnotation(box, fragments[i].Style.LinkAnchor!);
         }
     }
 

@@ -337,7 +337,7 @@ internal sealed class TableGridResolver
                 var cell = cells[c];
                 if (col >= cols) break;
                 var cellStyle = cell.Style ?? style;
-                if (cell.Content is null)
+                if (cell.LaidOutContent is null)
                     throw new ArgumentNullException("content", "A table cell has a null text and a column is sized automatically.");
 
                 // The widest word and the widest line of the lines the cell is measured in. A cell
@@ -383,7 +383,7 @@ internal sealed class TableGridResolver
     /// The widest word and the widest line of a cell's text, each line measured on its own.
     /// </summary>
     internal static (double Longest, double Widest) MeasureCell(Cell cell, TextStyle style, bool honourBreaks) =>
-        cell.RunText is { } runText ? runText.Measure(honourBreaks) : MeasureCell(cell.Content, style, honourBreaks);
+        cell.RunText is { } runText ? runText.Measure(honourBreaks) : MeasureCell(cell.LaidOutContent, style, honourBreaks);
 
     internal static (double Longest, double Widest) MeasureCell(string content, TextStyle style, bool honourBreaks)
     {

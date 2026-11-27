@@ -303,6 +303,10 @@ public sealed class Paragraph
     /// has none and cannot be given one. A <see cref="Rendering.ParagraphRenderer"/> built to
     /// continue a paragraph from a later line reports none either, and is refused as an anchor on
     /// content never drawn.</para>
+    /// <para>A <see cref="TextStyle.LinkAnchor"/> or a
+    /// <see cref="TextRun.PageReference(string, TextStyle)"/> names an anchor; the refusals and
+    /// their limits are on <see cref="TextStyle.LinkAnchor"/>. A reference prints the page this
+    /// element's first line is on.</para>
     /// </remarks>
     /// <exception cref="ArgumentException">
     /// Raised from this <c>init</c> accessor when the name breaks the rule above. It is also

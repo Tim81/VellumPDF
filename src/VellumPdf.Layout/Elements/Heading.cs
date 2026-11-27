@@ -105,6 +105,10 @@ public sealed class Heading
     /// band throws <see cref="InvalidOperationException"/> when a template repeats
     /// <c>{chapter}</c> so often that the titles it prints add up to more than
     /// <see cref="int.MaxValue"/> characters; see <see cref="RunningBand.ChapterToken"/>.</para>
+    /// <para><b>A page reference leaves a gap in the title.</b> The title is built from the text of
+    /// the runs, and a <see cref="TextRun.PageReference(string, TextStyle)"/> has none, so the runs
+    /// "See " and " end" around a reference give the title <c>See</c> and <c>end</c> joined by two
+    /// spaces. Set this property to give the outline the title you want.</para>
     /// </remarks>
     /// <exception cref="ArgumentException">
     /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
@@ -197,6 +201,10 @@ public sealed class Heading
     /// <remarks>
     /// The rule, the refusals and the position are those of <see cref="Paragraph.Anchor"/>. A
     /// heading that splits across pages is anchored on the page its first line is on.
+    /// <para>A <see cref="TextStyle.LinkAnchor"/> or a
+    /// <see cref="TextRun.PageReference(string, TextStyle)"/> names an anchor; the refusals and
+    /// their limits are on <see cref="TextStyle.LinkAnchor"/>. A reference prints the page this
+    /// element's first line is on.</para>
     /// </remarks>
     /// <inheritdoc cref="Paragraph.Anchor" path="/exception"/>
     public string? Anchor
@@ -271,9 +279,11 @@ public sealed class Heading
     /// Helvetica, as an empty string does. The sequence is copied: changing it afterwards changes
     /// nothing. A <see langword="null"/> literal binds to the string constructor, not to this one.
     /// <para>Each run is drawn in its own style, and <see cref="Style"/> does not style the others.
-    /// A run is a link only through its own <see cref="TextStyle.LinkUri"/>. The annotation
-    /// covers that run and also a space that opens the next run, because the space belongs to the
-    /// run before it, as in a <see cref="Paragraph"/>.</para>
+    /// A run is a link only through its own style's <see cref="TextStyle.LinkUri"/> or
+    /// <see cref="TextStyle.LinkAnchor"/>, or as a
+    /// <see cref="TextRun.PageReference(string, TextStyle)"/>. The annotation covers that run and
+    /// also a space that opens the next run, because the space belongs to the run before it, as in
+    /// a <see cref="Paragraph"/>.</para>
     /// <para>The style of a run that draws no text, one that is empty or holds only white space,
     /// is not checked by the save: a size or colour it would refuse on a run that draws text does
     /// not throw here.</para>
@@ -322,6 +332,9 @@ public sealed class Heading
     /// of the heading, and <see cref="Language"/> is the only language it carries.</para>
     /// </remarks>
     public IReadOnlyList<TextRun> Runs => _runs.AsReadOnly();
+
+    /// <summary>The runs the heading holds, without the copy <see cref="Runs"/> makes.</summary>
+    internal IReadOnlyList<TextRun> BackingRuns => _runs;
 
     private readonly List<TextRun> _runs;
 

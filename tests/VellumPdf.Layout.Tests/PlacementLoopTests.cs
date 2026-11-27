@@ -366,10 +366,7 @@ public sealed class PlacementLoopTests
         Assert.Equal(DocumentRenderer.MaxMeasureRuns, dependent.ResolveCalls);
         Assert.Equal(
             "Pagination did not settle after 5 layout passes: the text for 'target' read " +
-            "'1', '2', '1', '2', '1'. A string that depends on where its target lands can change " +
-            "the layout and so move that target, and here the passes keep changing it instead of " +
-            "settling. The renderers have already measured, so lay the content out again in a " +
-            "new renderer or document.",
+            "'1', '2', '1', '2', '1'.",
             ex.Message);
         // The drawing pass never ran: the document was refused before any page was added.
         Assert.Null(renderer.DrawPlan);
@@ -413,7 +410,7 @@ public sealed class PlacementLoopTests
         Assert.Contains("the text for 'd1' read", ex.Message, StringComparison.Ordinal);
         Assert.Contains("the text for 'd2' read", ex.Message, StringComparison.Ordinal);
         Assert.DoesNotContain("'d3'", ex.Message, StringComparison.Ordinal);
-        Assert.Contains(", and 1 more. ", ex.Message, StringComparison.Ordinal);
+        Assert.Contains(", and 1 more.", ex.Message, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -450,7 +447,7 @@ public sealed class PlacementLoopTests
         var ex = Assert.Throws<InvalidOperationException>(() => Render(renderer));
 
         Assert.StartsWith(
-            "Pagination did not settle after 5 layout passes: the page count read 2, 1, 2, 1, 2. ",
+            "Pagination did not settle after 5 layout passes: the page count read 2, 1, 2, 1, 2.",
             ex.Message, StringComparison.Ordinal);
     }
 

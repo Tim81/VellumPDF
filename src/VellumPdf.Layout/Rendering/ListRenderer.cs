@@ -71,8 +71,13 @@ public sealed class ListRenderer : IRenderer, IPageBreakSource, IKeepSource, IPl
     // One build of the entries, with every count and verdict that is read from them. A layout that
     // finds the entries built in another save replaces the whole object, and never changes the
     // one it replaces, because the pieces an earlier layout returned still hold it.
-    private sealed class Built(long save, List<Entry> items, int indentClamped, int clampSkipped)
+    private sealed class Built(long save, List<Entry> items, int indentClamped, int clampSkipped, ReferenceReads? reads)
     {
+        // The labels of the page references the entries were built from, or null when they hold
+        // none. A layout that finds one of them changed builds the entries again, so the gutter and
+        // the wrap are those of the label the list now holds.
+        internal ReferenceReads? Reads { get; } = reads;
+
         // The save that built the entries, as a number and not the run, so that a renderer a caller
         // keeps does not keep the document of that save alive.
         internal long Save { get; } = save;
@@ -326,6 +331,11 @@ public sealed class ListRenderer : IRenderer, IPageBreakSource, IKeepSource, IPl
     /// save. A list added with <see cref="Document.Add(ListElement)"/> never starts at a negative
     /// item, so <see cref="ArgumentOutOfRangeException"/> reaches the save only from a renderer
     /// you construct with a negative start and add yourself.</para>
+    /// <para><b>A page reference in an item is read when the entries are built, and the entries are
+    /// built again when a label they read has changed.</b> The gutter, the wrap and the position of
+    /// the text are then those of the label the list now holds, as for the same text written as a
+    /// literal. A reference laid out outside a save is refused with
+    /// <see cref="InvalidOperationException"/> naming the anchor.</para>
     /// </remarks>
     /// <exception cref="ArgumentOutOfRangeException">
     /// The start item is negative, the list has items, and the area is not empty. The parameter
@@ -340,6 +350,9 @@ public sealed class ListRenderer : IRenderer, IPageBreakSource, IKeepSource, IPl
     /// <see cref="TextStyle.FontRef"/>. It is also raised, by <see cref="VellumPdf.Canvas.PdfCanvas"/>,
     /// when a <c>NaN</c> or negative-infinity <see cref="ListElement.Indent"/> or a non-finite edge of
     /// <see cref="ListElement.Margins"/> would be written; see <see cref="Document"/>.
+    /// </exception>
+    /// <exception cref="InvalidOperationException">
+    /// An item holds a page reference and this method runs outside a save; see the remarks.
     /// </exception>
     /// <exception cref="ArgumentNullException">
     /// An item has a null child or a null text where it is drawn; see <see cref="ListItem"/>.
@@ -440,7 +453,8 @@ public sealed class ListRenderer : IRenderer, IPageBreakSource, IKeepSource, IPl
         // of this save, and kept for the rest of it. A layout in another save builds them again
         // and replaces them, so nothing an earlier save placed is drawn. A piece continues the
         // entries of the layout that made it.
-        if (!_isPiece && (_built is null || _built.Save != ListLayoutRun.CurrentSave))
+        if (!_isPiece && (_built is null || _built.Save != ListLayoutRun.CurrentSave
+            || (_built.Reads is { } reads && !reads.IsCurrent())))
             _built = BuildItems(area.Width);
 
         var built = _built!;
@@ -707,6 +721,11 @@ public sealed class ListRenderer : IRenderer, IPageBreakSource, IKeepSource, IPl
     /// <exception cref="ArgumentOutOfRangeException">
     /// The start item is negative and the list has no items, which <see cref="Layout"/> accepts;
     /// see the constructor.
+    /// </exception>
+    /// <exception cref="InvalidOperationException">
+    /// A style of an item sets <see cref="TextStyle.LinkAnchor"/>, and the document is PDF/UA-1 or
+    /// the layout in progress holds no element with that anchor; see
+    /// <see cref="ParagraphRenderer.Draw"/>.
     /// </exception>
     /// <exception cref="ArgumentException">
     /// A position written here is <c>NaN</c> or infinite, which
@@ -1034,7 +1053,8 @@ public sealed class ListRenderer : IRenderer, IPageBreakSource, IKeepSource, IPl
 
         for (var i = 0; i < runs.Count; i++)
         {
-            if (runs[i].Text.Length == 0) continue;
+            // A reference draws its label, whatever the label turns out to be.
+            if (!runs[i].HoldsText) continue;
             if (runs[i].Style is not { } style || !ListLayoutRun.CanDraw(run, style)) return false;
         }
 
@@ -1079,6 +1099,7 @@ public sealed class ListRenderer : IRenderer, IPageBreakSource, IKeepSource, IPl
     {
         BuildCalls++;
         var result = new List<Entry>();
+        ReferenceReads? reads = null;
         int indentClamped = 0, clampSkipped = 0;
         var indent = _list.Indent;
         var defaultStyle = _list.DefaultStyle ?? TextStyle.Default;
@@ -1089,7 +1110,7 @@ public sealed class ListRenderer : IRenderer, IPageBreakSource, IKeepSource, IPl
             if (item.HasNullText)
                 throw new ArgumentNullException("text", "A list item has a null text.");
             var itemStyle = item.Style ?? defaultStyle;
-            var contentRuns = item.ContentRuns(itemStyle);
+            var contentRuns = PageReferences.Effective(item.ContentRuns(itemStyle), ref reads);
             var markerText = _list.FormatMarker(i + 1);
             var markerWidth = itemStyle.MeasureString(markerText);
 
@@ -1178,7 +1199,7 @@ public sealed class ListRenderer : IRenderer, IPageBreakSource, IKeepSource, IPl
                     if (child.HasNullText)
                         throw new ArgumentNullException("text", "A list item has a null text.");
                     var childStyle = child.Style ?? itemStyle;
-                    var childRuns = child.ContentRuns(childStyle);
+                    var childRuns = PageReferences.Effective(child.ContentRuns(childStyle), ref reads);
                     // Nested unordered items use an open-bullet "◦"; nested ordered items
                     // route through ListElement.FormatMarker so OrderedAlpha/OrderedRoman
                     // are honoured (the default was decimal regardless of the scheme).
@@ -1236,6 +1257,6 @@ public sealed class ListRenderer : IRenderer, IPageBreakSource, IKeepSource, IPl
             }
         }
 
-        return new Built(ListLayoutRun.CurrentSave, result, indentClamped, clampSkipped);
+        return new Built(ListLayoutRun.CurrentSave, result, indentClamped, clampSkipped, reads);
     }
 }

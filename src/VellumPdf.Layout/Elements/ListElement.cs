@@ -272,6 +272,10 @@ public sealed class ListElement
     /// <remarks>
     /// The rule, the refusals and the position are those of <see cref="Paragraph.Anchor"/>. A list
     /// with no items has no line; its destination is at the top of the box the list would fill.
+    /// <para>A <see cref="TextStyle.LinkAnchor"/> or a
+    /// <see cref="TextRun.PageReference(string, TextStyle)"/> names an anchor; the refusals and
+    /// their limits are on <see cref="TextStyle.LinkAnchor"/>. A reference prints the page this
+    /// list starts on.</para>
     /// </remarks>
     /// <inheritdoc cref="Paragraph.Anchor" path="/exception"/>
     public string? Anchor

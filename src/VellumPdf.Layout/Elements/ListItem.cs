@@ -55,10 +55,10 @@ public sealed class ListItem
     /// font. A later major version refuses an element that falls back to Helvetica under either
     /// claim.</para>
     /// <para>On an item built from runs this styles the marker and the children that set no style
-    /// of their own, and none of this item's runs, because each run has its own style. The
-    /// marker of a child item takes its own style, or its parent's. A run is a link only through
-    /// its own <see cref="TextStyle.LinkUri"/>; one in this style links the marker, and the
-    /// marker and text of a child that inherits it.</para>
+    /// of their own, and none of this item's runs, because each run has its own style. The marker
+    /// of a child item takes its own style, or its parent's. A run is a link only through its own
+    /// style's link, as on <see cref="ListItem(IEnumerable{TextRun})"/>; a link in this style links
+    /// the marker, and the marker and text of a child that inherits it.</para>
     /// </remarks>
     /// <exception cref="InvalidOperationException">
     /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
@@ -111,6 +111,10 @@ public sealed class ListItem
     /// <remarks>
     /// The rule, the refusals and the position are those of <see cref="Paragraph.Anchor"/>. An item
     /// below the second level is never drawn, so an anchor on one is refused after the layout.
+    /// <para>A <see cref="TextStyle.LinkAnchor"/> or a
+    /// <see cref="TextRun.PageReference(string, TextStyle)"/> names an anchor; the refusals and
+    /// their limits are on <see cref="TextStyle.LinkAnchor"/>. A reference prints the page this
+    /// item is on.</para>
     /// </remarks>
     /// <inheritdoc cref="Paragraph.Anchor" path="/exception"/>
     public string? Anchor
@@ -216,12 +220,13 @@ public sealed class ListItem
     /// sequence is accepted and builds an item with one empty run, as an empty string does. The
     /// sequence is copied: changing it afterwards changes nothing. A <see langword="null"/>
     /// literal binds to the string constructor, not to this one.
-    /// <para>Each run is drawn in its own style. A run is a link only through its own
-    /// <see cref="TextStyle.LinkUri"/>. The annotation covers that run and also a space that opens
-    /// the next run, because the space belongs to the run before it, as in a
-    /// <see cref="Paragraph"/>. The marker is drawn in <see cref="Style"/>, and when that is null,
-    /// in the style <see cref="Style"/> says is inherited, so set it to the style of the runs for
-    /// a marker that matches them: <c>new ListItem(runs) { Style = style }</c>.</para>
+    /// <para>Each run is drawn in its own style. A run is a link only through its own style's
+    /// <see cref="TextStyle.LinkUri"/> or <see cref="TextStyle.LinkAnchor"/>, or as a
+    /// <see cref="TextRun.PageReference(string, TextStyle)"/>. The annotation covers that run and
+    /// also a space that opens the next run, because the space belongs to the run before it, as in
+    /// a <see cref="Paragraph"/>. The marker is drawn in <see cref="Style"/>, and when that is
+    /// null, in the style <see cref="Style"/> says is inherited, so set it to the style of the runs
+    /// for a marker that matches them: <c>new ListItem(runs) { Style = style }</c>.</para>
     /// <para>The style of a run that draws no text, one that is empty or holds only white space,
     /// is not checked by the save: a size or colour it would refuse on a run that draws text does
     /// not throw here.</para>

@@ -3,6 +3,7 @@
 
 using System.Runtime.CompilerServices;
 using VellumPdf.Layout.Core;
+using VellumPdf.Layout.Rendering;
 using VellumPdf.Layout.Rendering.Table;
 
 namespace VellumPdf.Layout.Elements.Table;
@@ -196,8 +197,12 @@ public sealed class Cell
     /// <remarks>
     /// Null means <see cref="TableElement.DefaultCellStyle"/>, then
     /// <see cref="TextStyle.Default"/>. Refusals on size, leading, font and text colour are on
-    /// <see cref="TextStyle"/> and are raised from the save. A <see cref="TextStyle.LinkUri"/> in
-    /// it is ignored (#475).
+    /// <see cref="TextStyle"/> and are raised from the save.
+    /// <para><b>A <see cref="TextStyle.LinkUri"/> or <see cref="TextStyle.LinkAnchor"/> in it links
+    /// a string cell, line by line, and is ignored by a cell built from runs.</b> What a link
+    /// covers and when it is left out are on <see cref="TextStyle.LinkUri"/> and
+    /// <see cref="TextStyle.LinkAnchor"/>. The default style the table gives a cell is replaced by
+    /// this one, link or no link.</para>
     /// <para><b>A cell built from runs does not read this style for its text.</b> Each run is drawn
     /// in its own style, and neither this property nor <see cref="TableElement.DefaultCellStyle"/>
     /// styles a run. Setting it on such a cell is not refused. When no run holds text, the cell is
@@ -305,7 +310,32 @@ public sealed class Cell
     /// </remarks>
     public IReadOnlyList<TextRun>? Runs { get; }
 
-    internal CellRunText? RunText { get; }
+    private readonly CellRunText? _runText;
+
+    // Set by the constructor that takes runs, when one of them is a page reference.
+    private readonly TextRun? _firstReference;
+
+    /// <summary>Whether a run of the cell is a page reference, whose label is not known until the
+    /// pagination is.</summary>
+    internal bool HoldsReferences => _firstReference is not null;
+
+    /// <summary>
+    /// What the layout wraps, measures and draws: the runs with each reference replaced by its
+    /// label. For a cell with no reference, the runs as the constructor read them.
+    /// </summary>
+    internal CellRunText? RunText =>
+        _firstReference is { } first
+            ? PageReferences.CurrentTable(first.ReferenceAnchor!).ViewOf(this).RunText
+            : _runText;
+
+    /// <summary>
+    /// The text the layout reads where it reads <see cref="Content"/>: the same string, with each
+    /// reference's label in it.
+    /// </summary>
+    internal string LaidOutContent =>
+        _firstReference is { } first
+            ? PageReferences.CurrentTable(first.ReferenceAnchor!).ViewOf(this).Content
+            : Content;
 
     /// <summary>Creates a cell with the given text content.</summary>
     /// <remarks>
@@ -345,20 +375,24 @@ public sealed class Cell
     /// style of its run. A space is measured in the style of the run that holds it. Adjacent runs
     /// that share one <see cref="TextStyle"/> instance and hold text are one piece of text, drawn
     /// in one show operator, so a cell of such runs draws the string cell of the text they hold in
-    /// that style, except that the run cell links the text when that style has a
-    /// <see cref="TextStyle.LinkUri"/> and the string cell drops the link.</para>
+    /// that style. Which links are written is on <see cref="TextStyle.LinkUri"/>, and the refusals
+    /// of a <see cref="TextStyle.LinkAnchor"/> are on that property.</para>
     /// <para>Every line of the cell is as tall as the largest <see
     /// cref="TextStyle.EffectiveLeading"/> among the runs that hold text, and the first baseline
     /// lies one largest font size of those runs below the top of the cell's content, padding
     /// included. Every later baseline is one line height below the one before it, so a line that
     /// holds only small text is as tall as its neighbours and sits as low as they do. A run that
     /// holds only a line end or white space counts, as any run that holds text does.</para>
-    /// <para>A run is a link through its own <see cref="TextStyle.LinkUri"/>. The annotation covers
-    /// the width the run's text is drawn at on each line it is on, as tall as the line, and is cut
-    /// to the cell's box. A run that draws no glyph, or whose text measures zero wide, as Symbol
-    /// text does, gets none. <b>The links of a cell are not tagged</b>, whatever the document's
-    /// conformance, and no exception reports it. A <see cref="TextStyle.LinkUri"/> on
-    /// <see cref="Style"/> is still ignored (#475).</para>
+    /// <para>A run is a link through its own <see cref="TextStyle.LinkUri"/> or
+    /// <see cref="TextStyle.LinkAnchor"/>, or as a page reference. The annotation covers the width
+    /// the run's text is drawn at on each line it is on, as tall as the line, and is cut to the
+    /// cell's box. A run that draws no glyph, or whose text measures zero wide, as Symbol text
+    /// does, gets none. <b>The links of a cell are not tagged</b>, whatever the document's
+    /// conformance, and no exception reports it. A <see cref="TextStyle.LinkUri"/> or
+    /// <see cref="TextStyle.LinkAnchor"/> on <see cref="Style"/> does not link a cell built from
+    /// runs: that style styles none of its runs, as <see cref="Style"/> says. A run's link reaches
+    /// the file through a context with a page, and throws <see cref="ArgumentNullException"/>
+    /// through one with none, as a paragraph's does.</para>
     /// <para><b>A run that holds text is refused when its colour has a channel that is not finite
     /// or lies outside 0 to 1.</b> The constructor throws
     /// <see cref="ArgumentOutOfRangeException"/>, because ISO 32000-2:2020, 8.6.4.3 says each
@@ -412,10 +446,11 @@ public sealed class Cell
         ArgumentNullException.ThrowIfNull(runs);
         var copy = TextRunList.Copy(runs, nameof(runs), TextStyle.Default);
         for (var i = 0; i < copy.Count; i++)
-            if (copy[i].Text.Length > 0)
+            if (copy[i].HoldsText)
                 LayoutValidation.ValidateRunColor(copy[i].Style.Color, i, nameof(runs));
         Runs = copy.AsReadOnly();
         Content = TextRunList.Concat(copy);
-        RunText = new CellRunText(copy);
+        _runText = new CellRunText(copy);
+        _firstReference = copy.Find(static r => r.IsReference);
     }
 }

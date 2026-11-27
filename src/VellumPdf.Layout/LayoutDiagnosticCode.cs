@@ -23,9 +23,8 @@ public enum LayoutDiagnosticCode
 {
     // Reserved, not defined here, so that later members do not collide:
     //   105 SymbolFontMeasuredAsZero (Error), 204 ListDepthCapped, 205 ListEntriesCapped, 206
-    //   ListEntrySkipped (all Error), 302 SurplusCell (Error), 402 UnknownBandToken, and one 7xx
-    //   member for a link dropped from a cell or band under a PDF/UA claim. The rest of the 8xx
-    //   block stays free for later pagination reports.
+    //   ListEntrySkipped (all Error), 302 SurplusCell (Error), 402 UnknownBandToken. The rest of
+    //   the 8xx block stays free for later pagination reports.
 
     /// <summary>
     /// A <see cref="Elements.TextRun"/> with a null style that yields no word, so it saved without
@@ -287,6 +286,23 @@ public enum LayoutDiagnosticCode
     /// running bands yourself.</para>
     /// </remarks>
     UnembeddedFont = 601,
+
+    /// <summary>
+    /// A link in the <see cref="Core.TextStyle.LinkUri"/> of a table cell, of
+    /// <see cref="Elements.Table.TableElement.DefaultCellStyle"/> or of a running band was not
+    /// written, because the document's conformance is PDF/UA-1, where an untagged link breaks ISO
+    /// 14289-1, 7.18.5. <see cref="LayoutDiagnostic.Count"/> is the number of links not written:
+    /// the lines of the table's cells that would have carried one, or, for a band, the pages it was
+    /// drawn on.
+    /// </summary>
+    /// <remarks>
+    /// The text is drawn, and only the link is left out, as it was before cells and bands wrote
+    /// links. It is reported once per table element and once per band kind. <b>Strict mode refuses
+    /// it.</b> A link in a paragraph, heading or list item is written whatever the conformance, and
+    /// is not reported here. <b>Do not pass</b> a link to a cell or band of a PDF/UA-1 document; a
+    /// later major version refuses it where the style is set.
+    /// </remarks>
+    LinkNotWritten = 701,
 
     /// <summary>
     /// A run of elements that asked to stay with the element after it, by

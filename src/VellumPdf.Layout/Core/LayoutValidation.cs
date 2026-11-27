@@ -136,7 +136,9 @@ internal static class LayoutValidation
         for (var i = 0; i < paragraph.Runs.Count; i++)
         {
             var run = paragraph.Runs[i];
-            if (run.Style is null || run.Text.Length == 0)
+
+            // A reference holds text, its label, whatever it will turn out to be.
+            if (run.Style is null || !run.HoldsText)
                 continue;
 
             var size = run.Style.FontSize;
