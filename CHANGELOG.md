@@ -761,8 +761,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
     wrapped lines, cannot reach the limit and is not probed. A larger one is laid out twice without
     drawing, as it was and as it is now, and the new layout is kept only where neither reaches the
     limit. The new `LayoutDiagnosticCode.ListIndentClampSkipped` (207, severity `Error`) reports
-    it, with the number of entries the clamp would have narrowed as `Count`, or 1 when it would
-    have narrowed none. The text of the entries the clamp would have narrowed is not drawn. The
+    a list placed that way only when it left something as it was that the clamp or the moving
+    would have changed. Its XML doc states the rule, the `Count` and the exceptions. A list that
+    left nothing does not report it, so under `StrictDiagnostics` such a list does not make the
+    save refuse. The text of the entries the clamp would have narrowed is not drawn. The
     message of a 207 names every cause that applied: the continuation limit, or any of a renderer
     of yours, a font the document cannot draw, and an element after a list that comes near the
     limit.
@@ -800,8 +802,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
     differ from where it started. An entry it places at a page bottom then shows the lines its new
     start allows, so a document can show fewer lines than before. It happens to a list that holds
     an entry no page holds, which reports 208, and to a list the continuation limit sends back,
-    which reports 207. A document that holds a renderer of yours lays every list out as it was
-    (below), so no list ahead of one keeps the fixes.
+    which reports 207 when it left as it was an entry that the clamp or the moving would have
+    changed. A document that holds a renderer of yours lays every list out as it was (below), so
+    no list ahead of one keeps the fixes.
   - **A document that holds an entry in a font it cannot draw lays every list out as it was before
     the clamp and the moving of entries.** A handle that another document returned, or a
     `Standard14` value the enumeration does not name, makes the save throw where an entry's text or
@@ -809,12 +812,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
     Clamping or moving an entry changes where everything after it falls, so a document could flip
     from saving to throwing, or the reverse, without any list touching the entry. The rule is
     therefore per document: when any list the document holds has such an entry, at any depth, no
-    list of the document is clamped or moved. Without `StrictDiagnostics` the save gives what it
-    gave before this change: the same bytes, or the same exception and message. With it, a 207
-    refuses the save. `ListIndentClampSkipped` (207) reports a list the document placed this way
-    and draws from its first entry, with the number of entries the clamp would have narrowed as
-    `Count`, or 1; its XML doc says which lists report nothing. `ListEntryPartDropped` (208)
-    reports an entry left with a part missing.
+    list of the document is clamped or moved. The save gives what it gave before this change: the
+    same bytes, or the same exception and message. `StrictDiagnostics` refuses it where a list
+    reports 207 or 208. `ListIndentClampSkipped` (207) reports a list the document placed this way
+    as that code describes. `ListEntryPartDropped` (208) reports an entry left with a part
+    missing.
   - **A document that holds a renderer of yours lays every list out as it was before the clamp
     and the moving of entries.** That is any renderer that is not one of the library's own, added
     with `Document.Add(IRenderer)` or `DocumentRenderer.Add(IRenderer)`, wherever it sits and
@@ -823,9 +825,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
     cannot read where such a renderer starts or what it lays out, and a list that moved ahead of it
     can change whether the document saves, so the document decides once, from the elements added
     to it and before it lays anything out. Every pass of one save, a header or footer's
-    page-counting pass included, therefore lays each list out the same way. Without
-    `StrictDiagnostics` these documents save as they did before this change: the same bytes, or
-    the same exception and message; with it, a 207 refuses the save.
+    page-counting pass included, therefore lays each list out the same way. These documents save
+    as they did before this change: the same bytes, or the same exception and message.
+    `StrictDiagnostics` refuses one where a list reports 207 or 208.
     `ListIndentClampSkipped` (207) is reported as for the font (above), and names the renderer.
     `ListRenderer.Layout` says so, with a "Do not rely on" sentence: 3.0 lays a list out one way.
   - **A document with an element after a list that can need about as many page continuations as
@@ -837,15 +839,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
     each list item that holds none, come to 49,999 or more, and so does preformatted text, with
     each tab counted as its `TabWidth` because a tab can become that many columns and lines. A
     page break, an image, a separator and a chart never count. The same report applies as for the
-    font (above). A renderer of yours is not read for its size; it
-    makes the document lay every list out as it was (above).
+    font (above). A renderer of yours is not read for its size; it makes the document lay every
+    list out as it was (above).
   - A list that a renderer of yours holds reports nothing: neither 207 nor 208, because the
     document did not place it, and nor do its pieces, including a piece the document calls itself
     when your renderer returns the list's own result. The bytes are those of the list laid out as
     it was.
   - Moving entries adds pages, so the continuation bound now covers every list, not only a list
     with a clamped entry, and a list that would pass the limit because of moved entries is placed
-    as it was before, with `ListIndentClampSkipped` (207).
+    as it was before, and reports `ListIndentClampSkipped` (207) as that code describes.
 
 - **A `ListRenderer` lays a list out from the items it holds in the save that lays it out
   (#691).** 2.3.3 built a list's entries once, at the first layout a renderer made and at that

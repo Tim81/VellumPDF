@@ -114,12 +114,12 @@ public sealed class Document : IDisposable
     /// <see cref="LayoutDiagnosticCode.NullGrandchildText"/> and
     /// <see cref="LayoutDiagnosticCode.NullGrandchild"/> (a null below the second level of a list),
     /// <see cref="LayoutDiagnosticCode.ListIndentClamped"/> (an indent that left list text no
-    /// width), <see cref="LayoutDiagnosticCode.ListIndentClampSkipped"/> (a list laid out without
-    /// that clamp, and without moving entries to the next page, because that would have taken it
-    /// past the continuation limit, because the document holds a renderer of yours, an entry in a
-    /// font it cannot draw, or an element after a list that can need about as many continuations as
-    /// the limit allows), <see cref="LayoutDiagnosticCode.ListEntryPartDropped"/> (a list entry
-    /// placed with its marker or its text not drawn),
+    /// width),
+    /// <see cref="LayoutDiagnosticCode.ListIndentClampSkipped"/> (a list laid out without that
+    /// clamp and without moving entries to the next page, which left as it was an entry that the
+    /// clamp or the moving would have changed; the code says when a list is laid out that way),
+    /// <see cref="LayoutDiagnosticCode.ListEntryPartDropped"/> (a list entry placed with its marker
+    /// or its text not drawn),
     /// <see cref="LayoutDiagnosticCode.NotdefGlyph"/> (a character an embedded font has no glyph
     /// for, written as glyph 0), <see cref="LayoutDiagnosticCode.UnembeddedFont"/> (an element that
     /// selects a Standard 14 font under a conformance claim),

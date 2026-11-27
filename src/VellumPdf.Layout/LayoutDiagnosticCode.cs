@@ -191,14 +191,14 @@ public enum LayoutDiagnosticCode
     ListIndentClamped = 203,
 
     /// <summary>
-    /// A list was laid out as it was before the clamp described at <see cref="ListIndentClamped"/>
-    /// and before entries that do not fit what is left of a page were moved to the next one: no
-    /// gutter narrowed and no entry moved. Either it would have needed more page continuations
-    /// than one element may take with them, or the document holds a renderer of yours, a list entry
-    /// in a font it cannot draw, or an element after a list that can need about as many
-    /// continuations as the limit allows, which turns every list of the document back.
-    /// <see cref="LayoutDiagnostic.Count"/> is the number of entries the clamp would have narrowed,
-    /// and 1 when it would have narrowed none.
+    /// A list the document laid out without two changes, the clamp described at
+    /// <see cref="ListIndentClamped"/> and the moving of entries that do not fit what is left of a
+    /// page to the next page, and that left as it was at least one entry those changes would have
+    /// altered. <see cref="LayoutDiagnostic.Count"/> is the number of such entries: those whose
+    /// gutter the clamp would have narrowed, and those whose marker or text does not fit what is
+    /// left of a page, which the list placed where they fall and the new layout would have moved
+    /// to the next page. An entry is counted once. A list with no such entry does not report this
+    /// code; the remarks give the exceptions.
     /// </summary>
     /// <remarks>
     /// <b>The text of the entries the clamp would have narrowed is discarded, and only their
@@ -206,18 +206,50 @@ public enum LayoutDiagnosticCode
     /// with the part that fits, as it was, and <see cref="ListEntryPartDropped"/> reports it. The
     /// list then saves, or throws <see cref="InvalidOperationException"/> for the continuation
     /// limit, as a list with every gutter left as <see cref="Elements.ListElement.Indent"/> and the
-    /// marker widths give it would and every entry kept where it falls. The three document-wide
-    /// causes exist because a font the document cannot draw makes the save throw where its text is
-    /// drawn, an element near the limit is refused or saved according to where it starts, and a
-    /// renderer of yours reads where it starts, and the clamp or a moved entry ahead of any of them
-    /// can change where that is; the document then saves or throws as it did. It decides this once,
-    /// before it lays anything out, from the elements added to it. The message names every cause
-    /// it read there: the continuation limit for the list, or any of the font, the element near
-    /// the limit and the renderer of yours. Strict mode refuses this code. It is reported once for
-    /// each list the document placed this way and draws from its first entry; a list that a
-    /// renderer of yours holds is laid out as before and reports nothing. <b>Do not pass</b> an
-    /// indent that leaves an entry's text no width, or a font the document cannot draw: 3.0 will
-    /// refuse both. See <see cref="Elements.ListElement"/>.
+    /// marker widths give it would and every entry kept where it falls.
+    /// <para>Why a list is laid out that way: either laying it out the new way would have needed
+    /// more page continuations than one element may take, or the document holds a renderer of
+    /// yours, a list entry in a font it cannot draw, or an element after a list that can need about
+    /// as many continuations as the limit allows. The three document-wide causes turn every list of
+    /// the document back, because a font the document cannot draw makes the save throw where its
+    /// text is drawn, an element near the limit is refused or saved according to where it starts,
+    /// and a renderer of yours reads where it starts, and the clamp or a moved entry ahead of any
+    /// of them can change where that is. The document decides this once, before it lays anything
+    /// out, from the elements added to it. The message names every cause it read there: the
+    /// continuation limit for the list, or any of the font, the element near the limit and the
+    /// renderer of yours.</para>
+    /// <para><b>A list that left no such entry does not report this code</b>, whichever cause
+    /// applied, so strict mode does not refuse a document on account of such a list: the save
+    /// writes the bytes, or throws the exception, it does without strict mode. That covers an
+    /// empty list and a list none of whose entries the clamp would have narrowed or the new layout
+    /// would have moved. An entry counts unless drawing it in the new layout would draw text in a
+    /// font the document cannot draw: that makes the save throw, so leaving it as it was gives
+    /// nothing up.</para>
+    /// <para>Three lists depart from the definition above: two do not report this code although
+    /// they left such an entry, and one reports it although the new layout would have placed its
+    /// entries as the twin did.</para>
+    /// <list type="bullet">
+    /// <item>A list a renderer of yours holds is laid out as before and does not report this code
+    /// or <see cref="ListEntryPartDropped"/>, because the document did not place it.</item>
+    /// <item>A <see cref="Rendering.ListRenderer"/> built to start at a later entry does not report
+    /// this code, although it can report <see cref="ListEntryPartDropped"/>, so such a list can
+    /// save under strict mode although it differs from the new layout.</item>
+    /// <item>A list that holds an entry no page holds is placed where each entry falls by the new
+    /// layout too. On its own it reports <see cref="ListEntryPartDropped"/> and not this code.
+    /// When the continuation limit or a document-wide cause also lays it out as its twin, it
+    /// reports this code, because the twin does not look for such an entry and counts that list's
+    /// entries as it counts any other's. It reports <see cref="ListEntryPartDropped"/> only for a
+    /// part it placed and could not draw. An entry whose text the clamp would have narrowed is
+    /// counted here instead, so the same entries can report 208 alone, and 207 alone once a
+    /// renderer of yours is added to the document.</item>
+    /// </list>
+    /// <para>A moved entry is counted by the piece of the list that starts it, in the layout the
+    /// list was given, so the count of a list that runs over several pages adds up its pieces and
+    /// the page is that of the first piece that reports. The count can differ from the number of
+    /// entries the new layout would move, because once the first of them has moved the others fall
+    /// elsewhere. The report is one item for each such list. Strict mode refuses this code.
+    /// <b>Do not pass</b> an indent that leaves an entry's text no width, or a font the document
+    /// cannot draw: 3.0 will refuse both. See <see cref="Elements.ListElement"/>.</para>
     /// </remarks>
     ListIndentClampSkipped = 207,
 
