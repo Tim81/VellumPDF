@@ -173,15 +173,19 @@ public sealed class LongWordLimitTests
         Assert.Equal(2 * 12, result.OccupiedArea!.Value.Height);
     }
 
-    // A start line a caller made indexes the lines of 2.3.3's wrap, which has two here, so a start
-    // of 2 lays out as Nothing and the save refuses it, as it did.
+    // A start line a caller made indexes the lines of 2.3.3's wrap, which has two here where the
+    // current wrap has three, so a start of 2 is past the last line: the document refuses the
+    // element as too tall, as it did, instead of saving the line the current wrap has there.
     [Theory]
-    [InlineData(1, LayoutResult.Outcome.Full)]
-    [InlineData(2, LayoutResult.Outcome.Nothing)]
-    public void AStartLineACallerMade_readsTheLinesOf2_3_3(int start, LayoutResult.Outcome expected)
+    [InlineData(1, true)]
+    [InlineData(2, false)]
+    public void AStartLineACallerMade_readsTheLinesOf2_3_3(int start, bool saves)
     {
-        var renderer = new ParagraphRenderer(new Paragraph("aaaa/bbbbbbbbbbbb", Courier()), start);
+        var renderer = new ParagraphRenderer(new Paragraph("aaaaaaa/bbbbbbbbbbbb", Courier()), start);
 
-        Assert.Equal(expected, renderer.Layout(new LayoutContext(new LayoutBox(0, 0, 60, 1000))).Status);
+        var o = Run(Narrow, new Log(), renderer);
+
+        Assert.Equal(saves, o.Error is null);
+        if (!saves) Assert.IsType<InvalidOperationException>(o.Error);
     }
 }
