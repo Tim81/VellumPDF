@@ -565,8 +565,9 @@ public sealed class ListPlacementAdoptionTests
         var fresh = Second(new ListRenderer(Make()));
         Save(fresh);
 
+        // The list of the undrawable entry has no gutter to narrow and no entry to move.
         var skipped = second.Diagnostics.Where(d => d.Code == LayoutDiagnosticCode.ListIndentClampSkipped).ToArray();
-        Assert.Equal(2, skipped.Length);
+        Assert.Single(skipped);
         Assert.Equal(2, skipped[0].Count);
         Assert.Equal(
             fresh.Diagnostics.Select(d => (d.Code, d.Count, d.ElementIndex)).ToArray(),
@@ -788,8 +789,10 @@ public sealed class ListPlacementAdoptionTests
     /// <summary>
     /// A run in an embedded font that another document returned would be refused at the save once
     /// its text is drawn, and the document never drew it. The document holds an entry it cannot
-    /// draw, so its list is laid out as its twin, the save is the one the list had, and the
-    /// fallback is reported.
+    /// draw, so its list is laid out as its twin and the save is the one the list had. The twin
+    /// gave nothing up for that entry: giving its text a width would draw it, which refuses the
+    /// save (an undefined Standard 14 value measures zero, so the clamp would not narrow that
+    /// row's entry at all), so nothing is reported.
     /// </summary>
     [Theory]
     [InlineData("foreign-handle")]
@@ -803,13 +806,13 @@ public sealed class ListPlacementAdoptionTests
                 .Add(new ListItem([new TextRun("abc", StyleOf(font))]) { Style = H(10) }));
 
         Assert.Equal(Sha(twin), Sha(bytes));
-        Assert.Equal([LayoutDiagnosticCode.ListIndentClampSkipped], Codes(doc));
+        Assert.Empty(Codes(doc));
     }
 
     /// <summary>
     /// The same entry at a page bottom: main dropped the text mid-page and saved. The entry is not
     /// moved, because drawing it on the next page would refuse the save, and the part dropped is
-    /// reported.
+    /// reported. The twin gave nothing up for it, so the list does not report a fallback.
     /// </summary>
     [Theory]
     [InlineData("foreign-handle")]
@@ -825,8 +828,7 @@ public sealed class ListPlacementAdoptionTests
 
         Assert.Equal(Sha(twin), Sha(bytes));
         Assert.Equal(["lead0", "lead1", "lead2", "lead3", "lead4", "1.", "2.", "next"], Shows(bytes));
-        Assert.Equal(
-            [LayoutDiagnosticCode.ListIndentClampSkipped, LayoutDiagnosticCode.ListEntryPartDropped], Codes(doc));
+        Assert.Equal([LayoutDiagnosticCode.ListEntryPartDropped], Codes(doc));
     }
 
     /// <summary>
