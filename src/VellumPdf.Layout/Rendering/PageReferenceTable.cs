@@ -1,4 +1,5 @@
-// Copyright © Timothy van der Ham (@Tim81) SPDX-License-Identifier: Apache-2.0
+// Copyright © Timothy van der Ham (@Tim81)
+// SPDX-License-Identifier: Apache-2.0
 
 using System.Globalization;
 using VellumPdf.Layout.Core;
