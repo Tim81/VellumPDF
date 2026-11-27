@@ -70,6 +70,14 @@ public sealed class PdfStructElem
     /// <summary>Creates a structure element of the given structure type.</summary>
     public PdfStructElem(string structType) => StructType = structType;
 
+    /// <summary>
+    /// True for an element whose type ISO 32000-2, 14.8.4 defines and ISO 32000-1 does not. The save
+    /// accepts it only in a document written as PDF 2.0, and refuses it as any other type that is
+    /// not standard where the file is written as PDF 1.7. Left off by the public constructor, so
+    /// a type of that kind a caller names stays refused.
+    /// </summary>
+    internal bool Pdf20Type { get; init; }
+
     /// <summary>Adds a child struct element and returns it (fluent helper).</summary>
     /// <remarks>
     /// <b>An element that is its own ancestor is refused when the structure tree is built, not here.</b>
@@ -142,6 +150,10 @@ internal sealed class PdfStructureTree
         "Figure", "Formula", "Form",
     ];
 
+    // The ISO 32000-2, 14.8.4.4 grouping element a document written as PDF 2.0 may use. Aside is the
+    // element for a callout, and the one a PDF 1.7 file cannot use, which has Div.
+    private static readonly HashSet<string> Pdf20StructureTypes = ["Aside"];
+
     public void AddStructElem(PdfStructElem elem) => _documentRoot.AddChild(elem);
 
     // IsEmpty was removed with #120: its only two callers were the Save-time gates that decided
@@ -159,7 +171,8 @@ internal sealed class PdfStructureTree
     internal PdfIndirectReference Build(
         PdfObjectRegistry registry,
         Dictionary<PdfPage, PdfIndirectReference> pageRefMap,
-        out Dictionary<PdfPage, int> pageStructParents)
+        out Dictionary<PdfPage, int> pageStructParents,
+        bool writesPdf20 = false)
     {
         pageStructParents = [];
 
@@ -359,7 +372,7 @@ internal sealed class PdfStructureTree
         // is a circular mapping and fails ISO 14289-1 (PDF/UA-1) clause 7.1.
         // VellumPdf emits only standard types, so no /RoleMap is written at all.
         var usedTypes = new HashSet<string>();
-        CollectStructTypes(_documentRoot, usedTypes);
+        CollectStructTypes(_documentRoot, usedTypes, writesPdf20);
 
         foreach (var type in usedTypes)
         {
@@ -531,6 +544,13 @@ internal sealed class PdfStructureTree
 
     private static bool IsLeaf(PdfStructElem element) => element.Page is not null && element.Mcid >= 0;
 
-    private static void CollectStructTypes(PdfStructElem elem, HashSet<string> types)
-        => PreOrder(elem, guard: false, (node, _) => types.Add(node.StructType));
+    private static void CollectStructTypes(PdfStructElem elem, HashSet<string> types, bool writesPdf20)
+        => PreOrder(elem, guard: false, (node, _) =>
+        {
+            // A PDF 2.0 type the library asked for is standard in a PDF 2.0 file, so it is not
+            // checked against the ISO 32000-1 set; in a PDF 1.7 file it is, and fails there.
+            if (writesPdf20 && node.Pdf20Type && Pdf20StructureTypes.Contains(node.StructType))
+                return;
+            types.Add(node.StructType);
+        });
 }

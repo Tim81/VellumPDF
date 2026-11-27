@@ -70,11 +70,12 @@ public enum ListStyle
 /// holds, after one of its lists, an element that can need about as many page continuations as
 /// the limit allows. That element is refused or saved according to where it starts, so moving an
 /// item ahead of it can turn one outcome into the other. The document reads the element's size,
-/// not its layout: it counts the characters of a paragraph, heading, list item or table cell, and
-/// of preformatted text with each tab counted as its <see cref="Preformatted.TabWidth"/>, because
-/// a tab can become that many columns and so that many lines. It adds one for an item that holds
-/// no characters and one more for each table row, and the element counts when two more than that
-/// is over the limit. A page break, an image, a separator and a
+/// not its layout: it counts the characters of a paragraph, heading, list item or table cell, of
+/// each paragraph of a <see cref="NoteBlock"/>, and of preformatted text with each tab counted as
+/// its <see cref="Preformatted.TabWidth"/>, because a tab can become that many columns and so
+/// that many lines. It adds one for an item that holds no characters, one more for each table row
+/// and one for each paragraph of a note block, and the element counts when two more than that is
+/// over the limit. A page break, an image, a separator and a
 /// chart never count, and neither does an element a renderer of yours holds. Sixth, the document
 /// holds a renderer that is not one of this library's own, wherever it sits; see
 /// <see cref="Rendering.ListRenderer.Layout"/>. In the last three cases every list of the document

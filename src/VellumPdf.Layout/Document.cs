@@ -1107,6 +1107,45 @@ public sealed class Document : IDisposable
     }
 
     /// <summary>
+    /// Adds a block that sets its paragraphs apart with a background, a border and padding.
+    /// Returns this document for chaining.
+    /// </summary>
+    /// <remarks>
+    /// <b>A null block is refused.</b> It throws <see cref="ArgumentNullException"/> from this
+    /// call. What the block holds is read by the save, so a paragraph added to it later is drawn.
+    /// The save refuses a block that holds no paragraph, and a tab stop beyond the width the
+    /// border and padding leave, before any layout, so the document stays saveable once you have
+    /// changed what the message names; see <see cref="NoteBlock"/>. A block is listed in
+    /// <see cref="Diagnostics"/> as <see cref="LayoutElementKind.NoteBlock"/>, and so is what its
+    /// paragraphs report: the kind is the block's, not the paragraph's. The block, not the
+    /// paragraphs, is the element a <see cref="Paragraph.KeepWithNext"/> run is reported against.
+    /// </remarks>
+    /// <exception cref="ArgumentNullException">
+    /// <paramref name="block"/> is <see langword="null"/>.
+    /// </exception>
+    /// <exception cref="InvalidOperationException">
+    /// Raised from <see cref="Save(System.IO.Stream)"/> and the other save overloads, not from this
+    /// call, before any layout, when the block holds no paragraph, when a paragraph has a tab stop
+    /// beyond the width left for it, or when the anchor of the block or of a paragraph in it is
+    /// held by another element too. Raised after the layout has started when the border and
+    /// padding leave no width or no room for one line on an empty page, when a style a paragraph
+    /// uses has a size that is refused (see <see cref="TextStyle.FontSize"/>), or when the block
+    /// needs more than 50,000 page continuations; see <see cref="Add(IRenderer)"/>.
+    /// </exception>
+    /// <exception cref="ArgumentException">
+    /// Raised from the save, not from this call, when a paragraph's text holds an unpaired
+    /// surrogate and is measured in an embedded font, or when the colour of the background or the
+    /// border has a channel that is not finite; see <see cref="TextStyle.FontRef"/> and
+    /// <see cref="NoteBlock"/>.
+    /// </exception>
+    public Document Add(NoteBlock block)
+    {
+        ArgumentNullException.ThrowIfNull(block);
+        _content.Add(new NoteBlockRenderer(block));
+        return this;
+    }
+
+    /// <summary>
     /// Adds a page break: the next element starts on a new page, or on the next right-hand page
     /// when <see cref="PageBreak.Recto"/> is set. Returns this document for chaining.
     /// </summary>

@@ -1302,7 +1302,8 @@ public sealed class PdfDocument : IDisposable
         PdfIndirectReference? structTreeRootRef = null;
         if (Tagged)
         {
-            structTreeRootRef = _structureTree.Build(registry, pageRefMap, out var pageStructParents);
+            structTreeRootRef = _structureTree.Build(
+                registry, pageRefMap, out var pageStructParents, writesPdf20: Conformance == PdfConformance.None);
             // Stamp /StructParents on each page that has tagged content.
             foreach (var (page, key) in pageStructParents)
                 page.StructParentsKey = key;
@@ -1773,7 +1774,8 @@ public sealed class PdfDocument : IDisposable
         PdfIndirectReference? structTreeRootRef = null;
         if (Tagged)
         {
-            structTreeRootRef = _structureTree.Build(registry, pageRefMap, out var pageStructParents);
+            structTreeRootRef = _structureTree.Build(
+                registry, pageRefMap, out var pageStructParents, writesPdf20: Conformance == PdfConformance.None);
             foreach (var (page, key) in pageStructParents)
                 page.StructParentsKey = key;
         }

@@ -51,4 +51,8 @@ public enum LayoutElementKind
     /// <summary>A preformatted block, added with
     /// <see cref="VellumPdf.Layout.Document.Add(VellumPdf.Layout.Elements.Preformatted)"/>.</summary>
     Preformatted = 11,
+
+    /// <summary>A note block, added with
+    /// <see cref="VellumPdf.Layout.Document.Add(VellumPdf.Layout.Elements.NoteBlock)"/>.</summary>
+    NoteBlock = 12,
 }

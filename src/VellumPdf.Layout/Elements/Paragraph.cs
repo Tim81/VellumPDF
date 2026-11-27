@@ -161,7 +161,8 @@ public sealed class Paragraph
     /// <see cref="Rendering.ParagraphRenderer"/> added with <see cref="Document.Add(IRenderer)"/>
     /// or <see cref="Rendering.DocumentRenderer.Add(IRenderer)"/>. It is ignored on the overflow
     /// of a split paragraph. A custom <see cref="IRenderer"/> sets none, and as the element after
-    /// a run it is placed like any other.</para>
+    /// a run it is placed like any other. Inside a <see cref="NoteBlock"/> the block reads it among
+    /// its own paragraphs, without a report when it cannot hold.</para>
     /// <para>The document lays the group out once more before it places it, and once more from the
     /// next page when it does not hold where it stands below the top of a page (at the top of a
     /// page there is no later page to try, and it skips that second pass), so a document that
@@ -190,7 +191,8 @@ public sealed class Paragraph
     /// to the pieces of a paragraph that splits. The request is checked until the paragraph has
     /// split once, so a paragraph that a line count moved to the top of the next page and that
     /// does not fit there is reported as well.
-    /// <para>The flag is read where <see cref="KeepWithNext"/> is, and ignored where that is. When
+    /// <para>The flag is read where <see cref="KeepWithNext"/> is, and ignored where that is, except
+    /// that a <see cref="NoteBlock"/> reads it for its own paragraphs, without a report. When
     /// the paragraph would split below the top of a page, the document lays it out once more on an
     /// empty page to see whether it fits there; at the top of a page it makes no such call. A move
     /// adds the retry the document makes after any
@@ -229,7 +231,8 @@ public sealed class Paragraph
     /// is laid out in any other way: behind a custom <see cref="IRenderer"/> that wraps a
     /// <see cref="Rendering.ParagraphRenderer"/>, and in a call to
     /// <see cref="Rendering.ParagraphRenderer.Layout"/> that you make, where as many lines as the
-    /// area holds are placed. Setting it there cannot make a save throw.</para>
+    /// area holds are placed. Setting it there cannot make a save throw. A paragraph inside a
+    /// <see cref="NoteBlock"/> reads both counts.</para>
     /// </remarks>
     /// <exception cref="ArgumentOutOfRangeException">
     /// Raised from this <c>init</c> accessor when the value is below 1.
@@ -654,7 +657,9 @@ public sealed class Paragraph
     /// <see cref="Rendering.DocumentRenderer.Add(IRenderer)"/>. It has no effect on an element a
     /// caller's renderer holds, because the document sees only that renderer, nor on the pieces a
     /// split element continues in. A table cell, a list item and a running band hold text, not
-    /// elements, so no element inside them reads it.</para>
+    /// elements, so no element inside them reads it. A <see cref="NoteBlock"/> holds paragraphs, and
+    /// spends the gap of each between it and the next paragraph of the block; the gap of the last
+    /// one is dropped.</para>
     /// <para><b>Do not rely on</b> this property in code meant for 3.0. 3.0 honours the bottom edge
     /// of <see cref="Margins"/> as the space after an element and removes this property
     /// (#704).</para>
