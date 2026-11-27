@@ -821,7 +821,7 @@ public sealed class ConformanceAuditG5Tests
         Assert.Equal("340300000000000000000000000000000000000.0", Operand(3.403e38));
     }
 
-    [Fact(Skip = "Gap G5-03: a real above 3.403e38 is written as given under a PDF/A claim and fails 6.1.13 (veraPDF 6.1.13-2); issue number pending.")]
+    [Fact(Skip = "Gap #666: a real above 3.403e38 is written as given under a PDF/A claim and fails 6.1.13 (veraPDF 6.1.13-2).")]
     public void Iso19005_2_6_1_13_RealsAbove3_403e38AreNotWrittenUnderAPdfAClaim()
     {
         foreach (var claim in PdfAClaims)
@@ -873,7 +873,7 @@ public sealed class ConformanceAuditG5Tests
         Assert.True(compliant, string.Join(",", failed));
     }
 
-    [Fact(Skip = "Gap G5-02: a string of 32768 bytes or more (Info text, OutputConditionIdentifier, Lang) is written under a PDF/A claim and fails 6.1.13 (veraPDF 6.1.13-3); issue number pending, #666 covers only the link URI.")]
+    [Fact(Skip = "Gap #666: a string of 32768 bytes or more (Info text, OutputConditionIdentifier, Lang) is written under a PDF/A claim and fails 6.1.13 (veraPDF 6.1.13-3); the class is #666.")]
     public void Iso19005_2_6_1_13_StringsOver32767BytesAreNotWrittenUnderAPdfAClaim()
     {
         using var doc = new PdfDocument { Conformance = PdfConformance.PdfA2b, Timestamp = Pinned, DocumentId = PinnedId };
@@ -916,7 +916,7 @@ public sealed class ConformanceAuditG5Tests
         Assert.True(compliant, string.Join(",", failed));
     }
 
-    [Fact(Skip = "Gap G5-05: a name over 127 bytes, one with a byte above 127 (invalid UTF-8) and one with a character above U+00FF (written as '?') is written under a PDF/A claim; veraPDF 6.1.13-4 and 6.1.8-1; issue number pending.")]
+    [Fact(Skip = "Gap #740: a name over 127 bytes, one with a byte above 127 (invalid UTF-8) and one with a character above U+00FF (written as '?') is written under a PDF/A claim; veraPDF 6.1.13-4 and 6.1.8-1.")]
     public void Iso19005_2_6_1_8_And_6_1_13_NamesAreUtf8AndAtMost127BytesUnderAPdfAClaim()
     {
         foreach (var psName in new[] { new string('P', 128 - 7), "Caf\u00e9" })
@@ -961,7 +961,7 @@ public sealed class ConformanceAuditG5Tests
         Assert.Equal(14400, double.Parse(((Scan.PNum)lp.Objects.Single(o => o.Dict?.Name("Type") == "Page").Dict!.Array("MediaBox")![2]!).Raw, CultureInfo.InvariantCulture));
     }
 
-    [Fact(Skip = "Gap G5-01: a page size outside 3 to 14400 units is written under a PDF/A claim and fails 6.1.13 (veraPDF 6.1.13-11), from Kernel AddPage and from Layout PageSize; issue number pending.")]
+    [Fact(Skip = "Gap #666: a page size outside 3 to 14400 units is written under a PDF/A claim and fails 6.1.13 (veraPDF 6.1.13-11), from Kernel AddPage and from Layout PageSize.")]
     public void Iso19005_2_6_1_13_PageBoundariesOutsideThreeToFourteenThousandFourHundredAreNotWrittenUnderAPdfAClaim()
     {
         foreach (var (w, h) in new[] { (14401d, 100d), (2.9, 100d), (100d, 14400.5) })
@@ -1020,7 +1020,7 @@ public sealed class ConformanceAuditG5Tests
         Assert.InRange(max, 1, 28);
     }
 
-    [Fact(Skip = "Gap G5-04: PdfCanvas.SaveState nests without a bound, so a caller's 29 nested q operators are written under a PDF/A claim and fail 6.1.13 (veraPDF 6.1.13-8); issue number pending.")]
+    [Fact(Skip = "Gap #666: PdfCanvas.SaveState nests without a bound, so a caller's 29 nested q operators are written under a PDF/A claim and fail 6.1.13 (veraPDF 6.1.13-8).")]
     public void Iso19005_2_6_1_13_QqNestingOfTwentyNineIsNotWrittenUnderAPdfAClaim()
     {
         using var doc = new PdfDocument { Conformance = PdfConformance.PdfA2b, Timestamp = Pinned, DocumentId = PinnedId };
@@ -1043,7 +1043,7 @@ public sealed class ConformanceAuditG5Tests
         }
     }
 
-    [Fact(Skip = "Gap G5-09: nothing bounds the number of indirect objects (8388607, veraPDF 6.1.13-7); the writer reserves object numbers without a check and two objects a page reach it at 4,194,304 pages; not measured at the boundary; issue number pending.")]
+    [Fact(Skip = "Gap #666: nothing bounds the number of indirect objects (8388607, veraPDF 6.1.13-7); the writer reserves object numbers without a check and two objects a page reach it at 4,194,304 pages; not measured at the boundary.")]
     public void Iso19005_2_6_1_13_AtMost8388607IndirectObjectsAreWrittenUnderAPdfAClaim()
     {
         // Left as a statement of the requirement: building the 4.2 million pages it takes needs several
@@ -1082,7 +1082,7 @@ public sealed class ConformanceAuditG5Tests
         Assert.NotEqual(0xEF, p.MetadataXml[0]);
     }
 
-    [Fact(Skip = "Gap G5-07: the xpacket begin attribute holds the three characters U+00EF U+00BB U+00BF (bytes C3 AF C2 BB C2 BF) where ISO 16684-1, 7.3.2 allows U+FEFF or nothing; issue number pending.")]
+    [Fact(Skip = "Gap #742: the xpacket begin attribute holds the three characters U+00EF U+00BB U+00BF (bytes C3 AF C2 BB C2 BF) where ISO 16684-1, 7.3.2 allows U+FEFF or nothing.")]
     public void Iso16684_1_7_3_2_XpacketBeginHoldsTheByteOrderMarkOrNothing()
     {
         var p = Parsed(PdfConformance.PdfA2b, FixturePath.Kernel);
@@ -1108,7 +1108,7 @@ public sealed class ConformanceAuditG5Tests
         Assert.Equal("a&b<c>\"d'ef\tg\U0001F600h", title);
     }
 
-    [Fact(Skip = "Gap G5-06: U+FFFE and U+FFFF in an Info or Language string reach the XMP packet, which is then not well-formed XML 1.0 (veraPDF 6.6.2.1-4, -5 and 6.6.4-1); issue number pending.")]
+    [Fact(Skip = "Gap #741: U+FFFE and U+FFFF in an Info or Language string reach the XMP packet, which is then not well-formed XML 1.0 (veraPDF 6.6.2.1-4, -5 and 6.6.4-1).")]
     public void Iso19005_2_6_6_2_1_XmpStaysWellFormedForEveryStringTheWriterAccepts()
     {
         foreach (var title in new[] { "a\uFFFEb", "a\uFFFFb" })
@@ -1527,7 +1527,7 @@ public sealed class ConformanceAuditG5Tests
         Assert.Equal("00", match.Groups[9].Value);
     }
 
-    [Fact(Skip = "Gap G5-08: the signature /M date ends in an apostrophe (D:20261120120000+00'00'), where the grammar of ISO 32000-2, 7.9.4 ends at the minutes and its NOTE 2 calls the apostrophe the form up to PDF 1.7; the held ISO 32000-1 grammar line does not show it either; issue number pending.")]
+    [Fact(Skip = "Gap #743: the signature /M date ends in an apostrophe (D:20261120120000+00'00'), where the grammar of ISO 32000-2, 7.9.4 ends at the minutes and its NOTE 2 calls the apostrophe the form up to PDF 1.7; the held ISO 32000-1 grammar line does not show it either.")]
     public void Iso32000_2_7_9_4_SignatureDateEndsAtTheMinutesInAPdf20File()
     {
         var p = Parsed(PdfConformance.None, FixturePath.Signed);
