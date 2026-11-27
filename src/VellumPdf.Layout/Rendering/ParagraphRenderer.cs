@@ -246,6 +246,9 @@ public sealed partial class ParagraphRenderer : IRenderer, IPageBreakSource, IKe
     // for the page of its own it lays each entry out on). Removed in 3.0 (#688) with that analysis.
     internal (int EndLine, LayoutBox Occupied) Placement => (_endLine, _occupied);
 
+    /// <summary>The height of one line of this paragraph, known once it has been laid out.</summary>
+    internal double LineHeight => _lineHeight;
+
     internal void RestorePlacement((int EndLine, LayoutBox Occupied) placement) =>
         (_endLine, _occupied) = placement;
 

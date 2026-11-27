@@ -295,31 +295,28 @@ public sealed class NoteBlockTests
         return doc;
     }
 
-    [Fact]
-    public void InAPdf2FileTheBlockIsAnAsideThatHoldsItsParagraphs()
-    {
-        var pdf = Save(Tagged(PdfConformance.None, embedded: false));
-        var text = Encoding.Latin1.GetString(pdf);
-
-        Assert.StartsWith("%PDF-2.0", text, StringComparison.Ordinal);
-        Assert.Equal("Document(Aside(P,P))", StructTree(pdf));
-        Assert.DoesNotContain("/S /Table", text, StringComparison.Ordinal);
-        Assert.DoesNotContain("/S /Note", text, StringComparison.Ordinal);
-    }
-
+    /// <summary>
+    /// The block is a Div in every file: under no claim (written as PDF 2.0) and under each claim
+    /// (written as PDF 1.7), tagged. Aside is not written, because a PDF 2.0 type needs its own
+    /// structure namespace.
+    /// </summary>
     [Theory]
-    [InlineData(PdfConformance.PdfA2a)]
-    [InlineData(PdfConformance.PdfUA1)]
-    public void UnderAPdf17ClaimTheBlockIsADivThatHoldsItsParagraphs(PdfConformance claim)
+    [InlineData(PdfConformance.None, "%PDF-2.0")]
+    [InlineData(PdfConformance.PdfA2b, "%PDF-1.7")]
+    [InlineData(PdfConformance.PdfA2u, "%PDF-1.7")]
+    [InlineData(PdfConformance.PdfA2a, "%PDF-1.7")]
+    [InlineData(PdfConformance.PdfUA1, "%PDF-1.7")]
+    public void TheBlockIsADivThatHoldsItsParagraphsUnderEveryClaim(PdfConformance claim, string header)
     {
-        var pdf = Save(Tagged(claim, embedded: true));
+        var pdf = Save(Tagged(claim, embedded: claim != PdfConformance.None));
         var text = Encoding.Latin1.GetString(pdf);
 
-        Assert.StartsWith("%PDF-1.7", text, StringComparison.Ordinal);
+        Assert.StartsWith(header, text, StringComparison.Ordinal);
         Assert.Equal("Document(Div(P,P))", StructTree(pdf));
         Assert.DoesNotContain("/S /Aside", text, StringComparison.Ordinal);
         Assert.DoesNotContain("/S /Table", text, StringComparison.Ordinal);
         Assert.DoesNotContain("/S /Note", text, StringComparison.Ordinal);
+        Assert.DoesNotContain("/NS", text, StringComparison.Ordinal);
     }
 
     /// <summary>
@@ -334,7 +331,6 @@ public sealed class NoteBlockTests
 
         Assert.StartsWith("/Artifact BMC\nq\n", content, StringComparison.Ordinal);
         Assert.Equal(2, Regex.Matches(content, @"/P <</MCID \d+>> BDC").Count);
-        Assert.DoesNotContain("/Aside <<", content, StringComparison.Ordinal);
         Assert.DoesNotContain("/Div <<", content, StringComparison.Ordinal);
     }
 
@@ -353,7 +349,7 @@ public sealed class NoteBlockTests
         var pdf = Save(doc);
 
         Assert.Equal(3, PageContents(pdf).Count);
-        Assert.Equal("Document(Aside(P,P,P))", StructTree(pdf));
+        Assert.Equal("Document(Div(P,P,P))", StructTree(pdf));
     }
 
     /// <summary>An untagged document writes no structure for the block.</summary>
@@ -421,21 +417,75 @@ public sealed class NoteBlockTests
     }
 
     /// <summary>
-    /// A paragraph that asks for a page break is refused when it is added. A list, a table, a
-    /// heading and a preformatted block cannot be added: the block has no overload that takes them.
+    /// A paragraph that sets a page break, a keep request or a line count is refused when it is
+    /// added, with the property named. A list, a table, a heading and a preformatted block cannot
+    /// be added: the block has no overload that takes them.
     /// </summary>
-    [Fact]
-    public void AnUnsupportedChildIsRefusedWhereItIsAdded()
+    [Theory]
+    [InlineData("BreakBefore")]
+    [InlineData("KeepWithNext")]
+    [InlineData("KeepTogether")]
+    [InlineData("MinLinesBeforeBreak")]
+    [InlineData("MinLinesAfterBreak")]
+    public void AParagraphThatSetsAKeepRequestOrALineCountIsRefusedWhereItIsAdded(string property)
     {
-        foreach (var mode in new[] { PageBreakMode.Page, PageBreakMode.Recto })
+        var paragraph = property switch
         {
-            var paragraph = new Paragraph("a") { BreakBefore = mode };
-            Assert.Throws<ArgumentException>("paragraph", () => new NoteBlock().Add(paragraph));
-            Assert.Throws<ArgumentException>("paragraphs", () => new NoteBlock([paragraph]));
-        }
+            "BreakBefore" => new Paragraph("a") { BreakBefore = PageBreakMode.Recto },
+            "KeepWithNext" => new Paragraph("a") { KeepWithNext = true },
+            "KeepTogether" => new Paragraph("a") { KeepTogether = true },
+            "MinLinesBeforeBreak" => new Paragraph("a") { MinLinesBeforeBreak = 2 },
+            _ => new Paragraph("a") { MinLinesAfterBreak = 3 },
+        };
 
+        var one = Assert.Throws<ArgumentException>("paragraph", () => new NoteBlock().Add(paragraph));
+        Assert.Contains(property, one.Message, StringComparison.Ordinal);
+        var many = Assert.Throws<ArgumentException>("paragraphs", () => new NoteBlock([new Paragraph("ok"), paragraph]));
+        Assert.Contains(property, many.Message, StringComparison.Ordinal);
+
+        // The defaults are accepted: a count of 1 asks for nothing.
+        var accepted = new NoteBlock().Add(new Paragraph("a") { MinLinesBeforeBreak = 1, MinLinesAfterBreak = 1 });
+        Assert.Single(accepted.Paragraphs);
+    }
+
+    [Fact]
+    public void ThereIsNoOverloadForAnyOtherElement()
+    {
         var adders = typeof(NoteBlock).GetMethods().Where(m => m.Name == "Add").Select(m => m.GetParameters()[0].ParameterType).ToHashSet();
         Assert.Equal(new HashSet<Type> { typeof(Paragraph), typeof(string) }, adders);
+    }
+
+    // ── Colours ──────────────────────────────────────────────────────────────
+
+    public static TheoryData<double, double, double> BadChannels => new()
+    {
+        { double.NaN, 0, 0 },
+        { 0, double.PositiveInfinity, 0 },
+        { 0, 0, double.NegativeInfinity },
+        { 1.0000001, 0, 0 },
+        { 0, -0.0001, 0 },
+        { 2, 0, -1 },
+    };
+
+    [Theory]
+    [MemberData(nameof(BadChannels))]
+    public void ABackgroundOrBorderColourOutsideZeroToOneIsRefusedWhereItIsSet(double r, double g, double b)
+    {
+        var colour = new ColorRgb(r, g, b);
+        var background = Assert.Throws<ArgumentOutOfRangeException>(() => new NoteBlock { Background = colour });
+        Assert.Equal("Background", background.ParamName);
+
+        // Refused whether or not the border is drawn.
+        var border = Assert.Throws<ArgumentOutOfRangeException>(() => new NoteBlock { BorderColor = colour, BorderWidth = 0 });
+        Assert.Equal("BorderColor", border.ParamName);
+    }
+
+    [Fact]
+    public void TheEdgesOfTheColourRangeAreAccepted()
+    {
+        var block = new NoteBlock { Background = new ColorRgb(0, 1, 0.5), BorderColor = new ColorRgb(1, 0, 1) };
+        Assert.Equal(new ColorRgb(0, 1, 0.5), block.Background);
+        Assert.Null(new NoteBlock { Background = null }.Background);
     }
 
     [Fact]
@@ -567,58 +617,188 @@ public sealed class NoteBlockTests
         Assert.Contains("NoteBlock 1", ex.Message, StringComparison.Ordinal);
     }
 
-    // ── Rules of the paragraphs inside ───────────────────────────────────────
+    // ── What the block does between lines ────────────────────────────────────
 
-    // Page 300 x 200, margin 20: 13 lines and 4 pt over. A block with no border and no padding.
+    /// <summary>
+    /// Inside the block lines are placed in order and the block splits between any two of them,
+    /// whatever the paragraphs are: ten lines leave room for three of the next paragraph's four,
+    /// which a paragraph with the default counts also splits 3 and 1.
+    /// </summary>
     [Fact]
-    public void AParagraphThatKeepsTogetherMovesWholeWhenItFitsOnTheNextPage()
+    public void ABlockSplitsBetweenAnyTwoLines()
     {
-        NoteBlock Build(bool keep) => new NoteBlock()
-            .Add(new Paragraph(Lines(10), Courier10))
-            .Add(new Paragraph(Lines(4, 20), Courier10) { KeepTogether = keep });
-
-        using var split = NewDoc(300, 200);
-        split.Add(Build(keep: false));
-        var splitPages = PageContents(Save(split));
-        Assert.Equal([13, 1], splitPages.Select(p => Shown(p).Count));
-
-        using var whole = NewDoc(300, 200);
-        whole.Add(Build(keep: true));
-        var wholePages = PageContents(Save(whole));
-        Assert.Equal([10, 4], wholePages.Select(p => Shown(p).Count));
-    }
-
-    [Fact]
-    public void AParagraphThatKeepsWithNextMovesWithTheOneAfterIt()
-    {
-        // 11 lines leave 28 pt. The next paragraph asks for two lines before a break, and one fits.
-        NoteBlock Build(bool keep) => new NoteBlock()
-            .Add(new Paragraph(Lines(11), Courier10))
-            .Add(new Paragraph("kept", Courier10) { KeepWithNext = keep })
-            .Add(new Paragraph(Lines(3, 30), Courier10) { MinLinesBeforeBreak = 2 });
-
-        using var apart = NewDoc(300, 200);
-        apart.Add(Build(keep: false));
-        var apartPages = PageContents(Save(apart));
-        Assert.Contains("kept", Shown(apartPages[0]));
-        Assert.DoesNotContain("L30", Shown(apartPages[0]));
-
-        using var together = NewDoc(300, 200);
-        together.Add(Build(keep: true));
-        var togetherPages = PageContents(Save(together));
-        Assert.DoesNotContain("kept", Shown(togetherPages[0]));
-        Assert.Equal(["kept", "L30", "L31", "L32"], Shown(togetherPages[1]));
-    }
-
-    [Fact]
-    public void LineCountsHoldInsideTheBlock()
-    {
-        // 10 lines leave 40 pt: three lines fit. Two must carry over, so two stay.
         using var doc = NewDoc(300, 200);
         doc.Add(new NoteBlock()
             .Add(new Paragraph(Lines(10), Courier10))
-            .Add(new Paragraph(Lines(4, 20), Courier10) { MinLinesAfterBreak = 2 }));
+            .Add(new Paragraph(Lines(4, 20), Courier10)));
         var pages = PageContents(Save(doc));
-        Assert.Equal([12, 2], pages.Select(p => Shown(p).Count));
+        Assert.Equal([13, 1], pages.Select(p => Shown(p).Count));
+        Assert.Equal(["L23"], Shown(pages[1]));
+    }
+
+    // ── Which blocks a page can hold ─────────────────────────────────────────
+
+    private static (int Pages, string Verdict) Place(double pageHeight, NoteBlock block, int leadLines = 0)
+    {
+        using var doc = NewDoc(300, pageHeight);
+        if (leadLines > 0)
+            doc.Add(new Paragraph(Lines(leadLines, 900), Courier10));
+        doc.Add(block);
+        try
+        {
+            return (PageContents(Save(doc)).Count, "saved");
+        }
+        catch (InvalidOperationException ex) when (ex.Message.Contains("too tall", StringComparison.Ordinal))
+        {
+            return (0, "refused");
+        }
+    }
+
+    /// <summary>
+    /// A page of 160 pt cannot hold top padding 80, one line and bottom padding 80 (172) but holds
+    /// each of the two insets with one line (92), so two lines split between two pages, at the top
+    /// of a page and below a lead paragraph. A single line between both insets is refused.
+    /// </summary>
+    [Theory]
+    [InlineData(0)]
+    [InlineData(3)]
+    public void ABlockThatTwoPagesCanHoldIsNotRefusedAsTooTall(int leadLines)
+    {
+        NoteBlock Block(string text) => new NoteBlock { Padding = new EdgeInsets(80, 0, 80, 0), Background = Tint }.Add(text, Courier10);
+
+        Assert.Equal((2, "saved"), Place(200, Block("L1\nL2"), leadLines));
+        Assert.Equal((2, "saved"), Place(200, new NoteBlock { Padding = new EdgeInsets(80, 0, 80, 0) }.Add("L1", Courier10).Add("L2", Courier10), leadLines));
+        Assert.Equal("saved", Place(200, Block(Lines(5)), leadLines).Verdict);
+        Assert.Equal((0, "refused"), Place(200, Block("L1"), leadLines));
+    }
+
+    /// <summary>
+    /// The first piece of the 80/80 block holds the top padding and the first line, the last piece
+    /// the last line and the bottom padding, and no line is lost or repeated.
+    /// </summary>
+    [Fact]
+    public void TheLastLineAndTheBottomPaddingShareTheLastPage()
+    {
+        using var doc = NewDoc(300, 200);
+        doc.Add(new NoteBlock { Padding = new EdgeInsets(80, 0, 80, 0), Background = Tint }.Add("L1\nL2", Courier10));
+        var pages = PageContents(Save(doc));
+        Assert.Equal(2, pages.Count);
+        Assert.Equal(["L1"], Shown(pages[0]));
+        Assert.Equal(["L2"], Shown(pages[1]));
+
+        // Page 1: padding 80 and one line, 92 tall, y 200 - 112. Page 2: the line and 80 below it.
+        Assert.Equal(["20 88 260 92"], Rects(pages[0]));
+        Assert.Equal(["20 88 260 92"], Rects(pages[1]));
+        Assert.Equal(["20 90"], TmPositions(pages[0]));
+        Assert.Equal(["20 170"], TmPositions(pages[1]));
+    }
+
+    /// <summary>
+    /// Random geometry, paragraphs and page positions. Whatever is saved draws each line once and
+    /// in order, holds no blank page, has the top bar on its first page and the bottom bar on its
+    /// last only; and a block is refused only where an empty page cannot hold the top inset and the
+    /// first line, the last line and the bottom inset, or a single line between both.
+    /// </summary>
+    [Fact]
+    public void FuzzedBlocksLoseNoLineLeaveNoBlankPageAndAreRefusedOnlyWhereTheTypeSays()
+    {
+        var rng = new Random(20261127);
+        var saved = 0;
+        var refused = 0;
+        for (var n = 0; n < 1500; n++)
+        {
+            var page = 60 + rng.Next(0, 18) * 12 + rng.Next(0, 12);
+            var border = new[] { 0.0, 0.5, 1.0, 2.0 }[rng.Next(4)];
+            var top = rng.Next(0, 5) * rng.Next(0, 20) + (rng.Next(3) == 0 ? 0.5 : 0);
+            var bottom = rng.Next(0, 5) * rng.Next(0, 20) + (rng.Next(3) == 0 ? 0.25 : 0);
+            var lead = rng.Next(0, 6);
+            var counts = Enumerable.Range(0, rng.Next(1, 5)).Select(_ => rng.Next(1, 14)).ToArray();
+
+            var block = new NoteBlock { BorderWidth = border, Background = Tint, Padding = new EdgeInsets(top, 4, bottom, 4) };
+            var next = 1;
+            foreach (var c in counts)
+            {
+                block.Add(new Paragraph(Lines(c, next), Courier10) { SpaceAfter = rng.Next(3) == 0 ? rng.Next(0, 9) : 0 });
+                next += c;
+            }
+
+            var total = next - 1;
+            var contentHeight = page - 40.0;
+            var line = 12.0;
+            var firstFits = border + top + line <= contentHeight;
+            var lastFits = line + border + bottom <= contentHeight;
+            var singleFits = total > 1 || border + top + line + border + bottom <= contentHeight;
+            var expectSaved = firstFits && lastFits && singleFits;
+
+            using var doc = NewDoc(300, page);
+            if (lead > 0) doc.Add(new Paragraph(Lines(lead, 900), Courier10));
+            doc.Add(block);
+            byte[] pdf;
+            try
+            {
+                pdf = Save(doc);
+            }
+            catch (InvalidOperationException ex) when (ex.Message.Contains("too tall", StringComparison.Ordinal))
+            {
+                Assert.False(expectSaved, $"case {n}: refused where the type says a page can hold it (page {page}, border {border}, top {top}, bottom {bottom}, lines {string.Join('+', counts)}): {ex.Message}");
+                refused++;
+                continue;
+            }
+
+            Assert.True(expectSaved, $"case {n}: saved where the type says it is refused");
+            saved++;
+            var pages = PageContents(pdf);
+            var shown = pages.SelectMany(Shown).Where(t => t.StartsWith('L') && t.Length == 3).Where(t => int.Parse(t[1..], System.Globalization.CultureInfo.InvariantCulture) < 900).ToList();
+            Assert.Equal(Enumerable.Range(1, total).Select(i => "L" + i.ToString("00", System.Globalization.CultureInfo.InvariantCulture)), shown);
+            Assert.All(pages, p => Assert.NotEmpty(Shown(p)));
+
+            // The top bar (a bar as wide as the box less two borders, at the top) only on the page
+            // the block starts on, the bottom bar only on the page it ends on.
+            if (border > 0)
+            {
+                var wide = pages.Select(p => Rects(p).Count(r => r.Split(' ')[2] == (260 - 2 * border).ToString("0.#####", System.Globalization.CultureInfo.InvariantCulture))).ToList();
+                Assert.Equal(2, wide.Sum());
+            }
+        }
+
+        Assert.True(saved > 400 && refused > 100, $"saved {saved}, refused {refused}");
+    }
+
+    /// <summary>
+    /// A block fits wherever a paragraph with the same top and bottom margins fits, over fractional
+    /// borders and paddings whose sum makes the box exactly the content height.
+    /// </summary>
+    [Fact]
+    public void AnExactFitIsNotLostToRounding()
+    {
+        var rng = new Random(721);
+        var fitted = 0;
+        for (var n = 0; n < 3000; n++)
+        {
+            var border = Math.Round(rng.NextDouble() * 5, 2);
+            var top = Math.Round(rng.NextDouble() * 8, 2);
+            var bottom = Math.Round(rng.NextDouble() * 8, 2);
+            var lines = rng.Next(1, 6);
+            var height = 40 + 12.0 * lines + 2 * border + top + bottom;
+
+            using var asParagraph = NewDoc(300, height);
+            asParagraph.Add(new Paragraph(Lines(lines), Courier10) { Margins = new EdgeInsets(border + top, 0, border + bottom, 0) });
+            try
+            {
+                if (PageContents(Save(asParagraph)).Count != 1) continue;
+            }
+            catch (InvalidOperationException)
+            {
+                // The paragraph itself is refused at this geometry.
+                continue;
+            }
+
+            using var asBlock = NewDoc(300, height);
+            asBlock.Add(new NoteBlock { BorderWidth = border, Padding = new EdgeInsets(top, 0, bottom, 0) }.Add(Lines(lines), Courier10));
+            Assert.True(PageContents(Save(asBlock)).Count == 1, $"border {border}, top {top}, bottom {bottom}, {lines} lines, page {height}");
+            fitted++;
+        }
+
+        Assert.True(fitted > 1000, $"only {fitted} geometries fit as a paragraph");
     }
 }

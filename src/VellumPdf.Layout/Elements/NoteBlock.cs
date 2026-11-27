@@ -11,15 +11,21 @@ namespace VellumPdf.Layout.Elements;
 /// padding drawn around the paragraphs it holds. A note, a warning or a tip is one.
 /// </summary>
 /// <remarks>
-/// <b>The block holds paragraphs and nothing else.</b> <see cref="Add(Paragraph)"/> throws
-/// <see cref="ArgumentNullException"/> for a null paragraph and <see cref="ArgumentException"/>
-/// for a paragraph whose <see cref="Paragraph.BreakBefore"/> is set, because a page break inside a
-/// box has no meaning. A list, a table, a heading and a preformatted block have no overload, so
-/// they cannot be added; put them outside the block. The paragraphs are laid out as they are at
-/// the top level, with their own runs, links, page references, alignment, tab stops,
-/// <see cref="Paragraph.Margins"/>, <see cref="Paragraph.KeepTogether"/>,
-/// <see cref="Paragraph.KeepWithNext"/> and line counts, in the width the border and the padding
-/// leave. <see cref="Document.SetDefaultFont"/> does not apply to them.
+/// <b>The block holds paragraphs and nothing else, and a paragraph in it sets no keep request and
+/// no line count.</b> <see cref="Add(Paragraph)"/> throws <see cref="ArgumentNullException"/> for
+/// a null paragraph, and <see cref="ArgumentException"/> naming the property for a paragraph whose
+/// <see cref="Paragraph.BreakBefore"/>, <see cref="Paragraph.KeepWithNext"/> or
+/// <see cref="Paragraph.KeepTogether"/> is set, or whose <see cref="Paragraph.MinLinesBeforeBreak"/>
+/// or <see cref="Paragraph.MinLinesAfterBreak"/> is not 1. Inside a block the lines are placed in
+/// order and the block splits between any two of them, as a paragraph with the default counts
+/// splits; a count of 1 asks for nothing, so the default is the only value that keeps that rule.
+/// The block's own <see cref="BreakBefore"/>, <see cref="KeepWithNext"/> and
+/// <see cref="KeepTogether"/> keep the meaning they have on a paragraph and are decided by the
+/// document's own routines, which see the block as one element. A list, a table, a heading and a
+/// preformatted block have no overload, so they cannot be added; put them outside the block. The
+/// paragraphs are laid out as they are at the top level, with their own runs, links, page
+/// references, alignment, tab stops and <see cref="Paragraph.Margins"/>, in the width the border and
+/// the padding leave. <see cref="Document.SetDefaultFont"/> does not apply to them.
 /// <para><b>The box.</b> The block is as wide as the content box. The border lies inside that
 /// width, so the text starts at the block's left edge plus <see cref="BorderWidth"/> plus the
 /// left edge of <see cref="Padding"/>. The background fills the whole block, border included. A
@@ -27,35 +33,33 @@ namespace VellumPdf.Layout.Elements;
 /// Between two paragraphs the block adds only the <see cref="Paragraph.SpaceAfter"/> of the first;
 /// the last paragraph's gap is dropped, because <see cref="SpaceAfter"/> sets the gap after the
 /// block.</para>
-/// <para><b>When the block splits.</b> It splits between lines, where a paragraph inside it would
-/// split, and the background and the left and right border continue on every page it reaches.
-/// The top border and the top padding are drawn on the first page only, and the bottom border and
-/// the bottom padding on the last page only, so the frame is open at a page break and reads as one
-/// box cut by the page. The last page always holds at least one line of text with the bottom
-/// padding, so the block never ends on a page that holds only padding. A paragraph that
-/// <see cref="Paragraph.KeepTogether"/> moves whole to the next page, when it fits there and is
-/// not the first in its piece. The line counts <see cref="Paragraph.MinLinesBeforeBreak"/> and
-/// <see cref="Paragraph.MinLinesAfterBreak"/> hold inside the block, and a count that no break
-/// can meet is dropped without a report. A paragraph whose <see cref="Paragraph.KeepWithNext"/>
-/// is set moves to the next page with the paragraph after it when that one cannot start on the
-/// same page, unless it is the first of its piece.</para>
-/// <para><b>Tagging.</b> In a tagged document the block is one structure element that holds the
-/// structure elements of its paragraphs, also when it spans pages: <c>Aside</c> in a document
-/// whose <see cref="Document.Conformance"/> is <see
-/// cref="VellumPdf.Document.PdfConformance.None"/>,
-/// which is written as PDF 2.0, and <c>Div</c> under every conformance claim, which is written as
-/// PDF 1.7, where <c>Aside</c> is not defined. The background and the border are drawn as an
-/// artifact, so they are outside the structure tree and outside extracted text. The block is
-/// never tagged as a table.</para>
+/// <para><b>When the block splits.</b> It splits between lines, and the background and the left
+/// and right border continue on every page it reaches. The top border and the top padding are
+/// drawn on the first page only, and the bottom border and the bottom padding on the last page
+/// only, so the frame is open at a page break and reads as one box cut by the page. The last
+/// page always holds at least one line of text with the bottom padding, so the block never ends
+/// on a page that holds only padding. When the lines would fit but the bottom padding would not
+/// fit after them, the last line moves to the next page with the padding.</para>
+/// <para><b>A block that two pages can hold is never refused as too tall.</b> The save throws
+/// <see cref="InvalidOperationException"/> naming the block as too tall to fit only when an empty
+/// page cannot hold the top border and padding and the first line, or the last line and the bottom
+/// border and padding, or when the block is a single line and an empty page cannot hold that line
+/// between both. A border and padding that leave the paragraphs no width are refused the same
+/// way. A refusal of this kind comes after the layout has started, so the document cannot be saved
+/// again.</para>
+/// <para><b>Tagging.</b> In a tagged document the block is one <c>Div</c> structure element that
+/// holds the structure elements of its paragraphs, also when it spans pages, under every
+/// <see cref="Document.Conformance"/>. The background and the border are drawn as an artifact, so
+/// they are outside the structure tree and outside extracted text. The block is never tagged as a
+/// table. <c>Aside</c>, the PDF 2.0 element for a callout, needs a structure namespace that this
+/// library does not write yet.</para>
 /// <para><b>Refused at the save, before any layout.</b> <see cref="InvalidOperationException"/>
 /// is thrown, and the document stays saveable once you have changed what the message names, when
 /// the block holds no paragraph, and when a paragraph has a tab stop beyond the width the border
-/// and the padding leave. A border and padding that leave no width, or no room for one line on an
-/// empty page, are refused by the save as an element that is too tall to fit.</para>
-/// <para><b>Do not pass</b> a colour channel that is not a number from 0 to 1 (ISO 32000-2:2020,
-/// 8.6.8) to <see cref="Background"/> or <see cref="BorderColor"/>. It is accepted today and
-/// written as given, and a channel that is not finite is refused by the canvas when the colour is
-/// drawn; a later major version refuses both from the setter.</para>
+/// and the padding leave.</para>
+/// <para><b>3.0.</b> Keep requests and line counts of the paragraphs inside a block are refused in
+/// 2.x because the block is laid out by its own routine. 3.0 gives every block element one box
+/// model (#704), which honours the rules of the elements inside it, and will accept them.</para>
 /// </remarks>
 public sealed class NoteBlock
 {
@@ -80,13 +84,17 @@ public sealed class NoteBlock
     /// A block with no paragraph is refused by the save, before any layout, so add at least one
     /// with <see cref="Add(Paragraph)"/> before saving.
     /// </remarks>
+    /// <exception cref="InvalidOperationException">
+    /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
+    /// from this constructor, when the block still holds no paragraph.
+    /// </exception>
     public NoteBlock()
     {
     }
 
     /// <summary>Creates a block that holds the paragraphs, in order.</summary>
     /// <remarks>
-    /// <b>A null sequence, a null paragraph and a paragraph with a page break are refused.</b> Each
+    /// <b>A null sequence, a null paragraph and a paragraph the block refuses are refused.</b> Each
     /// paragraph is checked as <see cref="Add(Paragraph)"/> checks it, and a block with a refused
     /// paragraph is not created.
     /// </remarks>
@@ -95,8 +103,20 @@ public sealed class NoteBlock
     /// <c>ParamName</c> is <c>paragraphs</c>.
     /// </exception>
     /// <exception cref="ArgumentException">
-    /// A paragraph's <see cref="Paragraph.BreakBefore"/> is not <see cref="PageBreakMode.None"/>;
-    /// <c>ParamName</c> is <c>paragraphs</c>.
+    /// A paragraph sets <see cref="Paragraph.BreakBefore"/>, <see cref="Paragraph.KeepWithNext"/> or
+    /// <see cref="Paragraph.KeepTogether"/>, or has a <see cref="Paragraph.MinLinesBeforeBreak"/> or
+    /// <see cref="Paragraph.MinLinesAfterBreak"/> other than 1; <c>ParamName</c> is
+    /// <c>paragraphs</c> and the message names the property. Also raised from the save, not from
+    /// this constructor, in the cases <see cref="Document.Add(NoteBlock)"/> lists.
+    /// </exception>
+    /// <exception cref="InvalidOperationException">
+    /// Raised from the save, not from this constructor, in the cases
+    /// <see cref="Document.Add(NoteBlock)"/> lists.
+    /// </exception>
+    /// <exception cref="IndexOutOfRangeException">
+    /// Raised from the save, not from this constructor, when a style a paragraph uses holds a
+    /// <see cref="VellumPdf.Fonts.Standard14"/> value the enumeration does not name and the font is
+    /// selected on a page; see <see cref="TextStyle.FontRef"/>.
     /// </exception>
     public NoteBlock(IEnumerable<Paragraph> paragraphs)
     {
@@ -105,75 +125,130 @@ public sealed class NoteBlock
         {
             if (paragraph is null)
                 throw new ArgumentNullException(nameof(paragraphs), "A paragraph in the sequence is null.");
-            RefuseBreak(paragraph, nameof(paragraphs));
+            RefuseUnsupported(paragraph, nameof(paragraphs));
             _paragraphs.Add(paragraph);
         }
     }
 
     /// <summary>Appends a paragraph and returns this block for chaining.</summary>
     /// <remarks>
-    /// <b>A null paragraph is refused here, and so is a paragraph that asks for a page break.</b>
-    /// What the paragraph holds is checked by the save, as it is at the top level. The same
-    /// instance added twice is drawn twice.
+    /// <b>A null paragraph is refused here, and so is a paragraph that sets a page break, a keep
+    /// request or a line count.</b> What else the paragraph holds is checked by the save, as it is
+    /// at the top level. The same instance added twice is drawn twice.
     /// </remarks>
     /// <exception cref="ArgumentNullException">
     /// <paramref name="paragraph"/> is <see langword="null"/>.
     /// </exception>
     /// <exception cref="ArgumentException">
-    /// <paramref name="paragraph"/> has a <see cref="Paragraph.BreakBefore"/> other than
-    /// <see cref="PageBreakMode.None"/>. A box is not broken by a page break inside it; add a
-    /// <see cref="PageBreak"/> before the block.
+    /// <paramref name="paragraph"/> sets <see cref="Paragraph.BreakBefore"/>,
+    /// <see cref="Paragraph.KeepWithNext"/> or <see cref="Paragraph.KeepTogether"/>, or has a
+    /// <see cref="Paragraph.MinLinesBeforeBreak"/> or <see cref="Paragraph.MinLinesAfterBreak"/>
+    /// other than 1; the message names the property. A box is split between any two lines and has
+    /// no place for these; set <see cref="BreakBefore"/>, <see cref="KeepWithNext"/> or
+    /// <see cref="KeepTogether"/> on the block instead. Also raised from the save, not from this
+    /// call, in the cases <see cref="Document.Add(NoteBlock)"/> lists.
+    /// </exception>
+    /// <exception cref="InvalidOperationException">
+    /// Raised from the save, not from this call, in the cases <see cref="Document.Add(NoteBlock)"/>
+    /// lists.
+    /// </exception>
+    /// <exception cref="IndexOutOfRangeException">
+    /// Raised from the save, not from this call, when a style the paragraph uses holds a
+    /// <see cref="VellumPdf.Fonts.Standard14"/> value the enumeration does not name and the font is
+    /// selected on a page; see <see cref="TextStyle.FontRef"/>.
     /// </exception>
     public NoteBlock Add(Paragraph paragraph)
     {
         ArgumentNullException.ThrowIfNull(paragraph);
-        RefuseBreak(paragraph, nameof(paragraph));
+        RefuseUnsupported(paragraph, nameof(paragraph));
         _paragraphs.Add(paragraph);
         return this;
     }
 
-    /// <summary>Appends a paragraph built from the text and returns this block for
-    /// chaining.</summary>
+    /// <summary>Appends a paragraph built from the text and returns this block for chaining.</summary>
     /// <remarks>
-    /// Creates the paragraph with <see cref="Paragraph(string, TextStyle)"/> and adds it. A null
-    /// <paramref name="style"/> gives <see cref="TextStyle.Default"/>, not the style that
-    /// <see cref="Document.SetDefaultFont"/> set.
+    /// Creates the paragraph with <see cref="Paragraph(string, TextStyle)"/> and adds it. With
+    /// <paramref name="style"/> null the paragraph takes <see cref="TextStyle.Default"/>, not the
+    /// style <see cref="Document.SetDefaultFont"/> set. A null <paramref name="text"/> is refused
+    /// here.
+    /// <para>The default style is Helvetica, which is not embedded. While
+    /// <see cref="Document.Conformance"/> is not
+    /// <see cref="VellumPdf.Document.PdfConformance.None"/> the save reports the element as
+    /// <see cref="LayoutDiagnosticCode.UnembeddedFont"/> in <see cref="Document.Diagnostics"/> and
+    /// still saves; only <see cref="Document.StrictDiagnostics"/> refuses it. <b>Do not leave the
+    /// style out</b> of a block in a PDF/A or PDF/UA document; give it a style with an embedded
+    /// font. 3.0 refuses text the font cannot draw, and a Standard 14 font, under either claim.</para>
     /// </remarks>
     /// <exception cref="ArgumentNullException">
     /// <paramref name="text"/> is <see langword="null"/>.
     /// </exception>
+    /// <exception cref="ArgumentException">
+    /// Raised from the save, not from this call, in the cases <see cref="Document.Add(NoteBlock)"/>
+    /// lists.
+    /// </exception>
+    /// <exception cref="InvalidOperationException">
+    /// Raised from the save, not from this call, in the cases <see cref="Document.Add(NoteBlock)"/>
+    /// lists, among them a style whose size, leading or text colour is refused, and, when
+    /// <see cref="Document.StrictDiagnostics"/> is set, text written as glyph 0 or, under a
+    /// conformance claim, in Helvetica or another Standard 14 font; see
+    /// <see cref="LayoutDiagnosticCode.NotdefGlyph"/> and
+    /// <see cref="LayoutDiagnosticCode.UnembeddedFont"/>.
+    /// </exception>
+    /// <exception cref="IndexOutOfRangeException">
+    /// Raised from the save, not from this call, when the style holds a
+    /// <see cref="VellumPdf.Fonts.Standard14"/> value the enumeration does not name and the font is
+    /// selected on a page; see <see cref="TextStyle.FontRef"/>.
+    /// </exception>
     public NoteBlock Add(string text, TextStyle? style = null) => Add(new Paragraph(text, style));
 
-    private static void RefuseBreak(Paragraph paragraph, string paramName)
+    private static void RefuseUnsupported(Paragraph paragraph, string paramName)
     {
-        if (paragraph.BreakBefore != PageBreakMode.None)
+        var property = paragraph.BreakBefore != PageBreakMode.None ? nameof(Paragraph.BreakBefore)
+            : paragraph.KeepWithNext ? nameof(Paragraph.KeepWithNext)
+            : paragraph.KeepTogether ? nameof(Paragraph.KeepTogether)
+            : paragraph.MinLinesBeforeBreak != 1 ? nameof(Paragraph.MinLinesBeforeBreak)
+            : paragraph.MinLinesAfterBreak != 1 ? nameof(Paragraph.MinLinesAfterBreak)
+            : null;
+        if (property is not null)
             throw new ArgumentException(
-                "A paragraph inside a note block cannot ask for a page break. Add a PageBreak before the block, " +
-                "or set BreakBefore on the block.",
+                $"A paragraph inside a note block cannot set {property}. The block splits between any two " +
+                "lines, so a page break, a keep request or a line count has no place in it. Set the " +
+                "block's own BreakBefore, KeepWithNext or KeepTogether, or leave the paragraph at its defaults.",
                 paramName);
     }
 
     /// <summary>The fill behind the paragraphs, padding and border. <see langword="null"/>, the
     /// default, fills nothing.</summary>
     /// <remarks>
-    /// Nothing is refused by this accessor. <b>Do not pass</b> a channel outside 0 to 1; see the
-    /// type. The fill is drawn as an artifact on every page the block reaches.
+    /// <b>A channel that is not a finite number from 0 to 1 is refused.</b> This <c>init</c>
+    /// accessor throws <see cref="ArgumentOutOfRangeException"/>, because ISO 32000-2:2020, 8.6.4.3
+    /// gives each DeviceRGB component that range. The fill is drawn as an artifact on every page the
+    /// block reaches.
     /// </remarks>
+    /// <exception cref="ArgumentOutOfRangeException">
+    /// Raised from this <c>init</c> accessor when a channel is <c>NaN</c>, infinite, below 0 or
+    /// above 1.
+    /// </exception>
     public ColorRgb? Background
     {
         get => _background;
-        init => _background = value;
+        init => _background = value is { } c ? LayoutValidation.ValidateUnitColor(c, nameof(Background)) : null;
     }
 
     /// <summary>The colour of the border. The default is black.</summary>
     /// <remarks>
-    /// Read only when <see cref="BorderWidth"/> is above zero. <b>Do not pass</b> a channel outside
-    /// 0 to 1; see the type.
+    /// <b>A channel that is not a finite number from 0 to 1 is refused</b>, as for
+    /// <see cref="Background"/>, whether or not <see cref="BorderWidth"/> draws a border. The
+    /// colour is read only when <see cref="BorderWidth"/> is above zero.
     /// </remarks>
+    /// <exception cref="ArgumentOutOfRangeException">
+    /// Raised from this <c>init</c> accessor when a channel is <c>NaN</c>, infinite, below 0 or
+    /// above 1.
+    /// </exception>
     public ColorRgb BorderColor
     {
         get => _borderColor;
-        init => _borderColor = value;
+        init => _borderColor = LayoutValidation.ValidateUnitColor(value, nameof(BorderColor));
     }
 
     /// <summary>The width of the border, in points. The default, 0, draws none.</summary>
@@ -182,10 +257,15 @@ public sealed class NoteBlock
     /// throws <see cref="ArgumentOutOfRangeException"/>, because a negative line width is outside
     /// the domain of ISO 32000-2:2020, 8.4.3.2. Negative zero is accepted and means 0. The border
     /// lies inside the block's width, and its inside edge is where the padding starts. A width
-    /// that leaves the content no room is refused by the save, as an element too tall to fit.
+    /// that leaves the content no room is refused by the save, as an element too tall to fit; see
+    /// the type.
     /// </remarks>
     /// <exception cref="ArgumentOutOfRangeException">
     /// Raised from this <c>init</c> accessor when the value is <c>NaN</c>, infinite or below zero.
+    /// </exception>
+    /// <exception cref="InvalidOperationException">
+    /// Raised from the save, not from this accessor, when the width leaves the paragraphs no room;
+    /// see the type.
     /// </exception>
     public double BorderWidth
     {
@@ -199,11 +279,15 @@ public sealed class NoteBlock
     /// throws <see cref="ArgumentOutOfRangeException"/>, so the exception is raised by the
     /// statement that set the value. The top edge is applied on the first page the block reaches
     /// and the bottom edge on the last; the left and right edges on every page. Padding that leaves
-    /// the content no width, or no room for one line on an empty page, is refused by the save as
+    /// the paragraphs no width, or no room for the lines the type names, is refused by the save as
     /// an element too tall to fit.
     /// </remarks>
     /// <exception cref="ArgumentOutOfRangeException">
     /// Raised from this <c>init</c> accessor when an edge is <c>NaN</c>, infinite or below zero.
+    /// </exception>
+    /// <exception cref="InvalidOperationException">
+    /// Raised from the save, not from this accessor, when the padding leaves the paragraphs no
+    /// room; see the type.
     /// </exception>
     public EdgeInsets Padding
     {
@@ -270,9 +354,7 @@ public sealed class NoteBlock
     /// page, it splits as it would without this flag, and the save lists
     /// <see cref="LayoutDiagnosticCode.KeepTogetherRelaxed"/>, a warning, against
     /// <see cref="LayoutElementKind.NoteBlock"/>. The rule and the extra layout are those of
-    /// <see cref="Paragraph.KeepTogether"/>. This flag is the block's own; the
-    /// <see cref="Paragraph.KeepTogether"/> of a paragraph inside it keeps that paragraph whole
-    /// within the block, and is not reported when it cannot.
+    /// <see cref="Paragraph.KeepTogether"/>.
     /// </remarks>
     public bool KeepTogether { get; init; }
 

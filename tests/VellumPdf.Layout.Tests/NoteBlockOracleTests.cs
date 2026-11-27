@@ -36,9 +36,11 @@ public sealed class NoteBlockOracleTests : IDisposable
 
     private static readonly string BoldPath = Path.Combine(AppContext.BaseDirectory, "Fonts", "LiberationSans-Bold.ttf");
 
-    // A block of three paragraphs, a bold lead-in on the first, with a fill and a border, long
-    // enough to span three pages of 300 x 200 pt.
-    private static Document Build(PdfConformance claim, bool tagged)
+    // A heading, a paragraph, a block of three paragraphs with a bold lead-in, and a table, long enough
+    // to span three pages of 300 x 200 pt. With links, the first paragraph of the block holds a link to
+    // a URI and a page reference, and a paragraph after the block holds the anchor; PDF/UA-1 refuses
+    // both before layout, so its fixture leaves them out.
+    private static Document Build(PdfConformance claim, bool tagged, bool links = true)
     {
         var doc = NewDoc(300, 200);
         doc.Conformance = claim;
@@ -49,7 +51,17 @@ public sealed class NoteBlockOracleTests : IDisposable
 
         var body = new TextStyle { FontRef = doc.LoadTrueTypeFont(DejaVuPath), FontSize = 10 };
         var bold = new TextStyle { FontRef = doc.LoadTrueTypeFont(BoldPath), FontSize = 10 };
+        var linked = new TextStyle { FontRef = doc.LoadTrueTypeFont(DejaVuPath), FontSize = 10, LinkUri = "https://example.com/note" };
         var words = string.Join(' ', Enumerable.Repeat("a note that wraps inside its padding", 18));
+        var lead = new List<TextRun> { new("Warning: ", bold), new(words, body) };
+        if (links)
+        {
+            lead.Add(new TextRun(" See this link", linked));
+            lead.Add(new TextRun(" and page ", body));
+            lead.Add(TextRun.PageReference("after", body));
+        }
+
+        doc.Add(new Heading("Notes", body));
         doc.Add(new Paragraph("Before the block.", body));
         doc.Add(new NoteBlock
         {
@@ -59,10 +71,14 @@ public sealed class NoteBlockOracleTests : IDisposable
             Padding = new EdgeInsets(8, 10, 8, 10),
             SpaceAfter = 6,
         }
-            .Add(new Paragraph([new TextRun("Warning: ", bold), new TextRun(words, body)]) { SpaceAfter = 4 })
+            .Add(new Paragraph(lead) { SpaceAfter = 4 })
             .Add(new Paragraph(words, body) { SpaceAfter = 4 })
             .Add(new Paragraph(words, body)));
-        doc.Add(new Paragraph("After the block.", body));
+        doc.Add(new Paragraph("After the block.", body) { Anchor = links ? "after" : null });
+        var table = new VellumPdf.Layout.Elements.Table.TableElement();
+        table.AddRow(isHeader: true).AddCell(new VellumPdf.Layout.Elements.Table.Cell("Key") { Style = bold }).AddCell(new VellumPdf.Layout.Elements.Table.Cell("Value") { Style = bold });
+        table.AddRow().AddCell(new VellumPdf.Layout.Elements.Table.Cell("a") { Style = body }).AddCell(new VellumPdf.Layout.Elements.Table.Cell("b") { Style = body });
+        doc.Add(table);
         return doc;
     }
 
@@ -77,13 +93,23 @@ public sealed class NoteBlockOracleTests : IDisposable
     {
         var pdf = File.ReadAllBytes(path);
         var pages = PageContents(pdf);
-        Assert.True(pages.Count >= 3, "the fixture must span three pages");
+        Assert.True(pages.Count >= 3, "the fixture must span pages");
 
         // The fill is on every page the block reaches, and so are its two sides.
-        Assert.All(pages, p => Assert.Contains("0.92 0.95 1 rg", p, StringComparison.Ordinal));
-        Assert.All(pages, p => Assert.True(Rects(p).Count(r => r.Split(' ')[2] == "1.5") >= 2));
+        var withFill = pages.Where(p => p.Contains("0.92 0.95 1 rg", StringComparison.Ordinal)).ToList();
+        Assert.True(withFill.Count >= 3, "the block must reach three pages");
+        Assert.All(withFill, p => Assert.True(Rects(p).Count(r => r.Split(' ')[2] == "1.5") >= 2));
         if (tagged)
-            Assert.StartsWith("/P <</MCID 0>> BDC", pages[0], StringComparison.Ordinal);
+            Assert.StartsWith("/H1 <</MCID 0>> BDC", pages[0], StringComparison.Ordinal);
+    }
+
+    // The tree holds the heading, the paragraph, one Div of paragraph pieces, and the table, and
+    // names no Aside.
+    private static void AssertTheBlockIsADiv(byte[] pdf)
+    {
+        var tree = StructTree(pdf);
+        Assert.Matches(@"^Document\(H1,P,Div\((P,)+P\),P,Table\(.*\)\)$", tree);
+        Assert.DoesNotContain("Aside", tree, StringComparison.Ordinal);
     }
 
     private static void AssertVeraPdfPasses(string path, string flavour)
@@ -130,39 +156,39 @@ public sealed class NoteBlockOracleTests : IDisposable
         var path = Write(doc, "a2a.pdf");
 
         AssertTheFileHoldsTheBlock(path, tagged: true);
-        Assert.Matches(@"^Document\(P,Div\((P,)+P\),P\)$", StructTree(File.ReadAllBytes(path)));
+        AssertTheBlockIsADiv(File.ReadAllBytes(path));
         AssertVeraPdfPasses(path, "2a");
     }
 
     [Fact]
     public void PdfUA1_withATaggedBlock_isADivAndPassesVeraPdf_andQpdf()
     {
-        using var doc = Build(PdfConformance.PdfUA1, tagged: true);
+        using var doc = Build(PdfConformance.PdfUA1, tagged: true, links: false);
         var path = Write(doc, "ua1.pdf");
 
         AssertTheFileHoldsTheBlock(path, tagged: true);
-        Assert.Matches(@"^Document\(P,Div\((P,)+P\),P\)$", StructTree(File.ReadAllBytes(path)));
+        AssertTheBlockIsADiv(File.ReadAllBytes(path));
         AssertVeraPdfPasses(path, "ua1");
         AssertQpdfClean(path);
     }
 
-    /// <summary>A PDF 2.0 file with an Aside is clean for qpdf, and pdftotext reads the text in order.</summary>
+    /// <summary>A PDF 2.0 file with a tagged block is clean for qpdf, and pdftotext reads the text in order.</summary>
     [Fact]
-    public void APdf2File_withAnAside_isCleanForQpdf_andPdftotextReadsTheParagraphs()
+    public void APdf2File_withATaggedBlock_isADiv_isCleanForQpdf_andPdftotextReadsTheParagraphs()
     {
         using var doc = Build(PdfConformance.None, tagged: true);
         var path = Write(doc, "pdf20.pdf");
 
         AssertTheFileHoldsTheBlock(path, tagged: true);
-        Assert.Matches(@"^Document\(P,Aside\((P,)+P\),P\)$", StructTree(File.ReadAllBytes(path)));
+        AssertTheBlockIsADiv(File.ReadAllBytes(path));
         AssertQpdfClean(path);
 
         ExternalTool.TryRun("pdftotext", ["-enc", "UTF-8", path, "-"], out var exit, out var text, out var stderr, out var timedOut);
         Assert.False(timedOut);
         Assert.True(exit == 0, stderr);
 
-        // The border and the fill are artifacts, so the text holds the words and nothing else, in
-        // the order they were added.
+        // pdftotext reads no artifact marking, so this proves the reading order of the paragraphs
+        // around and inside the block, not how the border and the fill are treated.
         var flat = Regex.Replace(text, @"\s+", " ");
         var before = flat.IndexOf("Before the block.", StringComparison.Ordinal);
         var warning = flat.IndexOf("Warning: a note that wraps", StringComparison.Ordinal);

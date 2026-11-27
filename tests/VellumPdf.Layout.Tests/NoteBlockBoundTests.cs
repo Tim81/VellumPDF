@@ -77,8 +77,8 @@ public sealed class NoteBlockBoundTests
     }
 
     /// <summary>
-    /// Paragraphs that wrap, break at a line end, hold a hard break alone, carry gaps, keep with
-    /// the next or ask for line counts, over page heights from one line to many, never reach the
+    /// Paragraphs that wrap, break at a line end, hold a hard break alone and carry gaps, in a block
+    /// that keeps together or with the next, over page heights from one line to many, never reach the
     /// limit set to the block's bound.
     /// </summary>
     [Fact]
@@ -94,6 +94,8 @@ public sealed class NoteBlockBoundTests
         {
             var block = new NoteBlock
             {
+                KeepTogether = rng.Next(4) == 0,
+                KeepWithNext = rng.Next(4) == 0,
                 BorderWidth = rng.Next(0, 3),
                 Padding = new EdgeInsets(rng.Next(0, 5), rng.Next(0, 5), rng.Next(0, 5), rng.Next(0, 5)),
             };
@@ -102,10 +104,6 @@ public sealed class NoteBlockBoundTests
                 block.Add(new Paragraph(Pick(rng, texts), H(Pick(rng, 4.0, 6.0, 10.0, 14.0, 20.0)))
                 {
                     SpaceAfter = Pick(rng, 0.0, 0.0, 2.0, 9.0),
-                    KeepTogether = rng.Next(4) == 0,
-                    KeepWithNext = rng.Next(4) == 0,
-                    MinLinesBeforeBreak = rng.Next(1, 4),
-                    MinLinesAfterBreak = rng.Next(1, 4),
                 });
             }
 

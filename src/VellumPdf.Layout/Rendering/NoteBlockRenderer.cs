@@ -101,9 +101,8 @@ internal sealed class NoteBlockRenderer : IRenderer, IPageBreakSource, IKeepSour
     }
 
     /// <summary>
-    /// The width the paragraphs are laid out in when the block is offered <paramref
-    /// name="boxWidth"/>,
-    /// before any paragraph's own margins.
+    /// The width the paragraphs are laid out in when the block is offered
+    /// <paramref name="boxWidth"/>, before any paragraph's own margins.
     /// </summary>
     internal double ContentWidthIn(double boxWidth) =>
         boxWidth - 2 * _block.BorderWidth - _block.Padding.Horizontal;
@@ -151,17 +150,38 @@ internal sealed class NoteBlockRenderer : IRenderer, IPageBreakSource, IKeepSour
                 "The note block's border and padding leave its paragraphs no width.");
 
         // Filling the piece without the bottom border and padding gives the most the page can hold.
-        // When that holds every paragraph, the piece is the last one and must carry the bottom
-        // border and padding too, so it is filled again with them reserved: the closing lines then
-        // move to the next page with that padding rather than leave a piece of padding alone. A
-        // piece that does not complete without the reserve is not the last one and needs none.
-        // The second fill runs last, so the paragraphs hold the placement that is drawn.
-        var piece = Fill(context, children, width, reserveBottom: false);
-        if (piece.Placed.Count > 0 && piece.Complete)
-            piece = Fill(context, children, width, reserveBottom: true);
-
+        // When that holds every paragraph, the piece may be the last one and must then carry the
+        // bottom border and padding, so it is filled again with them reserved: the closing lines
+        // move to the next page with that padding rather than leave a piece of padding alone.
+        // When even the first line does not fit with them reserved, the block is split before its
+        // last line instead, so that line and the bottom padding go to a page of their own. A piece
+        // that does not complete without the reserve is not the last one and needs none. The fill
+        // that runs last is the one whose placement the paragraphs hold, so it is the one used.
+        var piece = Fill(context, children, width, reserveBottom: false, cut: 0);
         if (piece.Placed.Count == 0)
-            return LayoutResult.Nothing();
+            return LayoutResult.Nothing(
+                "The note block's top border and padding and its first line do not fit on an empty page.");
+
+        if (piece.Complete)
+        {
+            var reserved = Fill(context, children, width, reserveBottom: true, cut: 0);
+            if (reserved.Placed.Count > 0)
+            {
+                piece = reserved;
+            }
+            else
+            {
+                // The cut takes the room the last paragraph had left over and half a line more, so
+                // the last line cannot fit and the lines before it still do.
+                var slack = context.Area.Height - (piece.Bottom - context.Area.Y);
+                var held = Fill(context, children, width, reserveBottom: false, cut: slack + 0.5 * piece.Placed[^1].Renderer.LineHeight);
+                if (held.Placed.Count == 0 || held.Complete)
+                    return LayoutResult.Nothing(
+                        "The note block's last line and its bottom border and padding do not fit on an empty page, " +
+                        "or the block is one line that does not fit between its top and bottom insets.");
+                piece = held;
+            }
+        }
 
         var block = _block;
         var area = context.Area;
@@ -187,18 +207,25 @@ internal sealed class NoteBlockRenderer : IRenderer, IPageBreakSource, IKeepSour
         return LayoutResult.Partial(occupied, split, overflow);
     }
 
-    // Lays the paragraphs of this piece out from its first one until one does not fit whole.
-    private Attempt Fill(LayoutContext context, ParagraphRenderer[] children, double width, bool reserveBottom)
+    // The height left for the next paragraph. The room is the area's height less what is used,
+    // less the reserve, in that order, which is how a paragraph with the same top and bottom
+    // margins forms its own, so a block fits wherever that paragraph fits.
+    private static double Room(double height, double used, double reserve, double cut) =>
+        height - used - reserve - cut;
+
+    // Lays the paragraphs of this piece out from its first one until one does not fit whole. cut
+    // takes that much more off the bottom, to hold a line back. Paragraphs are placed in order and a
+    // piece ends between any two lines: a block has no keep rules of its own among them.
+    private Attempt Fill(LayoutContext context, ParagraphRenderer[] children, double width, bool reserveBottom, double cut)
     {
         var block = _block;
         var area = context.Area;
         var left = area.X + block.BorderWidth + block.Padding.Left;
         var topInset = _isFirst ? block.BorderWidth + block.Padding.Top : 0;
-        var bottomInset = block.BorderWidth + block.Padding.Bottom;
-        var limit = area.Bottom - (reserveBottom ? bottomInset : 0);
+        var reserve = reserveBottom ? block.BorderWidth + block.Padding.Bottom : 0;
 
         var result = new Attempt();
-        var y = area.Y + topInset;
+        var used = topInset;
         var i = _startIndex;
         for (; i < children.Length; i++)
         {
@@ -212,38 +239,27 @@ internal sealed class NoteBlockRenderer : IRenderer, IPageBreakSource, IKeepSour
                 var gap = children[i - 1].Paragraph.SpaceAfter;
                 if (gap > 0)
                 {
-                    if (gap <= limit - y) y += gap;
+                    if (gap <= Room(area.Height, used, reserve, cut)) used += gap;
                     else break;
                 }
             }
 
-            var childArea = new LayoutBox(left, y, width, limit - y);
-            var childContext = new LayoutContext(childArea)
-            {
-                HonourLineCounts = true,
-                AtPageTop = context.AtPageTop && result.Placed.Count == 0,
-            };
-            var answer = renderer.Layout(childContext);
-
-            // A paragraph that asks to stay whole moves to the next piece when it fits there and
-            // is not the first in this one. The probe is the box the next piece offers it.
-            if (answer.Status == LayoutResult.Outcome.Partial && result.Placed.Count > 0
-                && renderer.Paragraph.KeepTogether && FitsWholeOnNextPiece(context, renderer, left, width, bottomInset))
-                answer = LayoutResult.Nothing();
+            var childArea = new LayoutBox(left, area.Y + used, width, Room(area.Height, used, reserve, cut));
+            var answer = renderer.Layout(new LayoutContext(childArea));
 
             if (answer.Status == LayoutResult.Outcome.Full)
             {
                 var box = answer.OccupiedArea!.Value;
                 result.Placed.Add(new Placed(renderer, box, renderer.Placement));
-                y = box.Bottom;
+                used = box.Bottom - area.Y;
                 continue;
             }
 
             if (answer.Status == LayoutResult.Outcome.Partial)
             {
                 var box = answer.OccupiedArea!.Value;
-                var piece = (ParagraphRenderer)answer.SplitRenderer!;
-                result.Placed.Add(new Placed(piece, box, piece.Placement));
+                var split = (ParagraphRenderer)answer.SplitRenderer!;
+                result.Placed.Add(new Placed(split, box, split.Placement));
                 result.NextIndex = i;
                 result.NextCarried = (ParagraphRenderer)answer.OverflowRenderer!;
                 result.Bottom = box.Bottom;
@@ -256,43 +272,17 @@ internal sealed class NoteBlockRenderer : IRenderer, IPageBreakSource, IKeepSour
         if (i >= children.Length)
         {
             result.Complete = true;
-            result.Bottom = y;
+            result.Bottom = area.Y + used;
             return result;
         }
 
         if (result.Placed.Count == 0)
             return result;
 
-        // The piece ends before paragraph i. A paragraph that asks to stay with the next one does
-        // not end the piece alone: it goes on to the next page with the one it was kept with,
-        // unless
-        // it is all the piece holds.
-        while (result.Placed.Count > 1 && children[i - 1].Paragraph.KeepWithNext)
-        {
-            result.Placed.RemoveAt(result.Placed.Count - 1);
-            i--;
-        }
-
         result.NextIndex = i;
         result.NextCarried = i == _startIndex ? _carried : null;
-        var last = result.Placed[^1].Box;
-        result.Bottom = last.Bottom;
+        result.Bottom = result.Placed[^1].Box.Bottom;
         return result;
-    }
-
-    // Whether the paragraph fits whole in the room the next piece gives paragraphs, which has no
-    // top border or padding and keeps the bottom ones for the piece that ends the block.
-    private bool FitsWholeOnNextPiece(
-        LayoutContext context, ParagraphRenderer renderer, double left, double width, double bottomInset)
-    {
-        var next = context.FreshPageArea ?? context.Area;
-        var room = next.Height - bottomInset;
-        var probe = new LayoutContext(new LayoutBox(left, next.Y, width, room))
-        {
-            HonourLineCounts = true,
-            AtPageTop = true,
-        };
-        return renderer.Layout(probe).Status == LayoutResult.Outcome.Full;
     }
 
     public void Draw(DrawContext ctx)
@@ -308,11 +298,10 @@ internal sealed class NoteBlockRenderer : IRenderer, IPageBreakSource, IKeepSour
         {
             if (_isFirst || _shared.Structure is null)
             {
-                // A document with no conformance claim is written as PDF 2.0, which defines Aside
-                // (ISO 32000-2, 14.8.4.4); every claim is written as PDF 1.7, which has Div.
-                _shared.Structure = ctx.Conformance == VellumPdf.Document.PdfConformance.None
-                    ? new PdfStructElem("Aside") { Pdf20Type = true }
-                    : new PdfStructElem("Div");
+                // Div in every file: it is standard in the default namespace of PDF 1.7 and 2.0. Aside
+                // is a PDF 2.0 type that needs its own structure namespace, which the Kernel does
+                // not write yet.
+                _shared.Structure = new PdfStructElem("Div");
                 created = true;
             }
 

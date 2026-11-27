@@ -1117,8 +1117,10 @@ public sealed class Document : IDisposable
     /// border and padding leave, before any layout, so the document stays saveable once you have
     /// changed what the message names; see <see cref="NoteBlock"/>. A block is listed in
     /// <see cref="Diagnostics"/> as <see cref="LayoutElementKind.NoteBlock"/>, and so is what its
-    /// paragraphs report: the kind is the block's, not the paragraph's. The block, not the
-    /// paragraphs, is the element a <see cref="Paragraph.KeepWithNext"/> run is reported against.
+    /// paragraphs report: the kind is the block's, not the paragraph's. The block, not a
+    /// paragraph, is the element a <see cref="Paragraph.KeepWithNext"/> run is reported against.
+    /// <para>The paragraphs hold no keep request and no line count, so the block is the one
+    /// element the keep rules of the document see; see <see cref="NoteBlock"/>.</para>
     /// </remarks>
     /// <exception cref="ArgumentNullException">
     /// <paramref name="block"/> is <see langword="null"/>.
@@ -1127,16 +1129,26 @@ public sealed class Document : IDisposable
     /// Raised from <see cref="Save(System.IO.Stream)"/> and the other save overloads, not from this
     /// call, before any layout, when the block holds no paragraph, when a paragraph has a tab stop
     /// beyond the width left for it, or when the anchor of the block or of a paragraph in it is
-    /// held by another element too. Raised after the layout has started when the border and
-    /// padding leave no width or no room for one line on an empty page, when a style a paragraph
-    /// uses has a size that is refused (see <see cref="TextStyle.FontSize"/>), or when the block
-    /// needs more than 50,000 page continuations; see <see cref="Add(IRenderer)"/>.
+    /// held by another element too. Raised after the layout has started when the block is too tall
+    /// to fit, as <see cref="NoteBlock"/> says, when a style a paragraph uses has a size or leading
+    /// that is refused or a text colour with a channel that is not finite (see
+    /// <see cref="TextStyle.FontSize"/>, <see cref="TextStyle.Leading"/> and
+    /// <see cref="TextStyle.Color"/>), when the block needs more than 50,000 page continuations
+    /// (see <see cref="Add(IRenderer)"/>), and, when <see cref="StrictDiagnostics"/> is set, when
+    /// text is written as glyph 0 or the document has a conformance claim and a paragraph writes
+    /// Helvetica or another Standard 14 font; the save reports them as
+    /// <see cref="LayoutDiagnosticCode.NotdefGlyph"/> and
+    /// <see cref="LayoutDiagnosticCode.UnembeddedFont"/>.
     /// </exception>
     /// <exception cref="ArgumentException">
     /// Raised from the save, not from this call, when a paragraph's text holds an unpaired
-    /// surrogate and is measured in an embedded font, or when the colour of the background or the
-    /// border has a channel that is not finite; see <see cref="TextStyle.FontRef"/> and
-    /// <see cref="NoteBlock"/>.
+    /// surrogate and is measured in an embedded font, or when linked text lands at a non-finite
+    /// position; see <see cref="TextStyle.FontRef"/> and <see cref="Paragraph.Margins"/>.
+    /// </exception>
+    /// <exception cref="IndexOutOfRangeException">
+    /// Raised from the save, not from this call, when a style a paragraph uses holds a
+    /// <see cref="VellumPdf.Fonts.Standard14"/> value the enumeration does not name and the font is
+    /// selected on a page; see <see cref="TextStyle.FontRef"/>.
     /// </exception>
     public Document Add(NoteBlock block)
     {
