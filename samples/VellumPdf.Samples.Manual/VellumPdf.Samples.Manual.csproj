@@ -1,0 +1,23 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <RootNamespace>VellumPdf.Samples.Manual</RootNamespace>
+    <AssemblyName>VellumPdf.Samples.Manual</AssemblyName>
+    <!-- A sample, never a package. -->
+    <IsPackable>false</IsPackable>
+    <GenerateDocumentationFile>false</GenerateDocumentationFile>
+    <!-- Signed with the repository key so the strong-named Layout test assembly can reference it
+         without the CS8002 warning. The key is an identity, as for the packages. -->
+    <SignAssembly>true</SignAssembly>
+    <AssemblyOriginatorKeyFile>$(MSBuildThisFileDirectory)../../eng/VellumPdf.snk</AssemblyOriginatorKeyFile>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- The sample talks to the Layout API. The Standard14 package supplies the embedded
+         Liberation fonts that a PDF/A document needs. -->
+    <ProjectReference Include="..\..\src\VellumPdf.Layout\VellumPdf.Layout.csproj" />
+    <ProjectReference Include="..\..\src\VellumPdf.Fonts.Standard14\VellumPdf.Fonts.Standard14.csproj" />
+  </ItemGroup>
+
+</Project>
