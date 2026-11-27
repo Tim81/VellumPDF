@@ -642,7 +642,8 @@ public sealed class Paragraph
     /// page than this one ends on, which is a break between them, so the run moves or the request
     /// is relaxed, as for any other. <see cref="KeepTogether"/> measures the element alone, so its
     /// own gap plays no part in whether it moves whole to the next page. The gap of the element
-    /// before it is spent first, and the element starts below it.</para>
+    /// before it is spent first when it fits, and the element is then measured from below it like
+    /// any other, so that gap can be what moves it whole to the next page.</para>
     /// <para>The gap is read from an element added to the document with its <c>Add</c> overload,
     /// and from the renderer of one of this library's elements added with
     /// <see cref="Document.Add(IRenderer)"/> or
