@@ -74,9 +74,10 @@ internal sealed class HeadingRenderer : IRenderer, IPlacementSource, IPageBreakS
     public LayoutResult Layout(LayoutContext context)
     {
         // The paragraph is this heading's child: it lays out in the heading's mode, and the
-        // heading reports for it, so a paragraph's own report is never read. Under a context that
-        // does not address the heading, the paragraph is not addressed either and wraps as 2.3.3
-        // did. Removed in 3.0 (#688).
+        // heading reports for it, so a paragraph's own report is never read. The twin the document
+        // chose or is probing hands its paragraph a context that says the wrap is 2.3.3's; under any
+        // other context the paragraph wraps as the document wraps what it lays out. Removed in 3.0
+        // (#688).
         var mode = context.ModeFor(this);
         if (mode == ContinuationMode.Undecided && context.Session is { Probing: false, IsView: false } session
             && ReferenceEquals(session.Called, this))
@@ -86,7 +87,7 @@ internal sealed class HeadingRenderer : IRenderer, IPlacementSource, IPageBreakS
         }
 
         var innerContext = mode == ContinuationMode.Twin
-            ? context
+            ? context.WithWrapAsBefore(context.Session is { } twinSession && ReferenceEquals(twinSession.Called, this))
             : context.Address(this, _inner, context.Area, context.AtPageTop, context.HonourLineCounts);
         var result = _inner.Layout(innerContext);
         if (result.OccupiedArea.HasValue)

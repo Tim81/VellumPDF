@@ -1,6 +1,7 @@
 // Copyright © Timothy van der Ham (@Tim81)
 // SPDX-License-Identifier: Apache-2.0
 
+using VellumPdf.Document;
 using VellumPdf.Fonts;
 using VellumPdf.Layout.Core;
 using VellumPdf.Layout.Elements;
@@ -148,79 +149,70 @@ public sealed class LongWordLimitTests
     }
 
     // The rows of the review: the current wrap and 2.3.3's give a different number of lines at a
-    // run boundary that holds U+00A0, at an empty run and at a run of U+00A0 alone. Each text is
-    // repeated until the lines of one wrap are within the limit and the lines of the other are
-    // past it, and the verdict has to be the one 2.3.3's wrap gives: saved when its lines fit and
-    // refused when they do not.
-    private static readonly Dictionary<string, string[]> Boundaries = new()
-    {
-        ["nbsp-end, 2.3.3 saves"] = ["fff gggg", "hhhhhhh ii\u00A0", "fff gggg\n"],
-        ["nbsp-end, 2.3.3 refuses"] = ["dd\u00A0", "ccccccc", "hhhhhhh ii", "e\n"],
-        ["nbsp-start, 2.3.3 saves"] = ["e", "\u00A0dd", "aaaa", "e", "fff gggg\n"],
-        ["nbsp-start, 2.3.3 refuses"] = ["ccccc dd", "mmmmm nnnnn", "jj kk ll", "ccccccc", "\u00A0ccccccc "],
-        ["nbsp-only, 2.3.3 saves"] = ["jj kk ll", "fff gggg", "aaaa", "\u00A0", "jj kk ll", "hhhhhhh ii\n"],
-        ["nbsp-only, 2.3.3 refuses"] = ["ccccc dd", "ccccccc", "aaaa", "\u00A0", "ccccc dd", "dd", "dd\n"],
-        ["empty run, 2.3.3 saves"] = ["e", "aa bbbb", "bbbbbb", "", "e", "e\n"],
-        ["empty run, 2.3.3 refuses"] = ["e", "mmmmm nnnnn", "", "jj kk ll", "mmmmm nnnnn", "jj kk ll\n"],
-        ["no boundary special, 2.3.3 refuses"] = ["iiiiiiiiiii", "aaa "],
-    };
+    // run boundary that holds U+00A0, at an empty run and at a run of U+00A0 alone. The pages are
+    // those of a v2.3.3 build and of main (31f1261 and 56df51b agree on them), made with the same
+    // runs repeated and one 12 pt line to a page of 80 x 37 pt with 10 pt margins. The verdict at
+    // the harness limit of 300 has to be 2.3.3's: saved when its pages fit, refused when they do
+    // not, whether the runs share one style instance or each has its own.
+    private sealed record Boundary(string Name, int Repeats, int Pages233, int PagesMain, string[] Runs);
 
-    public static TheoryData<string, Kind> BoundaryRows()
+    private static readonly Boundary[] Boundaries =
+    [
+        new("nbsp-end, 2.3.3 saves", 68, 272, 340, ["fff gggg", "hhhhhhh ii\u00A0", "fff gggg\n"]),
+        new("nbsp-end, 2.3.3 refuses", 85, 340, 255, ["dd\u00A0", "ccccccc", "hhhhhhh ii", "e\n"]),
+        new("nbsp-start, 2.3.3 saves", 114, 228, 342, ["e", "\u00A0dd", "aaaa", "e", "fff gggg\n"]),
+        new("nbsp-start, 2.3.3 refuses", 57, 342, 285, ["ccccc dd", "mmmmm nnnnn", "jj kk ll", "ccccccc", "\u00A0ccccccc "]),
+        new("nbsp-only, 2.3.3 saves", 49, 245, 343, ["jj kk ll", "fff gggg", "aaaa", "\u00A0", "jj kk ll", "hhhhhhh ii\n"]),
+        new("nbsp-only, 2.3.3 refuses", 68, 340, 272, ["ccccc dd", "ccccccc", "aaaa", "\u00A0", "ccccc dd", "dd", "dd\n"]),
+        new("empty run, 2.3.3 saves", 85, 170, 340, ["e", "aa bbbb", "bbbbbb", "", "e", "e\n"]),
+        new("empty run, 2.3.3 refuses", 57, 342, 285, ["e", "mmmmm nnnnn", "", "jj kk ll", "mmmmm nnnnn", "jj kk ll\n"]),
+        new("no boundary special, 2.3.3 refuses", 114, 342, 228, ["iiiiiiiiiii", "aaa "])
+    ];
+
+    private static readonly Setup OneLinePerPage = new() { PageWidth = 80, PageHeight = 37 };
+
+    public static TheoryData<string, Kind, bool> BoundaryRows()
     {
-        var rows = new TheoryData<string, Kind>();
-        foreach (var name in new[] { "nbsp-end", "nbsp-start", "nbsp-only", "empty run" })
+        var rows = new TheoryData<string, Kind, bool>();
+        foreach (var boundary in Boundaries)
         {
             foreach (var kind in new[] { Kind.Paragraph, Kind.Heading, Kind.ListItem })
             {
-                rows.Add(name + ", 2.3.3 saves", kind);
-                rows.Add(name + ", 2.3.3 refuses", kind);
+                rows.Add(boundary.Name, kind, true);
+                rows.Add(boundary.Name, kind, false);
             }
         }
 
-        foreach (var kind in new[] { Kind.Paragraph, Kind.Heading, Kind.ListItem })
-            rows.Add("no boundary special, 2.3.3 refuses", kind);
         return rows;
     }
 
     [Theory]
     [MemberData(nameof(BoundaryRows))]
-    public void ARunBoundaryThe2_3_3WrapReadsAlone_getsThe2_3_3Verdict(string name, Kind kind)
+    public void ARunBoundaryThe2_3_3WrapReadsAlone_getsThe2_3_3Verdict(string name, Kind kind, bool oneInstance)
     {
-        var style = Courier();
+        var boundary = Boundaries.Single(b => b.Name == name);
+        var shared = Courier();
+        List<TextRun> Repeated() =>
+            [.. Enumerable.Range(0, boundary.Repeats).SelectMany(_ => boundary.Runs.Select(s => new TextRun(s, oneInstance ? shared : Courier())))];
 
-        // The text is repeated until the longer of the two wraps is past the limit's 300 pages of
-        // 6 lines.
-        List<TextRun> Repeated(int count) =>
-            [.. Enumerable.Range(0, count).SelectMany(_ => Boundaries[name].Select(s => new TextRun(s, style)))];
+        // The port of 2.3.3's wrap makes the pages of a v2.3.3 build, and the current wrap those of main.
+        Assert.Equal(boundary.Pages233, ParagraphRenderer.WordWrapAsBefore(Repeated(), 60).Lines.Count);
+        Assert.Equal(boundary.PagesMain, ParagraphRenderer.WordWrap(Repeated(), 60, out _).Lines.Count);
 
-        var repeats = 100;
-        int current, before;
-        do
-        {
-            repeats += 10;
-            var probe = Repeated(repeats);
-            current = ParagraphRenderer.WordWrap(probe, 60, out _).Lines.Count;
-            before = ParagraphRenderer.WordWrapAsBefore(probe, 60).Lines.Count;
-        }
-        while (Math.Max(current, before) <= 1900);
-        var all = Repeated(repeats);
-
-        // The fixture is one the two wraps part on, across the limit.
-        Assert.True(Math.Min(current, before) < 1700, $"{name}: {current} and {before} lines");
-        var saves = before < 1700;
+        var saves = boundary.Pages233 < 300;
         Assert.Equal(name.EndsWith("saves", StringComparison.Ordinal), saves);
 
-        var o = Run(Narrow, new Log(), Element(kind, "", all, indent: 0));
+        var o = Run(OneLinePerPage, new Log(), Element(kind, "", Repeated(), indent: 0));
 
         Assert.Equal(saves, o.Error is null);
         if (!saves) Assert.True(IsLimitRefusal(o.Error));
     }
 
-    // A table that a renderer of the caller's forwards to lays out and draws at the glyph, so the
-    // lines it draws are the lines it laid out; drawing them again with the cut after a place
-    // would draw a third line the row has no height for.
+    // Outside the limit's decision the current wrap and the cut after a place apply, as on main: a
+    // table that a renderer of the caller's forwards to cuts after a place and draws the lines it
+    // laid out.
     [Fact]
-    public void AForwardedTable_drawsWhatItLaidOut()
+    public void AForwardedTable_cutsAfterThePlace_andDrawsWhatItLaidOut()
     {
         var table = new TableElement { DefaultCellStyle = Courier() }.SetColumnWidths(72);
         table.AddRow().AddCell("aaaa/bbbbbbbbbbbb");
@@ -228,25 +220,31 @@ public sealed class LongWordLimitTests
         var o = Run(new Setup { PageWidth = 92 }, new Log(), new Forward(new TableRenderer(table)));
 
         Assert.Null(o.Error);
-        var shown = ContentStreamReadback.TextPlacements(PdfTestUtil.DecompressAllFlatStreams(o.Bytes!))
-            .Select(p => p.Text).Where(s => s.Length > 0).ToArray();
-        Assert.Equal(["aaaa/bbbbb", "bbbbbbb"], shown);
+        Assert.Equal(["aaaa/", "bbbbbbbbbb", "bb"], Shown(o));
     }
 
-    // A paragraph with tab stops has no 2.3.3 wrap, so a renderer that forwards to it still cuts
-    // after a place.
-    [Fact]
-    public void AForwardedParagraphWithTabStops_keepsTheCutAfterAPlace()
+    // The same for a paragraph a renderer of the caller's forwards to, with or without tab stops,
+    // and for U+202F, which main joins to the word before it.
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void AForwardedParagraph_keepsTheCurrentWrap(bool tabStops)
     {
-        var paragraph = new Paragraph("aaaa/bbbbbbbbbbbb", Courier()) { TabStops = [new TabStop(30)] };
+        var paragraph = new Paragraph("aaaa/bbbbbbbbbbbb", Courier());
+        if (tabStops) paragraph = new Paragraph("aaaa/bbbbbbbbbbbb", Courier()) { TabStops = [new TabStop(30)] };
 
         var o = Run(Narrow, new Log(), new Forward(new ParagraphRenderer(paragraph)));
 
         Assert.Null(o.Error);
-        var shown = ContentStreamReadback.TextPlacements(PdfTestUtil.DecompressAllFlatStreams(o.Bytes!))
-            .Select(p => p.Text).Where(s => s.Length > 0).ToArray();
-        Assert.Equal(["aaaa/", "bbbbbbbbbb", "bb"], shown);
+        Assert.Equal(["aaaa/", "bbbbbbbbbb", "bb"], Shown(o));
+
+        var joined = Run(Narrow, new Log(), new Forward(new ParagraphRenderer(new Paragraph("cccc\u202Fdd eeee", Courier()))));
+        Assert.Equal(["cccc\u00A0dd", "eeee"], Shown(joined));
     }
+
+    private static string[] Shown(Outcome o) =>
+        [.. ContentStreamReadback.TextPlacements(PdfTestUtil.DecompressAllFlatStreams(o.Bytes!))
+            .Select(p => p.Text).Where(s => s.Length > 0)];
 
     private sealed class Forward(IRenderer inner) : IRenderer
     {
@@ -256,24 +254,22 @@ public sealed class LongWordLimitTests
     }
 
     // A paragraph laid out under a context the document did not address, as a caller's wrapper
-    // lays it out, wraps as 2.3.3 did: the word is cut at the glyph, in two lines and not three.
+    // lays it out, wraps as the document wraps it: the word is cut after the place, in three lines.
     [Fact]
-    public void ARendererACallerHolds_wrapsAs2_3_3Did()
+    public void ARendererACallerHolds_wrapsAsTheDocumentDoes()
     {
         var renderer = new ParagraphRenderer(new Paragraph("aaaa/bbbbbbbbbbbb", Courier()));
 
         var result = renderer.Layout(new LayoutContext(new LayoutBox(0, 0, 60, 1000)));
 
-        Assert.Equal(2 * 12, result.OccupiedArea!.Value.Height);
+        Assert.Equal(3 * 12, result.OccupiedArea!.Value.Height);
     }
 
-    // A start line a caller made indexes the lines of 2.3.3's wrap, which has two here where the
-    // current wrap has three, so a start of 2 is past the last line: the document refuses the
-    // element as too tall, as it did, instead of saving the line the current wrap has there.
+    // A start line a caller made indexes the lines of the current wrap, which has three here.
     [Theory]
-    [InlineData(1, true)]
-    [InlineData(2, false)]
-    public void AStartLineACallerMade_readsTheLinesOf2_3_3(int start, bool saves)
+    [InlineData(2, true)]
+    [InlineData(3, false)]
+    public void AStartLineACallerMade_readsTheLinesOfTheCurrentWrap(int start, bool saves)
     {
         var renderer = new ParagraphRenderer(new Paragraph("aaaaaaa/bbbbbbbbbbbb", Courier()), start);
 
@@ -281,5 +277,72 @@ public sealed class LongWordLimitTests
 
         Assert.Equal(saves, o.Error is null);
         if (!saves) Assert.IsType<InvalidOperationException>(o.Error);
+    }
+
+    // A list laid out as its twin for a reason other than the limit lays its entries out as it
+    // always did: one that holds an entry no page holds is placed as it was before the fixes of
+    // #682 (and the drawability ruling), a document that holds a renderer of the caller's lays
+    // every list out as its twin. U+202F joins the word before it and a word is cut after a place.
+    [Fact]
+    public void AListLaidOutAsItsTwinForAnotherReason_keepsTheCurrentWrap()
+    {
+        string[] Lines(Action<Document, ListElement> arrange)
+        {
+            using var doc = new Document { PageSize = new PdfRectangle(0, 0, 100, 400), Margins = new EdgeInsets(10) };
+            var list = new ListElement { DefaultStyle = Courier(), Indent = 20 };
+            list.Add("aaaa/bbbbbbbbbbbb");
+            list.Add("cccc\u202Fdd eeee");
+            arrange(doc, list);
+            return [.. ContentStreamReadback.TextPlacements(PdfTestUtil.DecompressAllFlatStreams(LinkSupport.Save(doc)))
+                .Select(p => p.Text).Where(s => s.Length > 0 && s != "\u2022" && !s.StartsWith("\u2022", StringComparison.Ordinal))];
+        }
+
+        var plain = Lines((doc, list) => doc.Add(list));
+        var withCallerRenderer = Lines((doc, list) => { doc.Add(new Forward(new LayoutImageSpacer())); doc.Add(list); });
+
+        Assert.Contains("aaaa/", plain);
+        Assert.Contains("cccc\u00A0dd", plain);
+        Assert.Equal(plain, withCallerRenderer);
+    }
+
+    private sealed class LayoutImageSpacer : IRenderer
+    {
+        public LayoutResult Layout(LayoutContext context) => LayoutResult.Full(context.Area.WithHeight(5));
+
+        public void Draw(DrawContext context) { }
+    }
+
+    // A paragraph whose text is long enough to be probed, with a run that has no style: 2.3.3 had
+    // no such run to wrap, so the twin wrap does not apply and the document refuses it as it does
+    // any other, with ArgumentNullException for the style, not a null reference from the twin.
+    [Fact]
+    public void ALongParagraphWithANullStyle_isRefusedForItsStyle()
+    {
+        var runs = new List<TextRun> { new(new string('x', 2000), Courier()), new("y", null!) };
+
+        var o = Run(Narrow, new Log(), new ParagraphRenderer(new Paragraph(runs)));
+
+        var ex = Assert.IsType<ArgumentNullException>(o.Error);
+        Assert.Equal("Style", ex.ParamName);
+    }
+
+    // A paragraph longer than the continuations left is probed, whatever its page count. The bound
+    // is the length of the text, which every line of either wrap meets, so a text just over what
+    // the limit leaves is probed, and a bound smaller than that, an eighth of it say, would let the
+    // current wrap decide where 2.3.3's refuses it.
+    [Fact]
+    public void ATextJustOverWhatTheLimitLeaves_isProbed()
+    {
+        var runs = new List<TextRun>();
+        for (var i = 0; i < 120; i++)
+        {
+            runs.Add(new TextRun("iiiiiiiiiii", Courier()));
+            runs.Add(new TextRun("aaa ", Courier()));
+        }
+
+        var o = Run(OneLinePerPage, new Log(), new ParagraphRenderer(new Paragraph(runs)));
+
+        Assert.True(IsLimitRefusal(o.Error));
+        Assert.True(o.Probes >= 1);
     }
 }

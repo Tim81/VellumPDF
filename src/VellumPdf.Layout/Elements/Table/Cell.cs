@@ -29,8 +29,9 @@ public sealed class Cell
     /// Spaces are the only break points between words, and a word wider than the cell is broken
     /// after the last <c>/</c>, <c>\</c> or <c>-</c> that leaves the line no wider than the cell
     /// text area, and between characters when it has none, as a <see cref="Elements.Paragraph"/>
-    /// breaks one. No hyphen or other glyph is added at the break. A table that a renderer of
-    /// yours forwards to breaks it between characters; see <see cref="IRenderer.Layout"/>.
+    /// breaks one. No hyphen or other glyph is added at the break. Where the limit of page
+    /// continuations decides the layout, the word is broken between characters; see
+    /// <see cref="IRenderer.Layout"/>.
     /// <para><b>A carriage return and line feed pair, a lone carriage return and a lone line feed
     /// each end a line.</b> An empty line between two of them is a blank line one leading tall, and
     /// so is the one after a trailing break: the text <c>a</c> followed by a line feed is two lines

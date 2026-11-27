@@ -27,8 +27,11 @@ public sealed partial class ParagraphRenderer : IContinuationTwin
     // Whether the wrap in _lines cut a word at a place, which the 2.3.3 wrap never did.
     private bool _cutAtAPlace;
 
-    // 0 until read, then 1 when the current tokeniser reads the text as 2.3.3 did not and 2 when it
-    // reads it alike, from the tokeniser's own join decision.
+    // Whether the tokeniser joined a word across a run boundary when it made the wrap in _lines.
+    private bool _joinedAcrossRuns;
+
+    // 0 until read, then 1 when the current normalisation of white space reads the text as 2.3.3
+    // did not (U+202F and U+2007) and 2 when it reads it alike.
     private byte _readsApart;
 
     private ParagraphRenderer? _twin;
@@ -63,13 +66,17 @@ public sealed partial class ParagraphRenderer : IContinuationTwin
     }
 
     // Whether the layout is the twin's. An instance that has wrapped keeps its wrap. One that has
-    // not takes the twin's under a context the document did not address to it and under the twin
-    // the document chose, and when a caller built it with a start line, which indexes the lines of
-    // the wrap 2.3.3 made.
+    // not takes the twin's only where the layout is chosen because of the continuation limit: the
+    // twin the document chose or is probing, which it has addressed in the mode Twin, and a child
+    // of a list laid out for the limit, whose context says so. Under any other context the current
+    // wrap applies, as on main.
     private bool WantsTwinWrap(LayoutContext context) =>
         _lines is not null
             ? _activeIsTwin
-            : TwinWrapApplies() && (context.ModeFor(this) == ContinuationMode.Twin || _startLine != 0);
+            : TwinWrapApplies()
+                && (context.WrapAsBefore
+                    || context.Session is { Mode: ContinuationMode.Twin } session
+                        && ReferenceEquals(session.Called, this));
 
     [System.Diagnostics.CodeAnalysis.MemberNotNull(nameof(_lines), nameof(_lineEnds))]
     private void Activate(double width, bool twin)
@@ -98,13 +105,13 @@ public sealed partial class ParagraphRenderer : IContinuationTwin
     internal long? TwinBound() => TwinWrapApplies() ? 2L + TextLength() : null;
 
     // Whether the two wraps can give this paragraph a different number of lines: its own wrap cut a
-    // word at a place, a word continues over a run boundary (a WordContinue token of the current
-    // tokeniser), or the current tokeniser reads a white-space character as part of a word where
-    // 2.3.3's read it as a space (U+202F, U+2007). It reads what the tokeniser decides and keeps no
-    // list of characters of its own.
+    // word at a place, its tokeniser joined a word across a run boundary (the wrap's own decision,
+    // made whether the runs share a style instance or not), or its normalisation of white space
+    // read a character as part of a word where 2.3.3's read it as a space (U+202F, U+2007). It reads
+    // what the wrap decided and keeps no list of characters of its own. Call after the wrap.
     private bool WrapsCanDiffer()
     {
-        if (_cutAtAPlace) return true;
+        if (_cutAtAPlace || _joinedAcrossRuns) return true;
         if (_readsApart != 0) return _readsApart == 1;
 
         var apart = false;
@@ -114,18 +121,6 @@ public sealed partial class ParagraphRenderer : IContinuationTwin
             {
                 apart = true;
                 break;
-            }
-        }
-
-        if (!apart)
-        {
-            foreach (var token in Tokenise(_para.Runs, tabbed: false, out _))
-            {
-                if (token.Kind == TokenKind.WordContinue)
-                {
-                    apart = true;
-                    break;
-                }
             }
         }
 

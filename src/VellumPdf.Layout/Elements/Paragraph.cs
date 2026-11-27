@@ -29,10 +29,9 @@ namespace VellumPdf.Layout.Elements;
 /// so it does not separate its neighbours. A run ending in a carriage return and the next starting
 /// with a line feed are two line breaks, because each run's line breaks are read on their own.
 /// </para>
-/// <para>The rules about the cut of a long word, the run boundary and the no-break spaces here
-/// describe the wrap the document gives a paragraph it lays out itself. A paragraph that a renderer
-/// of yours lays out, one built with a start line, and the other places that
-/// <see cref="IRenderer.Layout"/> lists wrap as 2.3.3 did, which that member describes.</para>
+/// <para>The rules about the cut of a long word, the run boundary and the no-break spaces here are
+/// the wrap of a paragraph the document lays out. Where the limit of page continuations decides the
+/// layout, the paragraph wraps as 2.3.3 did; <see cref="IRenderer.Layout"/> says where.</para>
 /// <para><b>A word wider than its line is cut after the last <c>/</c>, <c>\</c> or <c>-</c> that
 /// leaves the line no wider than its width,</b> so a web address or a path ends a line at one of
 /// its segments. A word with no such place that fits is cut at the character that does not fit. No

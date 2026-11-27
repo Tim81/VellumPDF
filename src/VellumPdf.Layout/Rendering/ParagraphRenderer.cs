@@ -71,9 +71,7 @@ public sealed partial class ParagraphRenderer : IRenderer, IPageBreakSource, IKe
     /// than the text holds, and makes <see cref="Draw"/> throw. A start past the last line lays out
     /// as <see cref="LayoutResult.Outcome.Nothing"/>, so a document saving it throws
     /// <see cref="InvalidOperationException"/> saying the element is too tall to fit. A renderer
-    /// built directly ignores the paragraph's <see cref="Paragraph.Language"/>. A renderer built
-    /// with a start other than 0 wraps its text as 2.3.3 did, because the start indexes the lines of
-    /// that wrap; <see cref="IRenderer.Layout"/> says what that wrap is.
+    /// built directly ignores the paragraph's <see cref="Paragraph.Language"/>.
     /// <para>Do not pass a start outside the paragraph's lines. 3.0 will throw
     /// from this call.</para>
     /// </remarks>
@@ -229,6 +227,7 @@ public sealed partial class ParagraphRenderer : IRenderer, IPageBreakSource, IKe
             _activeIsTwin = _activeIsTwin,
             _twinApplies = _twinApplies,
             _cutAtAPlace = _cutAtAPlace,
+            _joinedAcrossRuns = _joinedAcrossRuns,
             StructType = StructType,
             ParentStructElem = ParentStructElem,
             ElementLanguage = ElementLanguage,
@@ -247,6 +246,7 @@ public sealed partial class ParagraphRenderer : IRenderer, IPageBreakSource, IKe
             _activeIsTwin = _activeIsTwin,
             _twinApplies = _twinApplies,
             _cutAtAPlace = _cutAtAPlace,
+            _joinedAcrossRuns = _joinedAcrossRuns,
             MinLinesRelaxed = relaxed,
             StructType = StructType,
             ParentStructElem = ParentStructElem,
@@ -302,8 +302,9 @@ public sealed partial class ParagraphRenderer : IRenderer, IPageBreakSource, IKe
         _reads = null;
         var runs = PageReferences.Effective(_para.Runs, ref _reads);
         var cutsBefore = LongWordBreaks.PlaceCuts;
-        (_lines, _lineEnds) = WordWrap(runs, width, out var nullStyleRuns, stops);
+        (_lines, _lineEnds) = WordWrapJoined(runs, width, out var nullStyleRuns, stops, out var joined);
         _cutAtAPlace = LongWordBreaks.PlaceCuts != cutsBefore;
+        _joinedAcrossRuns = joined;
         _nullStyleRuns = nullStyleRuns;
         WrapCalls++;
     }
@@ -948,9 +949,10 @@ public sealed partial class ParagraphRenderer : IRenderer, IPageBreakSource, IKe
     // white space alone yields no word token, so the style of a word token is one that draws text.
     // A tab token, made only when there are tab stops, carries its run's style and draws no text.
     private static List<(string Text, TextStyle? Style, TokenKind Kind)> Tokenise(
-        IReadOnlyList<TextRun> runs, bool tabbed, out int nullStyleRuns)
+        IReadOnlyList<TextRun> runs, bool tabbed, out int nullStyleRuns, out bool joinedAcrossRuns)
     {
         nullStyleRuns = 0;
+        joinedAcrossRuns = false;
         // Flatten all runs into a sequence of word pieces and line breaks. Pieces of one word that
         // share a style instance are joined here, before anything is measured, so that two runs
         // sharing an instance measure and draw as the single run holding their text would. A piece
@@ -1005,6 +1007,9 @@ public sealed partial class ParagraphRenderer : IRenderer, IPageBreakSource, IKe
                         if (run.Style is null)
                             throw new ArgumentNullException("Style", "A paragraph run with text has a null style.");
 
+                        // A word still open here continues from an earlier run, whichever branch
+                        // takes the piece: 2.3.3 read each run's words on their own.
+                        if (openWord) joinedAcrossRuns = true;
                         if (openWord && ReferenceEquals(tokens[^1].Style, run.Style))
                             tokens[^1] = (tokens[^1].Text + segment, run.Style, tokens[^1].Kind);
                         else
@@ -1044,7 +1049,7 @@ public sealed partial class ParagraphRenderer : IRenderer, IPageBreakSource, IKe
             if (run.IsReference && run.Style is { } style && refused(style)) return true;
         }
 
-        foreach (var token in Tokenise(runs, tabbed: false, out _))
+        foreach (var token in Tokenise(runs, tabbed: false, out _, out _))
         {
             if (token.Kind is TokenKind.WordStart or TokenKind.WordContinue && refused(token.Style!)) return true;
         }
@@ -1077,13 +1082,20 @@ public sealed partial class ParagraphRenderer : IRenderer, IPageBreakSource, IKe
     /// </returns>
     internal static (List<LineFragment[]> Lines, List<LineEnd> Ends) WordWrap(
         IReadOnlyList<TextRun> runs, double maxWidth, out int nullStyleRuns,
-        IReadOnlyList<TabStop>? stops = null)
+        IReadOnlyList<TabStop>? stops = null) =>
+        WordWrapJoined(runs, maxWidth, out nullStyleRuns, stops, out _);
+
+    // The wrap, and whether the tokeniser joined a word across a run boundary, which 2.3.3 never
+    // did.
+    internal static (List<LineFragment[]> Lines, List<LineEnd> Ends) WordWrapJoined(
+        IReadOnlyList<TextRun> runs, double maxWidth, out int nullStyleRuns,
+        IReadOnlyList<TabStop>? stops, out bool joinedAcrossRuns)
     {
         var tabbed = stops is not null;
         var lines = new List<LineFragment[]>();
         var ends = new List<LineEnd>();
 
-        var tokens = Tokenise(runs, tabbed, out nullStyleRuns);
+        var tokens = Tokenise(runs, tabbed, out nullStyleRuns, out joinedAcrossRuns);
 
         if (tokens.Count == 0)
         {
@@ -1307,7 +1319,7 @@ public sealed partial class ParagraphRenderer : IRenderer, IPageBreakSource, IKe
                     piece = pieceAt;
                 }
 
-                fragment.Append(runes[i]);
+                fragment.Append(LongWordBreaks.RuneText(runes[i]));
                 fragmentW += widths[i];
             }
 

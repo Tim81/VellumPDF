@@ -462,12 +462,24 @@ public sealed class ListRenderer : IRenderer, IPageBreakSource, IKeepSource, IPl
     // a context addressed to it, and the twin hands it the one a narrowed area gives, which is what
     // the twin did before the document addressed anything.
     private LayoutContext ChildContext(LayoutContext context, ParagraphRenderer child, LayoutBox area) =>
-        _unclamped ? context.WithArea(area) : context.Address(this, child, area);
+        _unclamped ? context.WithArea(area).WithWrapAsBefore(_childrenWrapAsBefore) : context.Address(this, child, area);
+
+    // True while this twin lays out for the continuation limit: the twin the document chose or is
+    // probing, and a list laid out as its twin because an element after it comes near the limit.
+    // The entries then wrap as 2.3.3 did, so the verdict is the one 2.3.3 gave. A twin for any other
+    // reason, an entry in a font the document cannot draw, a renderer of the caller's, or an entry
+    // no page holds, lays its entries out as the list always did. Removed in 3.0 (#688).
+    private bool _childrenWrapAsBefore;
 
     private LayoutResult LayOut(LayoutContext context)
     {
         var area = context.Area.Deflate(_list.Margins);
         if (area.IsEmpty) return LayoutResult.Nothing();
+
+        _childrenWrapAsBefore = _unclamped
+            && (context.Session is { Mode: ContinuationMode.Twin } twinSession && ReferenceEquals(twinSession.Called, this)
+                || ((byte)_handoff & 8) != 0 && ((byte)_handoff & AllListsNearLimit) != 0
+                || ((byte)_placement & 8) != 0 && ((byte)_placement & AllListsNearLimit) != 0);
 
         // How the document placed this instance is read on every call, for the pieces the call
         // returns. A twin the document called itself was chosen by its limit decision; one a list
