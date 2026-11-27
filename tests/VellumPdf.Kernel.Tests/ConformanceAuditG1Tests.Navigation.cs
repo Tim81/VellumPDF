@@ -66,11 +66,26 @@ public sealed partial class ConformanceAuditG1Tests
         var pages = tree.Entries.ToDictionary(e => Encoding.ASCII.GetString(e.NameKey!), e => PageIndexOf(pdf, e.Value));
         var last = pdf.Reader.PageCount - 1;
         Assert.True(last >= 3, "the fixture is meant to span several pages");
-        Assert.Equal(0, pages["toc"]);
-        Assert.Equal(0, pages["toclist"]);
-        Assert.Equal(0, pages["tocitem"]);
-        Assert.Equal(1, pages["ch1"]);
-        Assert.Equal(last, pages["appendix"]);
+        // The pages the elements are drawn on: the contents list on the first page, the body on the
+        // second, and the appendix, after a page break, on the last.
+        Assert.Equal(3, last);
+        Assert.Equal(
+            new Dictionary<string, int>
+            {
+                ["toc"] = 0,
+                ["toclist"] = 0,
+                ["tocitem"] = 0,
+                ["ch1"] = 1,
+                ["para"] = 1,
+                ["closed"] = 1,
+                ["table"] = 1,
+                ["note"] = 1,
+                ["pre"] = 1,
+                ["image"] = 1,
+                ["longlink"] = 1,
+                ["appendix"] = 3,
+            }.OrderBy(p => p.Key),
+            pages.OrderBy(p => p.Key));
 
         // Each value is [page /XYZ 0 top null], with top inside the page's content area (40 to 460
         // for a 400 x 500 page with margins of 40).
@@ -83,6 +98,45 @@ public sealed partial class ConformanceAuditG1Tests
             Assert.InRange(Number(array[3]), 40, 460.01);
             Assert.IsType<PdfNull>(array[4]);
         }
+    }
+
+    // The word each text anchor's element starts with, and how far below the destination's top the
+    // box of that word begins: the font box of an 11 point line starts 2.64 points under the line's
+    // top, and a table cell adds its 4 points of padding.
+    private static readonly (string Anchor, string Word, double Gap)[] DrawnAt =
+    [
+        ("toc", "Contents", 2.64), ("toclist", "Chapter", 2.64), ("tocitem", "Chapter", 2.64), ("ch1", "Chapter", 2.64),
+        ("para", "anchor", 2.64), ("closed", "closed", 2.64), ("table", "cell", 6.64), ("note", "note", 2.64),
+        ("pre", "preformatted", 2.5), ("longlink", "long", 2.64), ("appendix", "Appendix", 2.64),
+    ];
+
+    [Theory]
+    [MemberData(nameof(Claims))]
+    public void Iso32000_1_12_3_2_3_EveryDestinationIsAtTheHeightWhereItsElementIsDrawn(PdfConformance claim)
+    {
+        var bytes = Navigation(claim);
+        using var pdf = new Pdf(bytes);
+        var dests = DestsTree(pdf).Entries.ToDictionary(
+            e => Encoding.ASCII.GetString(e.NameKey!), e => (Page: PageIndexOf(pdf, e.Value), Top: Number(pdf.Array(e.Value)[3])));
+
+        // Measured from what is drawn, not from the file's own destinations: the first word of the
+        // element, as poppler places it on the destination's page.
+        foreach (var (anchor, word, gap) in DrawnAt)
+        {
+            var (page, top) = dests[anchor];
+            var drawn = PopplerWords(bytes, page).Where(w => w.Text == word).Select(w => w.Top).DefaultIfEmpty(double.NaN).Max();
+            Assert.False(double.IsNaN(drawn), $"the word '{word}' of anchor '{anchor}' is not on page {page}");
+            Assert.True(Math.Abs(top - (drawn + gap)) < 1, $"anchor '{anchor}': destination top {top}, element drawn at {drawn} (gap {gap})");
+        }
+
+        // An image is placed by its cm: the matrix is w 0 0 h x y, and the top is y + h.
+        var (imagePage, imageTop) = dests["image"];
+        var cm = System.Text.RegularExpressions.Regex.Match(
+            pdf.Page(imagePage), @"(?<w>[\d.]+) 0 0 (?<h>[\d.]+) (?<x>[\d.]+) (?<y>[\d.]+) cm\s+/\S+ Do");
+        Assert.True(cm.Success);
+        var inv = System.Globalization.CultureInfo.InvariantCulture;
+        Assert.Equal(
+            double.Parse(cm.Groups["y"].Value, inv) + double.Parse(cm.Groups["h"].Value, inv), imageTop, 2);
     }
 
     [Theory]
@@ -187,7 +241,7 @@ public sealed partial class ConformanceAuditG1Tests
     }
 
     [Fact]
-    public void Iso32000_1_12_6_4_7_AUriIsAnAsciiStringWhateverTheCallerGave()
+    public void Iso32000_1_12_6_4_7_AUriIsWrittenAsSevenBitAsciiAndNonAsciiIsPercentEncoded()
     {
         var doc = NewLayoutDocument(PdfConformance.PdfA2b);
         var font = doc.UseTrueTypeFont(DejaVuBytes);
@@ -338,17 +392,52 @@ public sealed partial class ConformanceAuditG1Tests
         }
     }
 
+    [Theory]
+    [MemberData(nameof(Claims))]
+    public void Iso32000_1_12_3_3_EachBookmarkPointsWhereItsHeadingIsDrawn(PdfConformance claim)
+    {
+        using var pdf = new Pdf(Navigation(claim));
+        var items = Flatten(ReadOutline(pdf).Top).ToDictionary(i => i.Title);
+        var dests = DestsTree(pdf).Entries.ToDictionary(
+            e => Encoding.ASCII.GetString(e.NameKey!), e => (Page: PageIndexOf(pdf, e.Value), Top: Number(pdf.Array(e.Value)[3])));
+
+        (int Page, double Top) Of(string title) =>
+            (PageIndexOf(pdf, items[title].Dict.Get(N("Dest"))!), Number(pdf.Array(items[title].Dict.Get(N("Dest")))[3]));
+
+        // Five headings carry an anchor, so a named destination says where each one is drawn; the
+        // bookmark must agree with it in page and in height.
+        foreach (var (title, anchor) in new[]
+        {
+            ("Contents", "toc"), ("Chapter one", "ch1"), ("A section whose closed bookmark holds two children", "closed"),
+            ("The long link", "longlink"), ("Appendix", "appendix"),
+        })
+        {
+            Assert.Equal(dests[anchor].Page, Of(title).Page);
+            Assert.Equal(dests[anchor].Top, Of(title).Top, 2);
+        }
+
+        // The three headings without an anchor follow on the page of the closed section, one below the other.
+        string[] followers = ["Child of the closed section", "Another child", "Linking heading: see the table"];
+        var above = Of("A section whose closed bookmark holds two children");
+        foreach (var title in followers)
+        {
+            var here = Of(title);
+            Assert.Equal(above.Page, here.Page);
+            Assert.True(here.Top < above.Top - 10, $"'{title}' is below the heading before it");
+            above = here;
+        }
+    }
+
     [Fact]
     public void Iso32000_1_12_3_3_ASplitHeadingHasOneBookmarkAtItsFirstLine()
     {
         var doc = NewLayoutDocument(PdfConformance.PdfA2u);
         var font = doc.UseTrueTypeFont(DejaVuBytes);
         var style = new TextStyle { FontRef = font, FontSize = 11 };
-        // A paragraph of 28 lines first, so the heading starts near the foot of page 1 and goes on
-        // to page 2; it holds a closed bookmark and a child, which must keep the count of one.
-        doc.Add(new Paragraph(string.Join(' ', Enumerable.Repeat("filler", 190)), style));
-        var text = string.Join(' ', Enumerable.Repeat("a heading that is much too long for the space that is left on its page", 12));
-        doc.Add(new Heading([new TextRun(text, style)]) { Level = 0, BookmarkTitle = "Split heading", BookmarkExpanded = false });
+        // A paragraph of about 45 lines first, so the heading starts on page 2 and goes on to page 3; it holds a closed bookmark and a child, which must keep the count of one.
+        doc.Add(new Paragraph(string.Join(' ', Enumerable.Repeat("filler", 450)), style));
+        var text = string.Join(' ', Enumerable.Repeat("a heading that is much too long for the space that is left on its page", 24));
+        doc.Add(new Heading([new TextRun(text, style)]) { Level = 0, BookmarkTitle = "Split heading", BookmarkExpanded = false, Anchor = "split" });
         doc.Add(new Heading([new TextRun("Child", style)]) { Level = 1 });
         var bytes = Save(doc);
         using var pdf = new Pdf(bytes);
@@ -358,14 +447,19 @@ public sealed partial class ConformanceAuditG1Tests
         var split = Assert.Single(top, i => i.Title == "Split heading");
         Assert.Single(Flatten(top), i => i.Title == "Split heading");
         // The heading really did split: the pages it reaches hold the heading's text twice or more.
-        var text0 = PopplerText(bytes, 0);
         var text1 = PopplerText(bytes, 1);
-        Assert.Contains("a heading that is much", text0, StringComparison.Ordinal);
+        var text2 = PopplerText(bytes, 2);
         Assert.Contains("a heading that is much", text1, StringComparison.Ordinal);
+        Assert.Contains("a heading that is much", text2, StringComparison.Ordinal);
         // The bookmark goes to the first line, not to the page the heading ends on.
         var firstLinePage = Enumerable.Range(0, pdf.Reader.PageCount)
             .First(p => PopplerText(bytes, p).Contains("a heading that is much", StringComparison.Ordinal));
+        Assert.Equal(1, firstLinePage);
         Assert.Equal(firstLinePage, PageIndexOf(pdf, split.Dict.Get(N("Dest"))!));
+        // Where it points is where the named destination of the same heading points.
+        var named = Assert.Single(DestsTree(pdf).Entries).Value;
+        Assert.Equal(firstLinePage, PageIndexOf(pdf, named));
+        Assert.Equal(Number(pdf.Array(named)[3]), Number(pdf.Array(split.Dict.Get(N("Dest")))[3]), 2);
         // A closed item with one child: Count is -1.
         Assert.Equal(-1, split.Count);
     }

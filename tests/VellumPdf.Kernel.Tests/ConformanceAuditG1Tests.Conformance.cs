@@ -172,13 +172,18 @@ public sealed partial class ConformanceAuditG1Tests
             NameTreeWriter.Write([new KeyValuePair<byte[], PdfObject>(new byte[32_768], PdfNull.Instance)], registry));
     }
 
-    // Not yet true: a URI and a bookmark title of any length are written. Draft issue G1-01.
+    // Not yet true: a URI and a bookmark title of any length are written (#666).
     [Fact(Skip = "#666: a URI or a bookmark title over 32,767 bytes is written and breaks ISO 19005-2, 6.1.13 (veraPDF 6.1.13-3)")]
     public void Iso19005_2_6_1_13_AUriOrABookmarkTitleLongerThan32767BytesIsRefusedOrNotWritten()
     {
         var doc = NewLayoutDocument(PdfConformance.PdfA2b);
         var font = doc.UseTrueTypeFont(DejaVuBytes);
+        var style = new TextStyle { FontRef = font, FontSize = 11 };
+        // The URI, a BookmarkTitle of 16,400 two-byte characters (32,802 bytes as UTF-16BE), and a
+        // heading with no BookmarkTitle whose text is 4,500 words (17,999 characters, 36,000 bytes with the BOM).
         doc.Add(new Paragraph([new TextRun("x", new TextStyle { FontRef = font, FontSize = 11, LinkUri = "https://example.com/" + new string('a', 40000) })]));
+        doc.Add(new Heading([new TextRun("h", style)]) { BookmarkTitle = new string('\u00E9', 16_400) });
+        doc.Add(new Heading([new TextRun(string.Join(' ', Enumerable.Repeat("\u00E9t\u00E9", 4_500)), style)]));
 
         // Either the save refuses it, or the file it writes has no string over the limit.
         byte[] bytes;
@@ -287,6 +292,47 @@ public sealed partial class ConformanceAuditG1Tests
 
         Assert.Empty(VeraPdfFailures("ua1", bytes));
         QpdfChecks(bytes);
+    }
+
+    private static byte[] KernelLinkByNameUnderUa1()
+    {
+        using var doc = new PdfDocument { Timestamp = Pinned, Conformance = PdfConformance.PdfUA1, Language = "en-US" };
+        doc.Info.Title = "Kernel link";
+        var page = doc.AddPage(new PdfRectangle(0, 0, 200, 200));
+        doc.AddNamedDestination("t", page, 0, 150);
+        doc.RegisterLinkAnnotation(page, new VellumPdf.Annotations.PdfLinkAnnotation { Rect = new PdfRectangle(10, 10, 60, 30), DestName = "t" });
+        return Save(doc);
+    }
+
+    [Fact]
+    public void Iso14289_1_7_18_5_AKernelLinkByNameUnderUa1FailsTheRulesOfIssue745()
+    {
+        var bytes = KernelLinkByNameUnderUa1();
+
+        // The construct is in the file: a link by name, with no Contents and no StructParent, which the
+        // Kernel gives no way to set. Layout refuses the same link; the Kernel saves it.
+        using var pdf = new Pdf(bytes);
+        var link = Assert.Single(AnnotationsOf(pdf));
+        Assert.Equal("t", DestKey(link.Dict.Get(N("Dest"))!));
+        Assert.Null(link.Dict.Get(N("Contents")));
+        Assert.Null(link.Dict.Get(N("StructParent")));
+        Assert.Equal(["7.18.1-2", "7.18.5-1", "7.18.5-2"], VeraPdfFailures("ua1", bytes).Distinct().Order());
+    }
+
+    [Fact(Skip = "#745: a Kernel link saves under a PDF/UA-1 claim untagged and without Contents; ISO 14289-1, 7.18.1 and 7.18.5")]
+    public void Iso14289_1_7_18_5_AKernelLinkUnderUa1IsRefusedOrTaggedWithContents()
+    {
+        byte[] bytes;
+        try
+        {
+            bytes = KernelLinkByNameUnderUa1();
+        }
+        catch (InvalidOperationException)
+        {
+            return;
+        }
+
+        Assert.Empty(VeraPdfFailures("ua1", bytes));
     }
 
     [Fact]
