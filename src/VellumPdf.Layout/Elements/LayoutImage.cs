@@ -512,7 +512,7 @@ public sealed class LayoutImage
     /// <b>A stream with more than 268,435,456 bytes (256 MiB) left is refused</b> with
     /// <see cref="InvalidDataException"/>. A stream that reports its length is refused before a byte
     /// is read. Any other stream is read until one byte past the bound arrives, so an endless stream
-    /// costs the call a buffer of that size before it throws. Read the bytes yourself and pass them
+    /// costs the call memory of the order of the bound before it throws. Read the bytes yourself and pass them
     /// to <see cref="FromBytes(byte[])"/> for a larger image. A stream with nothing left to read is
     /// refused with <see cref="ArgumentException"/>, and so is one that cannot be read, such as a
     /// disposed one.
