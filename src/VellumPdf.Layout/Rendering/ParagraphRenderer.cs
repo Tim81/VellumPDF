@@ -20,7 +20,7 @@ namespace VellumPdf.Layout.Rendering;
 /// <see cref="Layout"/> during a save, so the exceptions on that method reach you from the save. A
 /// negative start line makes <see cref="Draw"/> throw.
 /// </remarks>
-public sealed partial class ParagraphRenderer : IRenderer, IPageBreakSource, IKeepSource, IPlacementSource
+public sealed partial class ParagraphRenderer : IRenderer, IPageBreakSource, IKeepSource, IPlacementSource, ISpaceAfterSource
 {
     private readonly Paragraph _para;
 
@@ -93,6 +93,10 @@ public sealed partial class ParagraphRenderer : IRenderer, IPageBreakSource, IKe
     // The mode belongs to the element, so a renderer added through Document.Add(IRenderer) honours
     // it as well.
     PageBreakMode IPageBreakSource.BreakBefore => _para.BreakBefore;
+
+    // Explicit, because a public renderer would otherwise gain a public member. The gap belongs to
+    // the element, so a renderer added through Document.Add(IRenderer) honours it as well.
+    double ISpaceAfterSource.SpaceAfter => _para.SpaceAfter;
 
     // Explicit, as above, and for the same reason: a renderer added through Document.Add(IRenderer)
     // keeps the element's request.

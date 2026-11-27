@@ -139,6 +139,7 @@ public sealed class Preformatted
     /// throws
     /// <see cref="ArgumentOutOfRangeException"/>. Margins that leave the content box no wider than
     /// zero, or shorter than one line, are refused by the save before any layout; see the type.
+    /// The bottom edge adds no space before the next element; <see cref="SpaceAfter"/> adds that.
     /// </remarks>
     /// <exception cref="ArgumentOutOfRangeException">
     /// Raised from this <c>init</c> accessor when an edge is <c>NaN</c>, infinite or negative.
@@ -415,4 +416,25 @@ public sealed class Preformatted
         : double.IsPositiveInfinity(value) ? "positive infinity"
         : double.IsNegativeInfinity(value) ? "negative infinity"
         : value.ToString("R", CultureInfo.InvariantCulture);
+
+    private double _spaceAfter;
+
+    /// <summary>
+    /// The gap, in points, between this block and the element the document places after it. The
+    /// default, 0, leaves none.
+    /// </summary>
+    /// <remarks>
+    /// <b>A value that is not finite or is below zero is refused.</b> This <c>init</c> accessor
+    /// throws <see cref="ArgumentOutOfRangeException"/>, so the exception is raised by the
+    /// statement that set the value. The rule, the keep requests, where the gap is read and its
+    /// removal in 3.0 are those of <see cref="Paragraph.SpaceAfter"/>.
+    /// </remarks>
+    /// <exception cref="ArgumentOutOfRangeException">
+    /// Raised from this <c>init</c> accessor when the value is <c>NaN</c>, infinite or below zero.
+    /// </exception>
+    public double SpaceAfter
+    {
+        get => _spaceAfter;
+        init => _spaceAfter = LayoutValidation.SpaceAfter(value);
+    }
 }

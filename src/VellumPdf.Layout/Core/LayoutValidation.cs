@@ -50,6 +50,19 @@ internal static class LayoutValidation
             : throw new ArgumentOutOfRangeException(paramName, count, "A line count must be at least 1.");
 
     /// <summary>
+    /// Returns <paramref name="value"/> when it is finite and not below zero (negative zero
+    /// passes). Called from the <c>SpaceAfter</c> accessors of the block elements, so the refusal
+    /// is raised at the call that wrote the value. There is no upper bound: a gap that does not
+    /// fit in what is left of a page is dropped before anything is written, so no value reaches
+    /// the content stream.
+    /// </summary>
+    internal static double SpaceAfter(double value) =>
+        double.IsFinite(value) && value >= 0
+            ? value
+            : throw new ArgumentOutOfRangeException(
+                nameof(value), value, "The space after an element must be finite and not negative.");
+
+    /// <summary>
     /// Rejects a paragraph with a tab stop beyond the content width, before any layout runs.
     ///
     /// A stop beyond the width could only be reached by text that overflows the line, so it is a

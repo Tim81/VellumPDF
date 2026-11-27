@@ -63,10 +63,12 @@ public sealed class LayoutResult
     /// <remarks>
     /// Null on <see cref="Outcome.Nothing"/>. The document reads only the box's
     /// <see cref="LayoutBox.Bottom"/>, and only after <see cref="Outcome.Full"/>: it becomes the
-    /// position of the next element. The Bottom is not checked. One above the current position
-    /// moves the next element up the page, and a non-finite one becomes the top of the next
-    /// element's area. Later elements can then write <c>NaN</c> or <c>Infinity</c> into the content
-    /// stream, be left out of the file without an exception, or make the save throw. After
+    /// position of the next element, which starts lower by the element's <c>SpaceAfter</c> when
+    /// the renderer is one of the library's and the gap fits on the page; see
+    /// <c>Paragraph.SpaceAfter</c>. The Bottom is not checked. One above the current
+    /// position moves the next element up the page, and a non-finite one becomes the top of the
+    /// next element's area. Later elements can then write <c>NaN</c> or <c>Infinity</c> into the
+    /// content stream, be left out of the file without an exception, or make the save throw. After
     /// <see cref="Outcome.Partial"/> the box is not read.
     /// </remarks>
     public LayoutBox? OccupiedArea { get; }

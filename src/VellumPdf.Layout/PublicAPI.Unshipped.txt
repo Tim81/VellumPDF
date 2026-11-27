@@ -169,3 +169,19 @@ VellumPdf.Layout.Core.TextStyle.LinkAnchor.get -> string?
 VellumPdf.Layout.Core.TextStyle.LinkAnchor.init -> void
 static VellumPdf.Layout.Elements.TextRun.PageReference(string! anchor, VellumPdf.Layout.Core.TextStyle! style) -> VellumPdf.Layout.Elements.TextRun!
 VellumPdf.Layout.LayoutDiagnosticCode.LinkNotWritten = 701 -> VellumPdf.Layout.LayoutDiagnosticCode
+VellumPdf.Layout.Elements.Paragraph.SpaceAfter.get -> double
+VellumPdf.Layout.Elements.Paragraph.SpaceAfter.init -> void
+VellumPdf.Layout.Elements.Heading.SpaceAfter.get -> double
+VellumPdf.Layout.Elements.Heading.SpaceAfter.init -> void
+VellumPdf.Layout.Elements.ListElement.SpaceAfter.get -> double
+VellumPdf.Layout.Elements.ListElement.SpaceAfter.init -> void
+VellumPdf.Layout.Elements.Preformatted.SpaceAfter.get -> double
+VellumPdf.Layout.Elements.Preformatted.SpaceAfter.init -> void
+VellumPdf.Layout.Elements.Table.TableElement.SpaceAfter.get -> double
+VellumPdf.Layout.Elements.Table.TableElement.SpaceAfter.init -> void
+VellumPdf.Layout.Elements.LayoutImage.SpaceAfter.get -> double
+VellumPdf.Layout.Elements.LayoutImage.SpaceAfter.init -> void
+VellumPdf.Layout.Elements.LineSeparator.SpaceAfter.get -> double
+VellumPdf.Layout.Elements.LineSeparator.SpaceAfter.init -> void
+VellumPdf.Layout.Elements.PieChart.SpaceAfter.get -> double
+VellumPdf.Layout.Elements.PieChart.SpaceAfter.init -> void

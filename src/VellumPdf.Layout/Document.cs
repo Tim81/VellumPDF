@@ -1194,6 +1194,9 @@ public sealed class Document : IDisposable
     /// named destination as if the element had been added directly. A custom renderer has no
     /// anchor, and cannot start a page-label range: put a <see cref="PageBreak"/> with a
     /// <see cref="PageBreak.PageLabel"/> before it.</para>
+    /// <para>A renderer you wrote yourself has no gap after it either, and an element it holds has
+    /// none; the library's public renderers read their element's <c>SpaceAfter</c>. See
+    /// <see cref="Paragraph.SpaceAfter"/>.</para>
     /// <para><b>A page reference this renderer holds is refused after the layout.</b> The walk that
     /// finds the references does not see inside a renderer of yours, so the label of one it holds
     /// is never resolved and the save throws <see cref="InvalidOperationException"/> naming the

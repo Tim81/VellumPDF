@@ -760,6 +760,11 @@ public sealed class DocumentRenderer
     private int _simFirstPage;
     private int _keepResolvedUntil;
 
+    // The gap the element placed last asked for, spent by the next placement. Zero when that
+    // element asked for none, and after any move to a new page, which drops it. Removed with
+    // SpaceAfter in 3.0, which reads the bottom margin (#704).
+    private double _pendingSpace;
+
     // Set when a run was dropped in the drawing pass; the report is made once its first element is
     // placed (ReportPendingKeepWithNext).
     private bool _keepRelaxedPending;
@@ -994,6 +999,7 @@ public sealed class DocumentRenderer
         _placedOnPage = false;
         _keepResolvedUntil = 0;
         _keepRelaxedPending = false;
+        _pendingSpace = 0;
         _pendingBreak = PageBreakMode.None;
         _pendingBreakers = null;
         _placements = new PlacementSink();
@@ -1280,6 +1286,7 @@ public sealed class DocumentRenderer
     {
         if (!_measuring) FinishCurrentPage(totalPages);
         _placedOnPage = false;
+        _pendingSpace = 0;
         _pageIndex++;
         if (_measuring) _measureY = _measureArea.Y;
     }
@@ -1392,7 +1399,7 @@ public sealed class DocumentRenderer
     // is placed only as far as its first piece, because nothing depends on where it ends.
     private bool RunHolds(int first, int end, bool fromFreshPage)
     {
-        var saved = (_measuring, _measureArea, _measureY, _pageIndex, _placedOnPage, _simulating, _simFirstOnly, _simFirstPage);
+        var saved = (_measuring, _measureArea, _measureY, _pageIndex, _placedOnPage, _simulating, _simFirstOnly, _simFirstPage, _pendingSpace);
         var cursor = Cursor;
         try
         {
@@ -1404,6 +1411,7 @@ public sealed class DocumentRenderer
             {
                 _pageIndex++;
                 _measureY = _measureArea.Y;
+                _pendingSpace = 0;
             }
 
             var previousEnd = -1;
@@ -1420,7 +1428,7 @@ public sealed class DocumentRenderer
         }
         finally
         {
-            (_measuring, _measureArea, _measureY, _pageIndex, _placedOnPage, _simulating, _simFirstOnly, _simFirstPage) = saved;
+            (_measuring, _measureArea, _measureY, _pageIndex, _placedOnPage, _simulating, _simFirstOnly, _simFirstPage, _pendingSpace) = saved;
         }
     }
 
@@ -1630,7 +1638,26 @@ public sealed class DocumentRenderer
         var lineCounts = renderer is ParagraphRenderer;
         var session = _session ??= new ContinuationSession();
         session.Reset();
+        SpendPendingSpace(totalPages);
         PlaceLoop(renderer, totalPages, keepTogether, lineCounts, session, 0);
+
+        // After the placement, from the element the caller added: a probe never reaches here, and
+        // the pieces of a split are not asked.
+        _pendingSpace = renderer is ISpaceAfterSource source ? source.SpaceAfter : 0;
+    }
+
+    // Moves the cursor down by the gap the element before asked for, or to the top of the next page
+    // when the gap does not fit in what is left of this one. The test subtracts, so that it never
+    // forms a sum larger than the page.
+    private void SpendPendingSpace(int totalPages)
+    {
+        var space = _pendingSpace;
+        _pendingSpace = 0;
+        if (space <= 0) return;
+
+        if (!_measuring) EnsurePage();
+        if (space <= PlaceArea.Bottom - Cursor) Cursor += space;
+        else AdvancePage(totalPages);
     }
 
     [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.NoInlining)]

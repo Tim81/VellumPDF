@@ -11,7 +11,7 @@ namespace VellumPdf.Layout.Rendering;
 /// Does not split. A line width that is not finite or is negative, an inset that is not
 /// finite and a colour channel that is not finite are refused from <see cref="Layout"/>.
 /// </remarks>
-public sealed class LineSeparatorRenderer : IRenderer
+public sealed class LineSeparatorRenderer : IRenderer, ISpaceAfterSource
 {
     private readonly LineSeparator _sep;
     private LayoutBox _occupied;
@@ -28,6 +28,10 @@ public sealed class LineSeparatorRenderer : IRenderer
         ArgumentNullException.ThrowIfNull(sep);
         _sep = sep;
     }
+
+    // Explicit, because a public renderer would otherwise gain a public member. The gap belongs to
+    // the element, so a renderer added through Document.Add(IRenderer) honours it as well.
+    double ISpaceAfterSource.SpaceAfter => _sep.SpaceAfter;
 
     /// <summary>Reserves the separator's line width plus margins and reports the occupied region.</summary>
     /// <remarks>

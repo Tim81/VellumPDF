@@ -274,4 +274,26 @@ public sealed class LayoutImage
         ArgumentNullException.ThrowIfNull(image);
         Image = image;
     }
+
+    private double _spaceAfter;
+
+    /// <summary>
+    /// The gap, in points, between this image and the element the document places after it. The
+    /// default, 0, leaves none.
+    /// </summary>
+    /// <remarks>
+    /// <b>A value that is not finite or is below zero is refused.</b> This <c>init</c> accessor
+    /// throws <see cref="ArgumentOutOfRangeException"/>, so the exception is raised by the
+    /// statement that set the value. The rule, the keep requests, where the gap is read and its
+    /// removal in 3.0 are those of <see cref="Paragraph.SpaceAfter"/>. The gap follows the
+    /// slot, which already holds the vertical <see cref="Margins"/>, so the two add.
+    /// </remarks>
+    /// <exception cref="ArgumentOutOfRangeException">
+    /// Raised from this <c>init</c> accessor when the value is <c>NaN</c>, infinite or below zero.
+    /// </exception>
+    public double SpaceAfter
+    {
+        get => _spaceAfter;
+        init => _spaceAfter = LayoutValidation.SpaceAfter(value);
+    }
 }
