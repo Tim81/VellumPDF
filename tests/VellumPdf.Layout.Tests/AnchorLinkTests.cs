@@ -1,5 +1,4 @@
-// Copyright © Timothy van der Ham (@Tim81)
-// SPDX-License-Identifier: Apache-2.0
+// Copyright © Timothy van der Ham (@Tim81) SPDX-License-Identifier: Apache-2.0
 
 using System.Text;
 using VellumPdf.Canvas;
@@ -69,9 +68,8 @@ public sealed class AnchorLinkTests
         var links = Dests(doc);
 
         // The heading, the two list items (their runs), the string cell, the run cell and the
-        // footer
-        // on each of the two pages. The markers of the default list style carry the style of the
-        // list, not the runs, so they add none.
+        // footer on each of the two pages. The markers of the default list style carry the style of
+        // the list, not the runs, so they add none.
         foreach (var link in links) AssertDestLink(link);
         Assert.Equal(1 + 2 + 1 + 1 + 2, links.Count);
     }
@@ -144,7 +142,7 @@ public sealed class AnchorLinkTests
             Assert.Contains("\"missing\"", ex.Message, StringComparison.Ordinal);
         }
 
-        Refused(d => d.Add(new Paragraph([new TextRun("", bad), new TextRun("x")])), "Paragraph 0");
+        Refused(d => d.Add(new Paragraph([new TextRun("", bad), new TextRun("x", Style())])), "Paragraph 0");
         Refused(d => d.SetFooter("", bad), "Footer band");
         Refused(d =>
         {
@@ -155,9 +153,9 @@ public sealed class AnchorLinkTests
 
         // A name an element holds saves, and the empty run writes no link.
         var known = ShortPage();
-        known.Add(new Paragraph([new TextRun("", Go), new TextRun("x")]));
+        known.Add(new Paragraph([new TextRun("", Go), new TextRun("x", Style())]));
         AddTarget(known);
-        Assert.Empty(Links(Save(known)).Where(l => l.Dest == "t"));
+        Assert.DoesNotContain(Links(Save(known)), l => l.Dest == "t");
     }
 
     [Fact]
@@ -168,7 +166,7 @@ public sealed class AnchorLinkTests
         doc.Tagged = true;
         doc.Language = "en-US";
         doc.Info.Title = "t";
-        doc.Add(new Paragraph([new TextRun("", Go), new TextRun("x")]));
+        doc.Add(new Paragraph([new TextRun("", Go), new TextRun("x", Style())]));
         AddTarget(doc);
 
         Assert.Contains("Paragraph 0", Assert.Throws<InvalidOperationException>(() => Save(doc)).Message, StringComparison.Ordinal);
@@ -177,20 +175,29 @@ public sealed class AnchorLinkTests
     [Fact]
     public void TheStyleOfAnItemBelowTheSecondLevel_andOfARunCellsOwnStyle_isNotRead()
     {
-        var bad = Style(anchor: "missing");
-        var leaf = new ListItem("deep", bad);
-        var middle = new ListItem("middle");
-        middle.AddChild(leaf);
-        var top = new ListItem("top");
-        top.AddChild(middle);
-        var table = new TableElement().SetColumnWidths(100);
-        table.AddRow().AddCell(new Cell([new TextRun("x", Style())]) { Style = bad });
+        foreach (var conformance in new[] { PdfConformance.None, PdfConformance.PdfUA1 })
+        {
+            var bad = Style(anchor: "missing");
+            var leaf = new ListItem("deep", bad);
+            var middle = new ListItem("middle");
+            middle.AddChild(leaf);
+            var top = new ListItem("top");
+            top.AddChild(middle);
+            var table = new TableElement().SetColumnWidths(100);
+            table.AddRow().AddCell(new Cell([new TextRun("x", Style())]) { Style = bad });
 
-        var doc = ShortPage();
-        doc.Add(new ListElement().Add(top));
-        doc.Add(table);
+            var doc = ShortPage();
+            doc.Conformance = conformance;
+            doc.Tagged = conformance == PdfConformance.PdfUA1;
+            doc.Language = "en-US";
+            doc.Info.Title = "t";
+            doc.Add(new ListElement().Add(top));
+            doc.Add(table);
 
-        Assert.NotEmpty(Save(doc));
+            // Neither a name no element holds nor the claim refuses the save, and no link is written.
+            var pdf = Save(doc);
+            Assert.DoesNotContain(Links(pdf), l => l.Dest == "missing");
+        }
     }
 
     [Fact]

@@ -1,5 +1,4 @@
-// Copyright © Timothy van der Ham (@Tim81)
-// SPDX-License-Identifier: Apache-2.0
+// Copyright © Timothy van der Ham (@Tim81) SPDX-License-Identifier: Apache-2.0
 
 using System.Text.RegularExpressions;
 using VellumPdf.Document;
@@ -12,8 +11,8 @@ using static VellumPdf.Layout.Tests.LinkSupport;
 namespace VellumPdf.Layout.Tests;
 
 /// <summary>
-/// One PDF/A-2u document with roman front matter and a decimal body, an embedded font, anchors on
-/// a heading, a paragraph, a table, a list item and an image, a link to an anchor from every text
+/// One PDF/A-2u document with roman front matter and a decimal body, an embedded font, anchors on a
+/// heading, a paragraph, a table, a list item and an image, a link to an anchor from every text
 /// site, forward and backward page references in a paragraph, a heading, a list item and a run
 /// cell, and a URI link from a cell and a band. It is built from the Layout members alone, and
 /// validated by veraPDF, qpdf and poppler.

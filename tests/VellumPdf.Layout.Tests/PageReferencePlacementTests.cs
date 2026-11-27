@@ -1,5 +1,4 @@
-// Copyright © Timothy van der Ham (@Tim81)
-// SPDX-License-Identifier: Apache-2.0
+// Copyright © Timothy van der Ham (@Tim81) SPDX-License-Identifier: Apache-2.0
 
 using VellumPdf.Document;
 using VellumPdf.Fonts;
@@ -15,8 +14,8 @@ namespace VellumPdf.Layout.Tests;
 /// Where the text of a page reference is placed once its label is known. Each document is built
 /// twice: with the reference, and with the label it settles on written as literal text in a style
 /// of its own. The two lay out the same text where the same text is wrapped, measured and drawn,
-/// and the placeholder label gives a document that does not, so a test cannot pass by never
-/// reading the label.
+/// and the placeholder label gives a document that does not, so a test cannot pass by never reading
+/// the label.
 /// </summary>
 public sealed class PageReferencePlacementTests
 {
@@ -47,10 +46,9 @@ public sealed class PageReferencePlacementTests
 
     // ── A list entry: its gutter, its wrap and where its text starts ─────────
 
-    // A marker 30pt wide in an indent of 10 sets a gutter of 30, and a label too wide to fit
-    // beside it narrows the gutter to the indent. The placeholder "1" fits, the settled label does
-    // not, so the entry's text starts at x = 40 with the placeholder and at x = 20 once it is
-    // settled.
+    // A marker 30pt wide in an indent of 10 sets a gutter of 30, and a label too wide to fit beside
+    // it narrows the gutter to the indent. The placeholder "1" fits, the settled label does not, so
+    // the entry's text starts at x = 40 with the placeholder and at x = 20 once it is settled.
     private static Document ListDoc(string? literal)
     {
         var doc = Labelled(110);
@@ -112,8 +110,7 @@ public sealed class PageReferencePlacementTests
         var reference = Texts(TableDoc(null, widths, Fresh(12)));
 
         // The precondition: the table is taller with the settled label, so the paragraph after it
-        // is
-        // lower, and a grid kept from the placeholder would show.
+        // is lower, and a grid kept from the placeholder would show.
         var after = (List<ContentStreamReadback.TextPlacement> t) => t.First(p => p.Text.StartsWith("after", StringComparison.Ordinal)).Y;
         Assert.True(after(settled) < after(placeholder) - 1);
 
@@ -218,8 +215,7 @@ public sealed class PageReferencePlacementTests
             Assert.Equal(2, renderer.WrapCalls);
 
             // A layout that answers Nothing, then a draw: the lines of the wrap that was replaced
-            // are
-            // not drawn, and the renderer does not index past the lines it holds now.
+            // are not drawn, and the renderer does not index past the lines it holds now.
             Assert.Equal(LayoutResult.Outcome.Nothing, renderer.Layout(new LayoutContext(new LayoutBox(0, 0, 22, 0.5))).Status);
             var page = pdf.AddPage(new PdfRectangle(0, 0, 100, 100));
             renderer.Draw(new DrawContext(new VellumPdf.Canvas.PdfCanvas(page), new LayoutBox(0, 0, 100, 100), new RendererContext(page, pdf), pdf, page));

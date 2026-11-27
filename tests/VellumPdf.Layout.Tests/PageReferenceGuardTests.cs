@@ -1,5 +1,4 @@
-// Copyright © Timothy van der Ham (@Tim81)
-// SPDX-License-Identifier: Apache-2.0
+// Copyright © Timothy van der Ham (@Tim81) SPDX-License-Identifier: Apache-2.0
 
 using VellumPdf.Document;
 using VellumPdf.Layout.Core;
@@ -11,10 +10,9 @@ namespace VellumPdf.Layout.Tests;
 
 /// <summary>
 /// A document that holds a page reference compares the drawing pass with the last measuring run,
-/// because the labels it prints were resolved against that run. A renderer that answers
-/// differently the later time, or a band replaced while the document renders, then makes the save
-/// throw. The same documents with the label written as literal text have nothing to compare with,
-/// and save.
+/// because the labels it prints were resolved against that run. A renderer that answers differently
+/// the later time, or a band replaced while the document renders, then makes the save throw. The
+/// same documents with the label written as literal text have nothing to compare with, and save.
 /// </summary>
 public sealed class PageReferenceGuardTests
 {
@@ -60,8 +58,7 @@ public sealed class PageReferenceGuardTests
     public void ARendererThatAnswersDifferentlyTheLaterTime_failsTheSave_withAReference_andASecondSaveSaysItCannotBeSavedAgain()
     {
         // Without the reference the document saves, and the drawing pass puts the heading on
-        // another
-        // page than the measuring run did: the plans differ in a page index.
+        // another page than the measuring run did: the plans differ in a page index.
         var literal = ARendererThatChangesItsMind(reference: false);
         literal.Footer = new RunningBand("{page}");
         var control = literal.CreateRenderer();

@@ -1,5 +1,4 @@
-// Copyright © Timothy van der Ham (@Tim81)
-// SPDX-License-Identifier: Apache-2.0
+// Copyright © Timothy van der Ham (@Tim81) SPDX-License-Identifier: Apache-2.0
 
 using VellumPdf.Canvas;
 using VellumPdf.Document;
@@ -16,8 +15,8 @@ namespace VellumPdf.Layout.Tests;
 /// A link in the style of a table cell or a running band (#475). The fixtures are 300x400pt with
 /// 10pt margins in Helvetica 12pt: a line is 14.4pt, a cell's default padding is 6pt left and 4pt
 /// above, so a cell's text starts at x = 16 and its first baseline is at y = 374. The rectangles
-/// are worked out from the text the content stream shows and the font's own measure, never from
-/// the code that draws them.
+/// are worked out from the text the content stream shows and the font's own measure, never from the
+/// code that draws them.
 /// </summary>
 public sealed class CellBandLinkTests
 {
@@ -132,8 +131,7 @@ public sealed class CellBandLinkTests
         Assert.Equal(4, links.Count);
 
         // The header band is 18.4pt tall (the leading and 4) from the top margin; the footer sits
-        // on
-        // the bottom margin.
+        // on the bottom margin.
         var headers = links.Where(l => l.Y1 > 300).ToList();
         var footers = links.Where(l => l.Y1 <= 300).ToList();
         Assert.Equal(2, headers.Count);
@@ -170,8 +168,8 @@ public sealed class CellBandLinkTests
         Assert.Equal(2, links.Count);
 
         // The inside margin (Left, 10) is on the left of a recto page and on the right of a verso
-        // one. A left-aligned band stays against the inside margin, so on the verso page it ends
-        // at the page's right edge less that margin.
+        // one. A left-aligned band stays against the inside margin, so on the verso page it ends at
+        // the page's right edge less that margin.
         var recto = links[0];
         var verso = links[1];
         Assert.Equal(10, recto.X0, 3);

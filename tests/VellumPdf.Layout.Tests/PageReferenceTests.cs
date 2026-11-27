@@ -1,5 +1,4 @@
-// Copyright © Timothy van der Ham (@Tim81)
-// SPDX-License-Identifier: Apache-2.0
+// Copyright © Timothy van der Ham (@Tim81) SPDX-License-Identifier: Apache-2.0
 
 using VellumPdf.Document;
 using VellumPdf.Layout.Core;
@@ -11,9 +10,8 @@ namespace VellumPdf.Layout.Tests;
 
 /// <summary>
 /// <see cref="TextRun.PageReference"/>: the label of the page an anchor lands on, resolved by the
-/// pagination loop. The labels printed are read back from the content stream, and the expected
-/// ones are worked out from the page the anchored element is on, never from the table that holds
-/// them.
+/// pagination loop. The labels printed are read back from the content stream, and the expected ones
+/// are worked out from the page the anchored element is on, never from the table that holds them.
 /// </summary>
 public sealed class PageReferenceTests
 {
@@ -135,12 +133,10 @@ public sealed class PageReferenceTests
     // ── A label that changes the layout ──────────────────────────────────────
 
     // Ten 12pt lines make a page. The paragraph that holds the reference is one line while its
-    // label
-    // is as narrow as the placeholder and two lines when it is wider, and the target is the 100th
-    // line when it is one line, which is the last of page 10, and the 101st when it is two, which
-    // is
-    // the first of page 11. The page of the target is the label of the reference, so the label
-    // 10 puts the target on page 11 and the label 11 keeps it there.
+    // label is as narrow as the placeholder and two lines when it is wider, and the target is the
+    // 100th line when it is one line, which is the last of page 10, and the 101st when it is two,
+    // which is the first of page 11. The page of the target is the label of the reference, so the
+    // label 10 puts the target on page 11 and the label 11 keeps it there.
     private static Document Growing(string? literal = null, PageLabelRange? range = null, int lines = 100)
     {
         var small = new TextStyle { FontRef = Helv, FontSize = 10 };
@@ -172,8 +168,7 @@ public sealed class PageReferenceTests
         var b = ContentStreamReadback.TextPlacements(Content(Save(literal)));
 
         // The wrap of the first paragraph is two lines, and everything after it is where the
-        // literal
-        // document puts it.
+        // literal document puts it.
         Assert.Equal(b, a);
         Assert.Equal(2, a.Count(p => p.Text is "ab" or "11"));
     }
@@ -181,8 +176,8 @@ public sealed class PageReferenceTests
     [Fact]
     public void ALabelThatOscillates_isRefusedAtTheRepeat_naming_theAnchorAndTheHistory()
     {
-        // viii is wide and ix narrow. The target is the 80th line when the label is narrow, on
-        // page 8, and the 81st when it is wide, on page 9.
+        // viii is wide and ix narrow. The target is the 80th line when the label is narrow, on page
+        // 8, and the 81st when it is wide, on page 9.
         var small = new TextStyle { FontRef = Helv, FontSize = 10 };
         using var doc = new Document
         {
@@ -214,8 +209,7 @@ public sealed class PageReferenceTests
         string[][] script = [["1", "12"], ["3", "4"], ["11", "2"], ["11", "2"]];
 
         // A comparison of the joined strings would see run 3 as run 1, "112" and "112", and refuse
-        // a
-        // document that settles at run 4.
+        // a document that settles at run 4.
         Assert.Equal(string.Concat(script[0]), string.Concat(script[2]));
         Assert.Equal(-1, PageReferenceTable.RepeatedRun(script));
         Assert.Equal(-1, PageReferenceTable.RepeatedRun(script[..3]));

@@ -1,5 +1,4 @@
-// Copyright © Timothy van der Ham (@Tim81)
-// SPDX-License-Identifier: Apache-2.0
+// Copyright © Timothy van der Ham (@Tim81) SPDX-License-Identifier: Apache-2.0
 
 using VellumPdf.Document;
 using VellumPdf.Layout.Core;
@@ -12,9 +11,9 @@ using static VellumPdf.Layout.Tests.LinkSupport;
 namespace VellumPdf.Layout.Tests;
 
 /// <summary>
-/// What a page reference points at, and what it prints, for the targets and the labels that are
-/// not the plain case: a prefix with control white space, an element that goes on over two pages,
-/// the other kinds of element that hold an anchor, and a table whose cache is read across runs.
+/// What a page reference points at, and what it prints, for the targets and the labels that are not
+/// the plain case: a prefix with control white space, an element that goes on over two pages, the
+/// other kinds of element that hold an anchor, and a table whose cache is read across runs.
 /// </summary>
 public sealed class PageReferenceTargetTests
 {

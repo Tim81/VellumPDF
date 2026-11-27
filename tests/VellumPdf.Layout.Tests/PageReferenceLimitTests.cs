@@ -1,5 +1,4 @@
-// Copyright © Timothy van der Ham (@Tim81)
-// SPDX-License-Identifier: Apache-2.0
+// Copyright © Timothy van der Ham (@Tim81) SPDX-License-Identifier: Apache-2.0
 
 using VellumPdf.Document;
 using VellumPdf.Fonts;
@@ -22,8 +21,8 @@ public sealed class PageReferenceLimitTests
 
     private static TextStyle H(double size) => new() { FontRef = new FontReference(Standard14.Helvetica), FontSize = size };
 
-    // A list whose second entry moves to the next page when the list is laid out new, and so
-    // starts the paragraph after it lower than its twin does; see ListDocumentLimitRuleTests.
+    // A list whose second entry moves to the next page when the list is laid out new, and so starts
+    // the paragraph after it lower than its twin does; see ListDocumentLimitRuleTests.
     private static ListElement Mover() => new ListElement(ListStyle.OrderedDecimal)
         .Add(new ListItem("a", H(10)))
         .Add(new ListItem([new TextRun("mover", H(40))]) { Style = H(10) });
@@ -64,8 +63,8 @@ public sealed class PageReferenceLimitTests
         return (verdict, renderer.ReferenceTable?.States[^1][0] ?? literal ?? "");
     }
 
-    // The characters of the paragraph, label included, that the literal document's scan counts:
-    // two for the placement, the words with their spaces, the cut word and its space, the label.
+    // The characters of the paragraph, label included, that the literal document's scan counts: two
+    // for the placement, the words with their spaces, the cut word and its space, the label.
     private static int Bound(int words, int extra, int labelLength) => 2 + (words * 6) + extra + 1 + labelLength;
 
     [Theory]
@@ -112,8 +111,7 @@ public sealed class PageReferenceLimitTests
     {
         // A 300-character prefix is known before any layout runs, so the bound counts it for every
         // reference. With the limit at 300, a paragraph whose literal label is that long is near
-        // the
-        // limit, and so is the one that holds the reference, whatever the words before it.
+        // the limit, and so is the one that holds the reference, whatever the words before it.
         var prefix = new string('p', 300);
         var matches = 0;
         for (var words = 4; words <= 16; words++)
