@@ -720,6 +720,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- **Saving a tagged document no longer walks the whole structure tree once per page (#728).** The
+  save built each page's parent-tree array with a walk over every element, so the time grew with
+  pages times elements, so doubling the pages of a tagged table more than doubled the save. One walk now
+  sorts the leaves into per-page lists in the order the old walks met them, and the saved bytes
+  are unchanged.
+- **Subsetting a CFF font no longer re-reads an INDEX's offset array for every glyph and
+  subroutine it copies (#729).** The offsets are read once per font and INDEX and kept for the
+  life of the font, so the work grows with the glyphs kept rather than with the glyphs kept times
+  the glyphs in the font. A font shared by two documents saving at once is safe: the kept offsets
+  are never changed after they are built. The subset bytes are unchanged.
+
 - **A list indent that leaves an entry no text width kept the marker and discarded the text
   (#476).** `ParagraphRenderer` drops a paragraph whose width is zero or less, while the marker's
   own paragraph has no margin, so a flat list whose `Indent` reached the list's area width saved as

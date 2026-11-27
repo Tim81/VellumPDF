@@ -201,11 +201,10 @@ internal sealed class PdfStructureTree
         // index == its own MCID.
         // Only negative MCIDs are rejected (they are unconditionally invalid).
         var parentTreeArrayRefs = new PdfIndirectReference[pageOrder.Count];
+        var leavesByPage = CollectLeavesByPage(_documentRoot, pageOrder.Count, pageStructParents);
         for (var pi = 0; pi < pageOrder.Count; pi++)
         {
-            var page = pageOrder[pi];
-            var elemsOnPage = new List<PdfStructElem>();
-            CollectElemsOnPage(_documentRoot, page, elemsOnPage);
+            var elemsOnPage = leavesByPage[pi];
 
             // Compute (max MCID + 1) as the array size; 0 when there are no leaf elems.
             var maxMcid = -1;
@@ -389,7 +388,7 @@ internal sealed class PdfStructureTree
     // parents is walked once per path, so the time can grow exponentially with the depth before the
     // save refuses the tree. AddChild accepts a cycle (an untagged document never builds the tree).
     // A walk over a cycle would not stop until it ran out of memory, so the walks refuse it with
-    // the cycle error first. Three of them, CollectElems, CollectPages and CollectElemsOnPage, keep
+    // the cycle error first. Three of them, CollectElems, CollectPages and CollectLeavesByPage, keep
     // the elements on their current path and refuse to enter one twice. The other three,
     // BuildParentMap, FirstLeafPages and CollectStructTypes, keep no path: they are safe only
     // because each runs after CollectPages has walked the same tree from the document root and
@@ -401,6 +400,12 @@ internal sealed class PdfStructureTree
             throw new InvalidOperationException(
                 "The structure tree contains a cycle: an element is its own ancestor, so the tree cannot be walked.");
     }
+
+    // Elements entered by every walk on this thread. Read by the tests that assert a save does not
+    // walk the tree once per page; one increment per element, per thread, so concurrent saves do
+    // not share it.
+    [ThreadStatic]
+    internal static long ElementVisits;
 
     // Pre-order walk. visit(node, parent) runs on entry, in the order a recursive walk would enter
     // nodes; the root is visited first with a null parent. The visit runs before the node is read,
@@ -414,6 +419,7 @@ internal sealed class PdfStructureTree
 
         void Enter(PdfStructElem node, PdfStructElem? parent)
         {
+            ElementVisits++;
             visit(node, parent);
             if (path is not null)
                 EnterElement(path, node);
@@ -459,12 +465,28 @@ internal sealed class PdfStructureTree
             }
         });
 
-    private static void CollectElemsOnPage(PdfStructElem parent, PdfPage target, List<PdfStructElem> result)
-        => PreOrder(parent, guard: true, (node, p) =>
+    // One walk that sorts every leaf (a page and an MCID of 0 or more, under a parent) into the
+    // list of its page, in the order the walk enters them. A walk per page would visit every
+    // element once per page. pageStructParents maps each page CollectPages found to its index in
+    // the page order, and every element with a page is under that walk, so the lookup cannot miss.
+    private static List<PdfStructElem>[] CollectLeavesByPage(
+        PdfStructElem root,
+        int pageCount,
+        Dictionary<PdfPage, int> pageStructParents)
+    {
+        var byPage = new List<PdfStructElem>[pageCount];
+        for (var i = 0; i < pageCount; i++)
+            byPage[i] = [];
+        if (pageCount == 0)
+            return byPage;
+
+        PreOrder(root, guard: true, (node, p) =>
         {
-            if (p is not null && node.Page == target && node.Mcid >= 0)
-                result.Add(node);
+            if (p is not null && node.Page is { } page && node.Mcid >= 0)
+                byPage[pageStructParents[page]].Add(node);
         });
+        return byPage;
+    }
 
     // Where an element is reached twice the last parent wins, as before; no saved file can show it,
     // because an element reached twice is refused (a duplicate MCID, or a reserved object that is

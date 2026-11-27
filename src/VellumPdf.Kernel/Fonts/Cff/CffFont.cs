@@ -349,8 +349,7 @@ internal sealed class CffFont
     {
         if (gid < 0 || gid >= NumGlyphs)
             throw new ArgumentOutOfRangeException(nameof(gid), $"GID {gid} is out of range [0, {NumGlyphs}).");
-        var s = Data.Span;
-        var (_, offsets, dataBase) = ReadIndexOffsets(s, CharStringsIndexOffset, Data.Length);
+        var (_, offsets, dataBase) = GetIndexOffsets(CharStringsIndexOffset);
         var start = (int)offsets[gid];
         var end = (int)offsets[gid + 1];
         var absStart = dataBase + start - 1;
@@ -365,7 +364,7 @@ internal sealed class CffFont
     {
         if (GlobalSubrCount == 0)
             throw new InvalidOperationException("Font has no Global Subr INDEX.");
-        return GetSubrEntry(Data.Span, GlobalSubrIndexOffset, Data.Length, index);
+        return GetSubrEntry(GlobalSubrIndexOffset, Data.Length, index);
     }
 
     /// <summary>Returns the raw bytes for Local Subr entry <paramref name="index"/>.</summary>
@@ -373,14 +372,14 @@ internal sealed class CffFont
     {
         if (LocalSubrCount == 0)
             throw new InvalidOperationException("Font has no Local Subr INDEX.");
-        return GetSubrEntry(Data.Span, LocalSubrIndexOffset, Data.Length, index);
+        return GetSubrEntry(LocalSubrIndexOffset, Data.Length, index);
     }
 
     // ── INDEX helpers ─────────────────────────────────────────────────────────
 
-    private ReadOnlyMemory<byte> GetSubrEntry(ReadOnlySpan<byte> s, int indexOffset, int totalLen, int entryIndex)
+    private ReadOnlyMemory<byte> GetSubrEntry(int indexOffset, int totalLen, int entryIndex)
     {
-        var (count, offsets, dataBase) = ReadIndexOffsets(s, indexOffset, totalLen);
+        var (count, offsets, dataBase) = GetIndexOffsets(indexOffset);
         if (entryIndex < 0 || entryIndex >= count)
             throw new ArgumentOutOfRangeException(nameof(entryIndex),
                 $"Subr index {entryIndex} out of range [0, {count}).");
@@ -391,6 +390,35 @@ internal sealed class CffFont
         if (entryLen < 0 || absStart < 0 || absStart + entryLen > totalLen)
             throw new InvalidDataException($"Subr INDEX entry {entryIndex} data out of range.");
         return Data.Slice(absStart, entryLen);
+    }
+
+    // A parsed INDEX offset array, never changed after it is built. Parsing is the cost the
+    // subsetter would otherwise pay again for every glyph and subroutine it reads.
+    private sealed record IndexOffsets(int Position, int Count, uint[] Offsets, int DataBase);
+
+    // The INDEXes parsed so far, at most the CharStrings, Global Subr and Local Subr INDEXes. The
+    // array is replaced whole and never edited, so a reader on another thread sees either the old
+    // list or the new one. Two threads that parse the same INDEX at once each build the same table
+    // and one replaces the other's list; the cost is one extra parse, never a wrong answer. Keyed
+    // by the INDEX position within Data. Data is read-only for the life of the font: a caller that
+    // changes the bytes behind it after the first read gets the offsets of the bytes it had then.
+    private IndexOffsets[] _parsedIndexes = [];
+
+    private (int count, uint[] offsets, int dataBase) GetIndexOffsets(int position)
+    {
+        foreach (var known in Volatile.Read(ref _parsedIndexes))
+        {
+            if (known.Position == position)
+                return (known.Count, known.Offsets, known.DataBase);
+        }
+
+        var (count, offsets, dataBase) = ReadIndexOffsets(Data.Span, position, Data.Length);
+        var current = Volatile.Read(ref _parsedIndexes);
+        var next = new IndexOffsets[current.Length + 1];
+        current.CopyTo(next, 0);
+        next[^1] = new IndexOffsets(position, count, offsets, dataBase);
+        Volatile.Write(ref _parsedIndexes, next);
+        return (count, offsets, dataBase);
     }
 
     /// <summary>
