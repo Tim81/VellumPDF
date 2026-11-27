@@ -16,7 +16,8 @@ internal enum LineEnd : byte
     Hard,
 
     /// <summary>
-    /// The line ended inside a word that is wider than the line, cut between two characters.
+    /// The line ended inside a word that is wider than the line, cut between two characters: after
+    /// a solidus, a reverse solidus or a hyphen-minus where one fits, and at the glyph otherwise.
     /// </summary>
     Forced,
 

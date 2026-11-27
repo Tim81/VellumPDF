@@ -899,7 +899,8 @@ public sealed class DocumentRenderer
     // What a line holds, for each kind that wraps text, read from the renderer:
     //  - A paragraph, and a heading, which wraps through one: no step rewrites the text. A hard
     //    break ends a line and is a character, and a word wider than the line is cut at one scalar
-    //    at least per line, so the lines are at most the characters plus one. A tab stop only
+    //    at least per line, wherever the cut falls (LongWordBreaks puts it after the first scalar
+    //    of the line at the earliest), so the lines are at most the characters plus one. A tab stop only
     //    places text; a line is committed only before a word or a break, which are characters.
     //  - A list: each entry is its text's lines in a paragraph of that kind, and a marker that
     //    wraps moves the entry whole, so an entry adds at most max(1, its characters).

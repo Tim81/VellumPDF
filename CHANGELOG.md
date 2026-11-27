@@ -701,6 +701,23 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- **A web address or a path wider than its line was cut at a glyph, never after a slash or
+  hyphen (#594).** A word wider than the line is now cut after the last `/`, `\` or `-` that leaves
+  the line no wider than its width, so `https://example.org/a/b/c` ends a line at a segment and a
+  Windows path at a folder. It applies wherever text wraps: a paragraph, a heading, a list item,
+  and a table cell given as a string or as runs. A word with no such place that fits is cut at the
+  glyph as before, and a word that fits is never cut. No hyphen or other glyph is added at the cut.
+  Following UAX #14, a `-` before a digit and a `/` or `\` before a digit that follows a digit
+  (`1/2`) are cut at only when no other such place fits. `?`, `&`, `=`, `.`, `_` and `#` are not
+  places. A link on the word gets one rectangle per piece, as for any wrapped link.
+  - **Deliberate output change**, only for a document with a word wider than its line that holds a
+    `/`, `\` or `-` before the point where the line is full: that word now ends its lines earlier,
+    so its lines, and the pages after it, can differ. A document with no such word saves to the
+    same bytes as before.
+  - Text extraction returns the pieces as written with the extractor's line separator between
+    them. Reading a cut address back as one token needs marked content the library does not write
+    yet (#588).
+
 - **A list indent that leaves an entry no text width kept the marker and discarded the text
   (#476).** `ParagraphRenderer` drops a paragraph whose width is zero or less, while the marker's
   own paragraph has no margin, so a flat list whose `Indent` reached the list's area width saved as

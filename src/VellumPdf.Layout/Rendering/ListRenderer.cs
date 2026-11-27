@@ -1002,8 +1002,9 @@ public sealed class ListRenderer : IRenderer, IPageBreakSource, IKeepSource, IPl
 
     /// <summary>
     /// The widest whitespace-delimited word across <paramref name="runs"/>. This is the width below
-    /// which <see cref="ParagraphRenderer"/> stops wrapping and starts hard-breaking words at
-    /// glyph granularity, which is the behaviour the gutter must not introduce.
+    /// which <see cref="ParagraphRenderer"/> stops wrapping and starts cutting words, which is the
+    /// behaviour the gutter must not introduce. A word that has a place to be cut at a solidus or
+    /// hyphen is still counted whole, so the gutter is clamped as before.
     /// </summary>
     /// <remarks>
     /// A word that continues over a run boundary is one word, as the paragraph's own wrap reads it,

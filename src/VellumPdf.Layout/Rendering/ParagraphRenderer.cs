@@ -1207,11 +1207,13 @@ public sealed partial class ParagraphRenderer : IRenderer, IPageBreakSource, IKe
     }
 
     /// <summary>
-    /// Hard-breaks a single word wider than maxWidth at character granularity. The word is the
-    /// pieces <paramref name="first"/> up to <paramref name="end"/> of <paramref name="tokens"/>;
-    /// each rune is measured in its piece's style and a line holds one fragment for each style
-    /// change. Every line but the last is recorded as ending inside the word. Returns the index
-    /// of the last line, whose end the caller settles.
+    /// Cuts a single word wider than maxWidth. The word is the pieces <paramref name="first"/> up
+    /// to <paramref name="end"/> of <paramref name="tokens"/>; each character is measured in its
+    /// piece's style and a line holds one fragment for each style change. A line ends after the
+    /// last solidus, reverse solidus or hyphen-minus that leaves it no wider than the line
+    /// (<see cref="LongWordBreaks"/>), and at the character that does not fit when the word has
+    /// none; no glyph is added at the cut. Every line but the last is recorded as ending inside
+    /// the word. Returns the index of the last line, whose end the caller settles.
     /// </summary>
     private static int HardBreakWord(
         List<(string Text, TextStyle? Style, TokenKind Kind)> tokens,
@@ -1221,53 +1223,58 @@ public sealed partial class ParagraphRenderer : IRenderer, IPageBreakSource, IKe
         List<LineFragment[]> lines,
         List<LineEnd> ends)
     {
-        var lineFragments = new List<LineFragment>();
-        var fragment = new System.Text.StringBuilder();
-        var fragmentW = 0.0;
-        var lineW = 0.0;
-        TextStyle? fragmentStyle = null;
-
-        void CloseFragment()
-        {
-            if (fragment.Length == 0)
-                return;
-            lineFragments.Add(new LineFragment(fragment.ToString(), fragmentStyle!, fragmentW));
-            fragment.Clear();
-            fragmentW = 0.0;
-        }
-
+        // Each character is measured once, in order, so the fonts record the glyphs they always
+        // did, and the cut is chosen from the widths.
+        using var word = new LongWordBreaks.Word(end - first);
+        var pieceOf = new List<int>();
         for (var k = first; k < end; k++)
         {
             var style = tokens[k].Style!;
-
-            // A piece in another style starts a fragment of its own.
-            CloseFragment();
-            fragmentStyle = style;
-
             foreach (var rune in tokens[k].Text.EnumerateRunes())
             {
-                var ch = rune.ToString();
-                var charW = style.FontRef.MeasureString(ch, style.FontSize);
-                if ((fragment.Length > 0 || lineFragments.Count > 0) && lineW + charW > maxWidth)
-                {
-                    CloseFragment();
-                    lines.Add([.. lineFragments]);
-                    ends.Add(LineEnd.Forced);
-                    lineFragments.Clear();
-                    lineW = 0.0;
-                }
-                fragment.Append(ch);
-                fragmentW += charW;
-                lineW += charW;
+                word.Add(rune, style.FontRef.MeasureString(rune.ToString(), style.FontSize));
+                pieceOf.Add(k);
             }
         }
 
-        CloseFragment();
-        if (lineFragments.Count > 0)
+        var from = double.NegativeInfinity;
+        var below = double.PositiveInfinity;
+        var starts = new List<int>();
+        word.Lines(maxWidth, ref from, ref below, starts);
+        var runes = word.Runes;
+        var widths = word.Widths;
+
+        for (var s = 0; s < starts.Count; s++)
         {
+            var lineEnd = s + 1 < starts.Count ? starts[s + 1] : runes.Length;
+            var lineFragments = new List<LineFragment>();
+            var fragment = new System.Text.StringBuilder();
+            var fragmentW = 0.0;
+            var piece = -1;
+            for (var i = starts[s]; i < lineEnd; i++)
+            {
+                // A piece in another style starts a fragment of its own.
+                if (pieceOf[i] != piece)
+                {
+                    if (fragment.Length > 0)
+                    {
+                        lineFragments.Add(new LineFragment(fragment.ToString(), tokens[piece].Style!, fragmentW));
+                        fragment.Clear();
+                        fragmentW = 0.0;
+                    }
+
+                    piece = pieceOf[i];
+                }
+
+                fragment.Append(runes[i].ToString());
+                fragmentW += widths[i];
+            }
+
+            lineFragments.Add(new LineFragment(fragment.ToString(), tokens[piece].Style!, fragmentW));
             lines.Add([.. lineFragments]);
-            ends.Add(LineEnd.Last);
+            ends.Add(s + 1 < starts.Count ? LineEnd.Forced : LineEnd.Last);
         }
+
         return lines.Count - 1;
     }
 }

@@ -256,8 +256,8 @@ public sealed partial class ParagraphRenderer
                 cur.Add(new Frag(tokens[k].Text, tokens[k].Style!, tokenWidth[k]));
         }
 
-        // A word at the start of a line. A word wider than the line is cut at a character, as the
-        // plain wrap does.
+        // A word at the start of a line. A word wider than the line is cut as the plain wrap cuts
+        // it, at a place after a solidus or hyphen where one fits and at a character otherwise.
         void StartLine(int first, int end, double wordW)
         {
             if (wordW > maxWidth)

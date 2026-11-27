@@ -773,39 +773,15 @@ public sealed class TableRenderer : IRenderer, IPageBreakSource, IKeepSource, IP
     }
 
     /// <summary>
-    /// The number of lines <see cref="HardBreakWord"/> adds for a word. A fragment is cut where
-    /// the next character no longer fits, so each such comparison narrows the widths the count
-    /// holds over, like the ones in <see cref="CountLine"/>.
+    /// The number of lines <see cref="HardBreakWord"/> adds for a word. A line is cut where the
+    /// next character no longer fits, or at the place the cut moves back to, so each such comparison
+    /// narrows the widths the count holds over, like the ones in <see cref="CountLine"/>.
     /// </summary>
     private static int CountHardBreakFragments(
         string word, TextStyle style, double maxWidth, ref double from, ref double below)
     {
-        var fragments = 0;
-        var open = false;
-        var fragmentW = 0.0;
-        foreach (var rune in word.EnumerateRunes())
-        {
-            var charW = style.FontRef.MeasureString(RuneString(rune), style.FontSize);
-            if (open)
-            {
-                var grown = fragmentW + charW;
-                if (grown > maxWidth)
-                {
-                    below = Math.Min(below, grown);
-                    fragments++;
-                    fragmentW = 0.0;
-                    open = false;
-                }
-                else
-                {
-                    from = Math.Max(from, grown);
-                }
-            }
-            open = true;
-            fragmentW += charW;
-        }
-        if (open) fragments++;
-        return fragments;
+        using var measured = MeasureRunes(word, style);
+        return measured.Lines(maxWidth, ref from, ref below, null);
     }
 
     // The text of a rune, taken from a table for the characters below U+0100 so that measuring a
@@ -2401,27 +2377,38 @@ public sealed class TableRenderer : IRenderer, IPageBreakSource, IKeepSource, IP
         return lines;
     }
 
-    /// <summary>Hard-breaks a word wider than <paramref name="maxWidth"/> at character granularity.</summary>
+    /// <summary>
+    /// Cuts a word wider than <paramref name="maxWidth"/>: after the last solidus, reverse solidus
+    /// or hyphen-minus that leaves the line no wider than the width (<see cref="LongWordBreaks"/>),
+    /// and at the character that does not fit when the word has none. No glyph is added at the cut.
+    /// </summary>
     private static void HardBreakWord(string word, TextStyle style, double maxWidth, List<string> lines)
     {
-        var fragment = new System.Text.StringBuilder();
-        var fragmentW = 0.0;
+        using var measured = MeasureRunes(word, style);
+        var from = double.NegativeInfinity;
+        var below = double.PositiveInfinity;
+        var starts = new List<int>();
+        measured.Lines(maxWidth, ref from, ref below, starts);
+        var runes = measured.Runes;
 
-        foreach (var rune in word.EnumerateRunes())
+        var fragment = new System.Text.StringBuilder();
+        for (var s = 0; s < starts.Count; s++)
         {
-            var ch = rune.ToString();
-            var charW = style.FontRef.MeasureString(ch, style.FontSize);
-            if (fragment.Length > 0 && fragmentW + charW > maxWidth)
-            {
-                lines.Add(fragment.ToString());
-                fragment.Clear();
-                fragmentW = 0.0;
-            }
-            fragment.Append(ch);
-            fragmentW += charW;
-        }
-        if (fragment.Length > 0)
+            var lineEnd = s + 1 < starts.Count ? starts[s + 1] : runes.Length;
+            fragment.Clear();
+            for (var i = starts[s]; i < lineEnd; i++)
+                fragment.Append(RuneString(runes[i]));
             lines.Add(fragment.ToString());
+        }
+    }
+
+    // The characters of a word and the width of each in the style, measured once and in order.
+    private static LongWordBreaks.Word MeasureRunes(string word, TextStyle style)
+    {
+        var measured = new LongWordBreaks.Word(word.Length);
+        foreach (var rune in word.EnumerateRunes())
+            measured.Add(rune, style.FontRef.MeasureString(RuneString(rune), style.FontSize));
+        return measured;
     }
 
     /// <summary>
