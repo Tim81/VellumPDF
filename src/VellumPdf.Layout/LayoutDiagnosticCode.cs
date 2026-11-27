@@ -219,11 +219,12 @@ public enum LayoutDiagnosticCode
     /// continuation limit for the list, or any of the font, the element near the limit and the
     /// renderer of yours.</para>
     /// <para><b>A list that left no such entry does not report this code</b>, whichever cause
-    /// applied, so a document whose lists lose nothing saves under strict mode with the bytes it
-    /// saves without it. That covers an empty list and a list none of whose entries the clamp would
-    /// have narrowed or the new layout would have moved. An entry counts unless drawing it in the
-    /// new layout would draw text in a font the document cannot draw: that makes the save throw,
-    /// so leaving it as it was gives nothing up.</para>
+    /// applied, so strict mode does not refuse a document on account of such a list: the save
+    /// writes the bytes, or throws the exception, it does without strict mode. That covers an
+    /// empty list and a list none of whose entries the clamp would have narrowed or the new layout
+    /// would have moved. An entry counts unless drawing it in the new layout would draw text in a
+    /// font the document cannot draw: that makes the save throw, so leaving it as it was gives
+    /// nothing up.</para>
     /// <para>Three lists depart from the definition above: two do not report this code although
     /// they left such an entry, and one reports it although the new layout would have placed its
     /// entries as the twin did.</para>

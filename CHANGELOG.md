@@ -741,8 +741,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
     limit. The new `LayoutDiagnosticCode.ListIndentClampSkipped` (207, severity `Error`) reports
     a list placed that way only when it left something as it was that the clamp or the moving
     would have changed. Its XML doc states the rule, the `Count` and the exceptions. A list that
-    left nothing does not report it, so a document whose lists lose nothing saves under
-    `StrictDiagnostics`. The text of the entries the clamp would have narrowed is not drawn. The
+    left nothing does not report it, so under `StrictDiagnostics` such a list does not make the
+    save refuse. The text of the entries the clamp would have narrowed is not drawn. The
     message of a 207 names every cause that applied: the continuation limit, or any of a renderer
     of yours, a font the document cannot draw, and an element after a list that comes near the
     limit.
