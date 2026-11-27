@@ -12,10 +12,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   `ListElement`, `Preformatted`, `TableElement`, `LayoutImage`, `LineSeparator` and `PieChart` take
   a `SpaceAfter` in points, so a caller sets the gap between two elements once, on the first,
   instead of putting a top margin on whatever follows. The bottom margin of a paragraph, heading,
-  list, table or preformatted block adds no space and still does not; on an image, separator or
-  chart it already does, and the gap adds to it. The gap never carries over to another page: it is
-  spent when the next element fits below it, and otherwise that element starts at the top of the
-  next page. After the last element it adds no space and no page. Under `KeepWithNext` the gap
+  list, table or preformatted block still adds no space; on an image, separator or chart it
+  already does, and the gap adds to it. The gap never carries over to another page: it is spent
+  when it fits in what is left of the page, and otherwise dropped, with the next element starting
+  at the top of the next page. After the last element it adds no space and no page. Under `KeepWithNext` the gap
   lies between the kept elements and counts when the document decides whether they hold. A value
   that is not finite or is below zero throws `ArgumentOutOfRangeException` from the setter. A
   document that sets none saves to the same bytes as before. 3.0 honours `Margins.Bottom` and

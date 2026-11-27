@@ -1189,7 +1189,7 @@ public sealed class Document : IDisposable
     /// anchor, and cannot start a page-label range: put a <see cref="PageBreak"/> with a
     /// <see cref="PageBreak.PageLabel"/> before it.</para>
     /// <para>A renderer you wrote yourself has no gap after it either, and an element it holds has
-    /// none; the library's renderers named above read their element's <c>SpaceAfter</c>. See
+    /// none; the library's public renderers read their element's <c>SpaceAfter</c>. See
     /// <see cref="Paragraph.SpaceAfter"/>.</para>
     /// </remarks>
     /// <exception cref="ArgumentNullException">

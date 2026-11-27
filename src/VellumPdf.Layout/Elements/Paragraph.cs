@@ -624,14 +624,15 @@ public sealed class Paragraph
     /// <para>The gap is space between two elements and not part of this one. It moves the next
     /// element down by its size, and does not change this element's box, its keep-together
     /// measurement, its background or border, the position of its bookmark or anchor, or its
-    /// tagging. It never carries over to another page: when the next element is placed, the gap is
-    /// spent if it fits in what is left of the page, and if it does not the next element starts at
-    /// the top of the next page. When the next element starts on a later page for any other
-    /// reason, whether a <c>BreakBefore</c>, a <see cref="PageBreak"/>, a
-    /// <see cref="KeepWithNext"/> run that moves or the end of this element's last piece at the
-    /// foot of a page, the gap is dropped and that element starts at the top of its page. After the
-    /// last element the gap adds no space and no page. Every element's <c>SpaceAfter</c> follows
-    /// this rule.</para>
+    /// tagging. It never carries over to another page. When the next element is placed, the gap is
+    /// spent if it fits in what is left of the page; if it does not, it is dropped and the next
+    /// element starts at the top of the next page. A spent gap is part of what the page holds, so
+    /// the next element is then laid out below it as below any other content, and may split or
+    /// move on. A gap not yet spent is dropped when the next element starts on another page for
+    /// another reason, such as a <c>BreakBefore</c>, a <see cref="PageBreak"/> or a
+    /// <see cref="KeepWithNext"/> run that moves, and that element starts at the top of its page.
+    /// After the last element the gap adds no space and no page. Every element's
+    /// <c>SpaceAfter</c> follows this rule.</para>
     /// <para>The bottom edge of <see cref="Margins"/> adds no space after a paragraph, heading,
     /// list, preformatted block or table, so this is the way to put a gap there. On an image,
     /// separator or chart the bottom edge is already part of the slot, and the gap follows
