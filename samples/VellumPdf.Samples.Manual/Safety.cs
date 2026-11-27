@@ -110,7 +110,7 @@ public static class Safety
             Het apparaat is geen speelgoed. De uitlaat is zo ontworpen dat vingers er niet
             gemakkelijk in kunnen, maar toezicht blijft nodig bij jonge kinderen. Schakel de
             kinderbeveiliging in als kinderen bij het bedieningspaneel kunnen komen. In hoofdstuk 4 staat
-            hoe dat werkt, in paragraaf 4.5 [p. ?].
+            hoe dat werkt, in [[nl:4.5]].
             """, Dutch);
         w.P("""
             Huisdieren veroorzaken haar en huidschilfers. Het voorfilter vangt het grootste deel op. Maak

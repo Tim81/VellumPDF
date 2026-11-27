@@ -37,7 +37,7 @@ public static class Troubleshooting
             "**The app cannot find the unit.** Check that the phone and the unit are on the same network " +
             "and that the network is a 2.4 GHz one.");
 
-        w.Section("Error codes");
+        w.Section("Error codes", index: ["error codes"]);
         w.P("""
             An error shows as a repeating pattern on the lamp ring, and the app and the console show
             the code. The first digit is the part that failed: 1 for power, 2 for the fan, 3 for the
@@ -54,7 +54,7 @@ public static class Troubleshooting
             The header row of this table repeats on every page it covers.
             """);
 
-        w.Section("Resetting the unit");
+        w.Section("Resetting the unit", index: ["factory reset"]);
         w.P("""
             There are three levels of reset. Each one keeps more than the next, so start with the first.
             """, keepWithNext: true);

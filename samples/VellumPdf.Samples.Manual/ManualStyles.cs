@@ -23,17 +23,17 @@ public sealed class ManualStyles
     /// <summary>The grey of rules, table borders and running text.</summary>
     public static readonly ColorRgb Grey = new(0.45, 0.48, 0.50);
 
-    /// <summary>The colour of an external link.</summary>
+    /// <summary>The colour of a link.</summary>
     public static readonly ColorRgb LinkBlue = new(0.05, 0.25, 0.65);
 
     private ManualStyles(LayoutDocument doc)
     {
-        var serif = Load(doc, "LiberationSerif-Regular.ttf");
-        var serifBold = Load(doc, "LiberationSerif-Bold.ttf");
-        var serifItalic = Load(doc, "LiberationSerif-Italic.ttf");
-        var sans = Load(doc, "LiberationSans-Regular.ttf");
-        var sansBold = Load(doc, "LiberationSans-Bold.ttf");
-        var mono = Load(doc, "LiberationMono-Regular.ttf");
+        var serif = Load(doc, Standard14.TimesRoman);
+        var serifBold = Load(doc, Standard14.TimesBold);
+        var serifItalic = Load(doc, Standard14.TimesItalic);
+        var sans = Load(doc, Standard14.Helvetica);
+        var sansBold = Load(doc, Standard14.HelveticaBold);
+        var mono = Load(doc, Standard14.Courier);
 
         Body = new TextStyle { FontRef = serif, FontSize = 10, Leading = 13.5 };
         Bold = new TextStyle { FontRef = serifBold, FontSize = 10, Leading = 13.5 };
@@ -46,6 +46,7 @@ public sealed class ManualStyles
         Header = new TextStyle { FontRef = sans, FontSize = 8.5, Leading = 11, Color = Grey };
         TableHead = new TextStyle { FontRef = sansBold, FontSize = 9, Leading = 12, Color = new ColorRgb(1, 1, 1) };
         TableBody = new TextStyle { FontRef = sans, FontSize = 9, Leading = 12 };
+        TableBold = new TextStyle { FontRef = sansBold, FontSize = 9, Leading = 12 };
         TableCode = new TextStyle { FontRef = mono, FontSize = 8.5, Leading = 12 };
         CodeBlock = new TextStyle { FontRef = mono, FontSize = 8.5, Leading = 11.5 };
         TitleName = new TextStyle { FontRef = sansBold, FontSize = 44, Leading = 50, Color = Brand };
@@ -86,6 +87,9 @@ public sealed class ManualStyles
     /// <summary>A table body cell.</summary>
     public TextStyle TableBody { get; }
 
+    /// <summary>Bold text in a table body cell.</summary>
+    public TextStyle TableBold { get; }
+
     /// <summary>A table body cell that holds a command or a code.</summary>
     public TextStyle TableCode { get; }
 
@@ -106,18 +110,10 @@ public sealed class ManualStyles
     /// <returns>The styles.</returns>
     public static ManualStyles Create(LayoutDocument doc) => new(doc);
 
-    // The Standard14 package keeps its Liberation faces as embedded resources named after the file.
-    // Its public API offers an extension on the Kernel's PdfDocument only, which a Layout
-    // Document does not expose, so the sample reads the resource by name.
-    private static FontReference Load(LayoutDocument doc, string resource)
-    {
-        var assembly = typeof(Standard14FontExtensions).Assembly;
-        using var stream = assembly.GetManifestResourceStream(resource)
-            ?? throw new InvalidOperationException($"The font resource {resource} is missing.");
-        using var copy = new MemoryStream();
-        stream.CopyTo(copy);
-        return doc.UseTrueTypeFont(copy.ToArray());
-    }
+    // The Standard14 package returns the bytes of the Liberation face that stands in for a
+    // standard-14 name, and the Layout document registers them and hands back the font reference.
+    private static FontReference Load(LayoutDocument doc, Standard14 face) =>
+        doc.UseTrueTypeFont(Standard14Substitutes.GetFontProgram(face));
 
     /// <summary>
     /// Returns <paramref name="style"/> with a different colour and a link address.
@@ -132,5 +128,33 @@ public sealed class ManualStyles
         Leading = style.Leading,
         Color = LinkBlue,
         LinkUri = uri,
+    };
+
+    /// <summary>
+    /// Returns <paramref name="style"/> with a link to the anchor of that name.
+    /// </summary>
+    /// <param name="style">The style to copy.</param>
+    /// <param name="anchor">The name of an element's <c>Anchor</c>.</param>
+    /// <param name="color">The colour of the linked text, or null to keep the style's own.</param>
+    /// <returns>The linked style.</returns>
+    public static TextStyle WithAnchor(TextStyle style, string anchor, ColorRgb? color = null) => new()
+    {
+        FontRef = style.FontRef,
+        FontSize = style.FontSize,
+        Leading = style.Leading,
+        Color = color ?? style.Color,
+        LinkAnchor = anchor,
+    };
+
+    /// <summary>Returns <paramref name="style"/> with another colour and no link.</summary>
+    /// <param name="style">The style to copy.</param>
+    /// <param name="color">The colour.</param>
+    /// <returns>The coloured style.</returns>
+    public static TextStyle WithColor(TextStyle style, ColorRgb color) => new()
+    {
+        FontRef = style.FontRef,
+        FontSize = style.FontSize,
+        Leading = style.Leading,
+        Color = color,
     };
 }

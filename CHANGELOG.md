@@ -32,16 +32,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 - **A sample manual built with the Layout API alone.** `samples/VellumPdf.Samples.Manual` is a console
   project, in the solution and never packed, that writes the user manual of a made-up product as a
-  PDF/A-2u file: a title page, a colophon, a contents list, roman and decimal page labels, chapters
-  on right-hand pages, bookmarks and named destinations, a running header and footer, tables whose
-  header row repeats, command blocks with tabs, dot leaders, a fitted image and a chapter in Dutch
-  with its own language. Where a page number belongs, which the Layout API cannot yet supply, the
-  manual shows a visible `[p. ?]`. The workarounds for bold text in table cells, a caption, note
-  boxes, font loading, heading numbers and spacing each have a placeholder note on the page.
-  `SampleManualTests` in the Layout test project builds the manual and checks it with veraPDF,
-  qpdf and pdftotext, and fails if the compiled sample names `IRenderer`, `PdfCanvas` or
-  `PdfDocument`. The sample assembly is left out of the coverage scope. There is no change to any
-  package.
+  PDF/A-2u file: a title page, a colophon, a contents list and an index whose entries link to their
+  headings and print the page, cross-references that do the same in English and Dutch, roman and
+  decimal page labels, chapters on right-hand pages, bookmarks and named destinations, a running
+  header and footer, tables whose header row repeats and whose cells hold bold and linked runs,
+  command blocks that stay whole, dot leaders, a fitted image and a chapter in Dutch with its own
+  language. Where the Layout API cannot yet do what a manual needs, such as numbered headings, a
+  caption or a shaded note box, the manual shows a visible placeholder note instead.
+  `SampleManualTests` in the Layout test project builds it and checks it with veraPDF, qpdf and
+  pdftotext: every internal link must land on the heading it names, and every printed page number
+  must be the page label of that heading's page. It fails if the compiled sample names `IRenderer`,
+  `PdfCanvas` or `PdfDocument`. The sample assembly is left out of the coverage scope. There is no
+  change to any package.
 
 - **Keep with next, keep together, and a minimum of lines at a page break (#306).** A heading can
   stay on the page of the text after it, an element can move whole to the next page instead of

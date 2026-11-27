@@ -15,20 +15,17 @@ namespace VellumPdf.Samples.Manual;
 
 /// <summary>
 /// Adds the manual's building blocks to a <see cref="LayoutDocument"/>: numbered headings with
-/// anchors,
-/// paragraphs written in a small inline markup, lists, tables, callouts and command blocks. Each
-/// method is a few lines of Layout API calls, so the chapters read as content.
+/// anchors, paragraphs written in a small inline markup, lists, tables, callouts and command
+/// blocks. Each method is a few lines of Layout API calls, so the chapters read as content.
 /// </summary>
 /// <remarks>
 /// The markup is <c>**bold**</c>, <c>*italic*</c> and <c>`code`</c>. A <c>[[3.2]]</c> is a
-/// cross-reference. The sample cannot link it or give its page number, so it writes the section
-/// number and a visible <c>[p. ?]</c> where the page number belongs.
+/// cross-reference: the words "section 3.2, page N", where the number links to the heading and
+/// the library prints the page once the layout has settled. A <c>[[nl:4.5]]</c> is the same in
+/// Dutch.
 /// </remarks>
 public sealed partial class ManualWriter
 {
-    /// <summary>The visible stand-in for a page number the Layout API cannot supply.</summary>
-    public const string PagePlaceholder = "[p. ?]";
-
     private static readonly Regex Spaces = MyWhitespace();
 
     private readonly LayoutDocument _doc;
@@ -36,6 +33,7 @@ public sealed partial class ManualWriter
     private int _chapter;
     private int _section;
     private int _appendix;
+    private int _indexAnchors;
 
     /// <summary>Creates a writer that adds to <paramref name="doc"/>.</summary>
     /// <param name="doc">The document to fill.</param>
@@ -56,7 +54,13 @@ public sealed partial class ManualWriter
     public ManualStyles Styles => _s;
 
     /// <summary>The headings added so far, for the contents list.</summary>
-    public List<(string Number, string Title, int Level, string? Language)> Outline { get; } = [];
+    public List<OutlineEntry> Outline { get; } = [];
+
+    /// <summary>
+    /// The index entries registered so far: a term and the anchor of the element it was
+    /// registered on, in document order.
+    /// </summary>
+    public List<(string Term, string Anchor)> IndexEntries { get; } = [];
 
     /// <summary>Starts a chapter on the next right-hand page.</summary>
     /// <param name="title">The chapter title.</param>
@@ -86,11 +90,15 @@ public sealed partial class ManualWriter
     /// <summary>Adds a numbered section heading that stays with the text after it.</summary>
     /// <param name="title">The section title.</param>
     /// <param name="language">A BCP 47 tag when the section is not in English.</param>
-    public void Section(string title, string? language = null)
+    /// <param name="index">The index terms this section is the place for.</param>
+    public void Section(string title, string? language = null, string[]? index = null)
     {
         _section++;
         var prefix = _chapter > 0 ? $"{_chapter}.{_section}" : $"{(char)('A' + _appendix - 1)}.{_section}";
-        AddHeading(prefix, title, 1, _s.Section, language, $"sec-{prefix}", PageBreakMode.None,
+        var anchor = $"sec-{prefix}";
+        foreach (var term in index ?? [])
+            IndexEntries.Add((term, anchor));
+        AddHeading(prefix, title, 1, _s.Section, language, anchor, PageBreakMode.None,
             new EdgeInsets(16, 0, 0, 0), false);
     }
 
@@ -114,10 +122,12 @@ public sealed partial class ManualWriter
     /// <param name="keepWithNext">
     /// Whether the paragraph stays on a page with the element after it.
     /// </param>
-    public void P(string markup, string? language = null, bool keepWithNext = false)
+    /// <param name="index">The index terms this paragraph is the place for.</param>
+    public void P(string markup, string? language = null, bool keepWithNext = false, string[]? index = null)
     {
         _doc.Add(new Paragraph(Runs(markup, _s.Body))
         {
+            Anchor = IndexAnchor(index),
             Language = language,
             KeepWithNext = keepWithNext,
             MinLinesBeforeBreak = 2,
@@ -176,8 +186,8 @@ public sealed partial class ManualWriter
 
     /// <summary>
     /// Adds a small note that names a workaround the sample needed because the Layout API cannot
-    /// yet
-    /// do something. The note is on the page so that the gap shows to the reader of the sample.
+    /// yet do something. The note is on the page so that the gap shows to the reader of the
+    /// sample.
     /// </summary>
     /// <param name="text">What is missing, and what the manual does instead.</param>
     public void Placeholder(string text) =>
@@ -188,13 +198,13 @@ public sealed partial class ManualWriter
 
     /// <summary>Adds a shaded box with a label, for a warning or a hint.</summary>
     /// <param name="label">A short label such as NOTE or CAUTION.</param>
-    /// <param name="text">The text of the box, plain.</param>
+    /// <param name="text">The text of the box, in the inline markup.</param>
     /// <param name="language">A BCP 47 tag when the text is not in English.</param>
     public void Callout(string label, string text, string? language = null)
     {
-        // Workaround: the Layout API has no shaded paragraph, so the box is a one-cell table. It is
-        // tagged as a table, and the label cannot be bold. The manual says so where it first uses
-        // one.
+        // Workaround: the Layout API has no shaded paragraph, so the box is a one-cell table (the
+        // note-box issue, #703). A screen reader announces it as a table. The label is a bold run
+        // of its own, which a cell built from runs allows.
         var table = new TableElement
         {
             BorderWidth = 0,
@@ -202,7 +212,9 @@ public sealed partial class ManualWriter
             KeepTogether = true,
         };
         table.SetColumnWidths(ContentWidth);
-        table.AddRow().AddCell(new Cell($"{label}   {Plain(Collapse(text))}")
+        List<TextRun> runs = [new TextRun(label, _s.TableBold), new TextRun("   ", _s.TableBody)];
+        runs.AddRange(CellRuns(Collapse(text), _s.TableBody));
+        table.AddRow().AddCell(new Cell(runs)
         {
             Background = ManualStyles.Tint,
             Padding = new EdgeInsets(7, 9, 7, 9),
@@ -219,6 +231,7 @@ public sealed partial class ManualWriter
         _doc.Add(new Preformatted(text, _s.CodeBlock)
         {
             Anchor = anchor,
+            KeepTogether = true,
             TabWidth = 8,
             Margins = new EdgeInsets(4, 0, 0, 0),
         });
@@ -230,7 +243,9 @@ public sealed partial class ManualWriter
     /// The relative column widths; they are scaled to fill the content width.
     /// </param>
     /// <param name="header">The header cells.</param>
-    /// <param name="rows">The body rows. A line feed in a cell is a line break.</param>
+    /// <param name="rows">
+    /// The body rows, each cell in the inline markup. A line feed in a cell is a line break.
+    /// </param>
     /// <param name="codeColumn">The zero-based column drawn in monospace, or -1 for none.</param>
     /// <param name="anchor">A named destination for the table, or null.</param>
     /// <param name="language">A BCP 47 tag when the table is not in English.</param>
@@ -269,9 +284,10 @@ public sealed partial class ManualWriter
             zebra = !zebra;
             for (var c = 0; c < row.Length; c++)
             {
-                r.AddCell(new Cell(Plain(row[c]))
+                var style = c == codeColumn ? _s.TableCode : _s.TableBody;
+                r.AddCell(new Cell(CellRuns(row[c], style))
                 {
-                    Style = c == codeColumn ? _s.TableCode : _s.TableBody,
+                    Style = style,
                     Padding = new EdgeInsets(3.5, 5, 3.5, 5),
                     Language = language,
                 });
@@ -302,36 +318,89 @@ public sealed partial class ManualWriter
 
     /// <summary>
     /// Adds a line that holds a name, a run of dots and a value at the right margin, the shape of
-    /// a price list or a table of contents.
+    /// a price list.
     /// </summary>
     /// <param name="left">The text at the left.</param>
     /// <param name="right">The text at the right margin.</param>
     /// <param name="style">The style of both.</param>
-    /// <param name="indent">The left margin of the line in points.</param>
-    /// <param name="language">A BCP 47 tag when the line is not in English.</param>
-    public void LeaderLine(string left, string right, TextStyle style, double indent = 0, string? language = null)
+    public void LeaderLine(string left, string right, TextStyle style)
     {
-        _doc.Add(new Paragraph($"{left}\t{right}", style)
+        _doc.Add(new Paragraph($"{left}	{right}", style)
         {
-            Language = language,
+            TabStops = [new TabStop(ContentWidth, TabAlignment.Right, TabLeader.Dots)],
+            Margins = new EdgeInsets(2.5, 0, 0, 0),
+        });
+    }
+
+    /// <summary>
+    /// Adds a contents line: the heading's number and title as a link to its anchor, a run of
+    /// dots, and the page the heading is on, printed by the library at the right margin.
+    /// </summary>
+    /// <param name="entry">The heading.</param>
+    /// <param name="style">The style of the line.</param>
+    /// <param name="indent">The left margin of the line in points.</param>
+    public void ContentsLine(OutlineEntry entry, TextStyle style, double indent = 0)
+    {
+        var line = new List<TextRun>
+        {
+            new(entry.Label, ManualStyles.WithAnchor(style, entry.Anchor)),
+            new("\t", style),
+            TextRun.PageReference(entry.Anchor, style),
+        };
+        _doc.Add(new Paragraph(line)
+        {
+            Language = entry.Language,
             TabStops = [new TabStop(ContentWidth - indent, TabAlignment.Right, TabLeader.Dots)],
             Margins = new EdgeInsets(2.5, 0, 0, indent),
+        });
+    }
+
+    /// <summary>
+    /// Adds an index line: the term, a run of dots, and the page of each place the term is
+    /// registered, each page a link to its place.
+    /// </summary>
+    /// <param name="term">The term, as it is printed.</param>
+    /// <param name="anchors">The anchors of the places, in document order.</param>
+    /// <param name="style">The style of the line.</param>
+    public void IndexLine(string term, IReadOnlyList<string> anchors, TextStyle style)
+    {
+        var line = new List<TextRun> { new(term, style), new("\t", style) };
+        for (var i = 0; i < anchors.Count; i++)
+        {
+            if (i > 0)
+                line.Add(new TextRun(", ", style));
+            line.Add(TextRun.PageReference(anchors[i], style));
+        }
+
+        _doc.Add(new Paragraph(line)
+        {
+            TabStops = [new TabStop(ContentWidth, TabAlignment.Right, TabLeader.Dots)],
+            Margins = new EdgeInsets(2.5, 0, 0, 0),
         });
     }
 
     /// <summary>Turns inline markup into styled runs.</summary>
     /// <param name="markup">The text.</param>
     /// <param name="baseStyle">The style of unmarked text.</param>
+    /// <param name="bold">The style of bold text, or null for the body bold.</param>
+    /// <param name="italic">The style of italic text, or null for the body italic.</param>
+    /// <param name="code">The style of monospace text, or null for the body monospace.</param>
+    /// <param name="collapse">Whether white space, line feeds included, becomes one space.</param>
     /// <returns>The runs, in order.</returns>
-    public List<TextRun> Runs(string markup, TextStyle baseStyle)
+    public List<TextRun> Runs(
+        string markup, TextStyle baseStyle, TextStyle? bold = null, TextStyle? italic = null,
+        TextStyle? code = null, bool collapse = true)
     {
-        var text = Collapse(markup);
+        var boldStyle = bold ?? _s.Bold;
+        var italicStyle = italic ?? _s.Italic;
+        var codeStyle = code ?? _s.Code;
+        var text = collapse ? Collapse(markup) : markup;
         var runs = new List<TextRun>();
         var buffer = new StringBuilder();
         var current = baseStyle;
-        var bold = false;
-        var italic = false;
-        var code = false;
+        var isBold = false;
+        var isItalic = false;
+        var isCode = false;
 
         void Flush()
         {
@@ -343,7 +412,7 @@ public sealed partial class ManualWriter
         void Restyle()
         {
             Flush();
-            current = code ? _s.Code : bold ? _s.Bold : italic ? _s.Italic : baseStyle;
+            current = isCode ? codeStyle : isBold ? boldStyle : isItalic ? italicStyle : baseStyle;
         }
 
         for (var i = 0; i < text.Length; i++)
@@ -351,24 +420,32 @@ public sealed partial class ManualWriter
             if (text.AsSpan(i).StartsWith("[["))
             {
                 var end = text.IndexOf("]]", i, StringComparison.Ordinal);
-                var number = text[(i + 2)..end];
-                buffer.Append(CultureInfo.InvariantCulture, $"section {number} {PagePlaceholder}");
+                var spec = text[(i + 2)..end];
+                var dutch = spec.StartsWith("nl:", StringComparison.Ordinal);
+                var number = dutch ? spec[3..] : spec;
+                var anchor = $"sec-{number}";
+                buffer.Append(dutch ? "paragraaf " : "section ");
+                Flush();
+                runs.Add(new TextRun(number, ManualStyles.WithAnchor(current, anchor, ManualStyles.LinkBlue)));
+                buffer.Append(dutch ? ", pagina " : ", page ");
+                Flush();
+                runs.Add(TextRun.PageReference(anchor, ManualStyles.WithColor(current, ManualStyles.LinkBlue)));
                 i = end + 1;
             }
             else if (text.AsSpan(i).StartsWith("**"))
             {
-                bold = !bold;
+                isBold = !isBold;
                 Restyle();
                 i++;
             }
             else if (text[i] == '*')
             {
-                italic = !italic;
+                isItalic = !isItalic;
                 Restyle();
             }
             else if (text[i] == '`')
             {
-                code = !code;
+                isCode = !isCode;
                 Restyle();
             }
             else
@@ -388,11 +465,24 @@ public sealed partial class ManualWriter
     /// <returns>The text with every run of white space as one space.</returns>
     public static string Collapse(string text) => Spaces.Replace(text.Trim(), " ");
 
-    // A table cell holds one string in one style, so the markup that paragraphs use cannot reach
-    // it. The cell gets the text without the markers.
-    private static string Plain(string markup) => Reference().Replace(
-        markup.Replace("*", "", StringComparison.Ordinal).Replace("`", "", StringComparison.Ordinal),
-        m => $"section {m.Groups[1].Value} {PagePlaceholder}");
+    // A header cell holds one string in one style, so it gets the text without the markers.
+    private static string Plain(string markup) =>
+        markup.Replace("*", "", StringComparison.Ordinal).Replace("`", "", StringComparison.Ordinal);
+
+    // The runs of a body cell: sans bold for **bold**, the cell's own style for everything else,
+    // since the sample loads no sans italic. Line feeds stay, because they are line breaks there.
+    private List<TextRun> CellRuns(string markup, TextStyle style) =>
+        Runs(markup, style, bold: _s.TableBold, italic: style, code: _s.TableCode, collapse: false);
+
+    private string? IndexAnchor(string[]? terms)
+    {
+        if (terms is not { Length: > 0 })
+            return null;
+        var anchor = $"ix-{++_indexAnchors}";
+        foreach (var term in terms)
+            IndexEntries.Add((term, anchor));
+        return anchor;
+    }
 
     private void AddList(ListStyle style, string? language, string[] items)
     {
@@ -411,8 +501,9 @@ public sealed partial class ManualWriter
         string number, string title, int level, TextStyle style, string? language, string anchor,
         PageBreakMode breakBefore, EdgeInsets margins, bool appendix)
     {
-        var text = appendix ? $"{number}. {title}" : $"{number}  {title}";
-        Outline.Add((number, title, level, language));
+        var entry = new OutlineEntry(number, title, level, language, anchor);
+        var text = entry.Label;
+        Outline.Add(entry);
         _doc.Add(new Heading(text, style)
         {
             Level = level,
@@ -423,9 +514,6 @@ public sealed partial class ManualWriter
             Margins = margins,
         });
     }
-
-    [GeneratedRegex(@"\[\[([0-9A-Z.]+)\]\]")]
-    private static partial Regex Reference();
 
     [GeneratedRegex(@"\s+")]
     private static partial Regex MyWhitespace();

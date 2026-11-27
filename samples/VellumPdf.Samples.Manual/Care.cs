@@ -45,7 +45,7 @@ public static class Care
             calendar time, so a unit that runs less lasts longer.
             """);
 
-        w.Section("Cleaning the pre-filter");
+        w.Section("Cleaning the pre-filter", index: ["pre-filter"]);
         w.P("""
             The pre-filter is the grey mesh at the bottom of the unit. It catches hair and coarse dust
             and keeps the other filters clean for longer. Clean it every two weeks, or every week if you
@@ -62,7 +62,7 @@ public static class Care
             filter that can be washed.
             """);
 
-        w.Section("Replacing the HEPA and carbon filters");
+        w.Section("Replacing the HEPA and carbon filters", index: ["HEPA filter", "carbon filter"]);
         w.P("""
             When the **Filter** lamp turns steady white, one of the filters has less than ten percent of
             its life left. The app says which one. Order a replacement now, because the unit continues to

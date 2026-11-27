@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 using System.Globalization;
+using System.Net;
 using System.Reflection.Metadata;
 using System.Reflection.PortableExecutable;
 using System.Security.Cryptography;
@@ -16,9 +17,11 @@ namespace VellumPdf.Layout.Tests;
 /// <summary>
 /// The sample manual under <c>samples/VellumPdf.Samples.Manual</c>: it saves, it conforms to
 /// PDF/A-2u,
-/// qpdf finds nothing wrong with it, its named destinations and bookmarks resolve, its page labels
-/// are the ones built, the Dutch passage and the colophon read back, the same inputs give the same
-/// bytes, and the sample reaches VellumPdf only through the Layout API.
+/// qpdf finds nothing wrong with it, its named destinations and bookmarks resolve, every internal
+/// link lands on the heading it names and every printed page number is the label of that
+/// heading's page, its page labels are the ones built, the Dutch passage and the colophon read
+/// back, the same inputs give the same bytes, and the sample reaches VellumPdf only through the
+/// Layout API.
 /// </summary>
 /// <remarks>
 /// These tests live in the Layout test project rather than a project of their own because the
@@ -132,6 +135,98 @@ public sealed class SampleManualTests : IClassFixture<SampleManualTests.Built>
         return -1;
     }
 
+    // The link annotations of every page: the page index, the rectangle, and either a named
+    // destination or a URI.
+    private sealed record PageLink(int Page, double[] Rect, string? Dest, string? Uri);
+
+    private static List<PageLink> AllLinks(JsonDocument json)
+    {
+        var objects = Objects(json);
+        var result = new List<PageLink>();
+        var pages = json.RootElement.GetProperty("pages").EnumerateArray().ToArray();
+        for (var i = 0; i < pages.Length; i++)
+        {
+            var page = Value(objects, pages[i].GetProperty("object").GetString()!);
+            if (!page.TryGetProperty("/Annots", out var annots))
+                continue;
+            foreach (var reference in annots.EnumerateArray())
+            {
+                var annot = Value(objects, reference.GetString()!);
+                if (annot.GetProperty("/Subtype").GetString() != "/Link")
+                    continue;
+                var rect = annot.GetProperty("/Rect").EnumerateArray().Select(n => n.GetDouble()).ToArray();
+                string? dest = annot.TryGetProperty("/Dest", out var d) ? d.GetString()!["u:".Length..] : null;
+                string? uri = annot.TryGetProperty("/A", out var a) && a.TryGetProperty("/URI", out var u)
+                    ? u.GetString()!["u:".Length..]
+                    : null;
+                result.Add(new PageLink(i, rect, dest, uri));
+            }
+        }
+
+        return result;
+    }
+
+    // The label a page prints, read from the label dictionary that /PageLabels gives it (qpdf
+    // resolves the ranges), and not from the page's position.
+    private static string LabelOf(JsonDocument json, int pageIndex)
+    {
+        var label = json.RootElement.GetProperty("pages")[pageIndex].GetProperty("label");
+        var number = label.GetProperty("/St").GetInt32();
+        var prefix = label.TryGetProperty("/P", out var p) ? p.GetString()!["u:".Length..] : "";
+        return prefix + label.GetProperty("/S").GetString() switch
+        {
+            "/D" => number.ToString(CultureInfo.InvariantCulture),
+            "/r" => LowerRoman(number),
+            var other => throw new InvalidOperationException($"Unexpected label style {other}."),
+        };
+    }
+
+    private static string LowerRoman(int n)
+    {
+        var sb = new StringBuilder();
+        foreach (var (value, text) in new[] { (1000, "m"), (900, "cm"), (500, "d"), (400, "cd"), (100, "c"),
+                     (90, "xc"), (50, "l"), (40, "xl"), (10, "x"), (9, "ix"), (5, "v"), (4, "iv"), (1, "i") })
+        {
+            while (n >= value)
+            {
+                sb.Append(text);
+                n -= value;
+            }
+        }
+
+        return sb.ToString();
+    }
+
+    private sealed record Word(double X0, double Y0, double X1, double Y1, string Text);
+
+    // The words of a page with the page's height, from pdftotext -bbox. The y axis runs down.
+    private (double Height, List<Word> Words) Words(int page)
+    {
+        var xml = Run("pdftotext", "-bbox", "-f", page.ToString(CultureInfo.InvariantCulture), "-l",
+            page.ToString(CultureInfo.InvariantCulture), _built.Path, "-");
+        var height = double.Parse(
+            Regex.Match(xml, "<page width=\"[0-9.]+\" height=\"([0-9.]+)\"").Groups[1].Value,
+            CultureInfo.InvariantCulture);
+        static double N(string v) => double.Parse(v, CultureInfo.InvariantCulture);
+        var words = Regex.Matches(xml,
+                "<word xMin=\"([0-9.]+)\" yMin=\"([0-9.]+)\" xMax=\"([0-9.]+)\" yMax=\"([0-9.]+)\">([^<]*)</word>")
+            .Select(m => new Word(N(m.Groups[1].Value), N(m.Groups[2].Value), N(m.Groups[3].Value),
+                N(m.Groups[4].Value), WebUtility.HtmlDecode(m.Groups[5].Value)))
+            .ToList();
+        return (height, words);
+    }
+
+    // The words whose centre lies inside the link's rectangle: the text the link covers.
+    private static string TextUnder(PageLink link, (double Height, List<Word> Words) page)
+    {
+        var (x0, y0, x1, y1) = (link.Rect[0], page.Height - link.Rect[3], link.Rect[2], page.Height - link.Rect[1]);
+        return string.Join(' ', page.Words
+            .Where(w => (w.X0 + w.X1) / 2 >= x0 - 1 && (w.X0 + w.X1) / 2 <= x1 + 1
+                && (w.Y0 + w.Y1) / 2 >= y0 && (w.Y0 + w.Y1) / 2 <= y1)
+            .OrderBy(w => Math.Round(w.Y0)).ThenBy(w => w.X0)
+            .Select(w => w.Text));
+    }
+
     // ── The file ─────────────────────────────────────────────────────────────
 
     [Fact]
@@ -202,10 +297,9 @@ public sealed class SampleManualTests : IClassFixture<SampleManualTests.Built>
     }
 
     [Fact]
-    public void EveryBookmark_resolvesToAPage_andEveryLinkIsTheOneExternalAddress()
+    public void EveryBookmark_resolvesToAPage()
     {
         using var json = QpdfJson();
-        var objects = Objects(json);
 
         var count = 0;
         void Walk(JsonElement nodes)
@@ -221,17 +315,17 @@ public sealed class SampleManualTests : IClassFixture<SampleManualTests.Built>
 
         Walk(json.RootElement.GetProperty("outlines"));
         Assert.True(count >= 40, $"Only {count} bookmarks.");
+    }
 
-        // The Layout API writes links to a URI only; the manual has exactly one, in the colophon.
-        // An internal link would be a GoTo action or a /Dest, and there is none (#299).
-        var links = objects.EnumerateObject()
-            .Where(o => o.Value.TryGetProperty("value", out var v) && v.ValueKind == JsonValueKind.Object
-                && v.TryGetProperty("/Subtype", out var s) && s.GetString() == "/Link")
-            .Select(o => o.Value.GetProperty("value"))
-            .ToArray();
-        var link = Assert.Single(links);
-        Assert.Equal("u:" + ManualDocument.ColophonAddress, link.GetProperty("/A").GetProperty("/URI").GetString());
-        Assert.False(link.TryGetProperty("/Dest", out _));
+    [Fact]
+    public void TheOnlyExternalLink_isTheColophonAddress()
+    {
+        using var json = QpdfJson();
+        var external = AllLinks(json).Where(l => l.Uri is not null).ToArray();
+        var link = Assert.Single(external);
+        Assert.Equal(ManualDocument.ColophonAddress, link.Uri);
+        Assert.Equal(1, link.Page);
+        Assert.Null(link.Dest);
     }
 
     [Fact]
@@ -308,35 +402,123 @@ public sealed class SampleManualTests : IClassFixture<SampleManualTests.Built>
     }
 
     [Fact]
-    public void EveryCrossReference_namesAHeadingThatExists_andShowsThePlaceholder()
+    public void EveryInternalLink_resolves_andEachEntryAndCrossReferenceLinksToTheSectionItNames()
     {
         using var json = QpdfJson();
-        var numbers = new HashSet<string>(StringComparer.Ordinal);
+        var objects = Objects(json);
+        var dests = NamedDestinations(objects);
+        var links = AllLinks(json).Where(l => l.Dest is not null).ToArray();
+        var pageCache = new Dictionary<int, (double, List<Word>)>();
+        (double Height, List<Word> Words) PageWords(int page) =>
+            pageCache.TryGetValue(page, out var cached) ? cached : pageCache[page] = Words(page + 1);
+
+        // Every internal link has a destination, and it lands on a page.
+        foreach (var link in links)
+        {
+            Assert.True(dests.ContainsKey(link.Dest!), $"A link on page {link.Page + 1} names {link.Dest}, which is not a named destination.");
+            Assert.InRange(PageIndexOfDestination(json, objects, dests[link.Dest!]), 0, 40);
+        }
+
+        var bookmarks = new List<string>();
         void Walk(JsonElement nodes)
         {
             foreach (var node in nodes.EnumerateArray())
             {
-                var title = node.GetProperty("title").GetString()!;
-                numbers.Add(title.Split(' ')[0]);
+                var title = Squash(node.GetProperty("title").GetString()!);
+                if (Regex.IsMatch(title, @"^((\d+(\.\d+)?|[A-Z]\.\d+) |Appendix )"))
+                    bookmarks.Add(title);
                 Walk(node.GetProperty("kids"));
             }
         }
 
         Walk(json.RootElement.GetProperty("outlines"));
-        var all = Squash(Text());
-        var references = Regex.Matches(all, @"(?:section|paragraaf) (\d+\.\d+) \[p\. \?\]");
-        Assert.True(references.Count >= 8, $"Only {references.Count} cross-references.");
-        foreach (Match m in references)
-            Assert.True(numbers.Contains(m.Groups[1].Value), $"Section {m.Groups[1].Value} does not exist.");
+
+        var indexPage = PageIndexOfDestination(json, objects, dests["app-C"]);
+        var contents = new List<string>();
+        var crossReferences = 0;
+        var pageNumbers = 0;
+        var indexNumbers = 0;
+        foreach (var link in links)
+        {
+            var words = PageWords(link.Page);
+            // pdftotext keeps the comma or bracket that follows a number in the same word.
+            var covered = Squash(TextUnder(link, words)).TrimEnd(',', ')', ';', '.');
+            var target = PageIndexOfDestination(json, objects, dests[link.Dest!]);
+            if (Regex.IsMatch(covered, @"^[0-9A-Z]+\.\d+$"))
+            {
+                // The section number of a cross-reference links to that section's anchor.
+                Assert.Equal("sec-" + covered, link.Dest);
+                crossReferences++;
+            }
+            else if (Regex.IsMatch(covered, @"^(\d+|[ivxlc]+)$"))
+            {
+                // A printed page number is the label of the page its link lands on.
+                Assert.True(LabelOf(json, target) == covered,
+                    $"Page {link.Page + 1} prints {covered} for {link.Dest}, whose page is labelled {LabelOf(json, target)}.");
+                pageNumbers++;
+                if (link.Page >= indexPage)
+                {
+                    // On the index page the line's term sits at the left of the line. The place the
+                    // number links to must hold that term.
+                    var y = (link.Rect[1] + link.Rect[3]) / 2;
+                    var term = string.Join(' ', words.Words
+                        .Where(w => Math.Abs(words.Height - (w.Y0 + w.Y1) / 2 - y) < 4 && w.X1 < link.Rect[0]
+                            && char.IsLetter(w.Text[0]))
+                        .OrderBy(w => w.X0).Select(w => w.Text));
+                    if (term.Length > 0)
+                    {
+                        var onTarget = Squash(Text(target + 1));
+                        Assert.True(onTarget.Contains(term, StringComparison.OrdinalIgnoreCase),
+                            $"The index entry \"{term}\" links to {link.Dest}, on page {target + 1}, which does not hold the term.");
+                        indexNumbers++;
+                    }
+                }
+            }
+            else
+            {
+                // A contents entry links to the anchor of the heading it names, and that heading's
+                // page holds the title.
+                var match = Regex.Match(covered, @"^((?<n>[0-9A-Z]+\.\d+)|(?<c>\d+)|Appendix (?<a>[A-Z])\.) (?<t>.+)$");
+                Assert.True(match.Success, $"The link on page {link.Page + 1} covers \"{covered}\", which is no heading.");
+                var expected = match.Groups["n"].Success ? "sec-" + match.Groups["n"].Value
+                    : match.Groups["c"].Success ? "ch" + match.Groups["c"].Value
+                    : "app-" + match.Groups["a"].Value;
+                Assert.Equal(expected, link.Dest);
+                Assert.Contains(Squash(match.Groups["t"].Value), Squash(Text(target + 1)), StringComparison.Ordinal);
+                contents.Add(covered);
+            }
+        }
+
+        // Every numbered bookmark has one contents entry, and no entry lacks a bookmark.
+        Assert.Equal(bookmarks.Order(StringComparer.Ordinal), contents.Order(StringComparer.Ordinal));
+        Assert.True(contents.Count >= 40, $"Only {contents.Count} contents entries.");
+        // Every contents entry prints a page number, and each cross-reference prints one after
+        // its section number: a page number that is typed and not a reference is not a link, so it
+        // is not counted here.
+        Assert.True(crossReferences >= 12, $"Only {crossReferences} linked cross-references.");
+        Assert.Equal(Appendices.IndexTerms.Length + 1, indexNumbers);
+        Assert.Equal(contents.Count + crossReferences + indexNumbers, pageNumbers);
     }
 
     [Fact]
-    public void TheContentsAndIndex_carryAVisiblePlaceholderInsteadOfPageNumbers()
+    public void EveryPrintedCrossReference_namesAHeadingThatExists_andPrintsThePageOfItsAnchor()
     {
-        var contents = Squash(Text(3) + Text(4));
-        Assert.Contains("Placeholder", contents, StringComparison.Ordinal);
-        Assert.True(Regex.Matches(contents, Regex.Escape(ManualWriter.PagePlaceholder)).Count >= 40);
-        Assert.Contains("7.2 Error codes", contents, StringComparison.Ordinal);
+        using var json = QpdfJson();
+        var objects = Objects(json);
+        var dests = NamedDestinations(objects);
+        var all = Squash(Text());
+        var references = Regex.Matches(all, @"(?:section|paragraaf) (\d+\.\d+), (?:page|pagina) (\w+)");
+        Assert.True(references.Count >= 12, $"Only {references.Count} cross-references.");
+        foreach (Match m in references)
+        {
+            var anchor = "sec-" + m.Groups[1].Value;
+            Assert.True(dests.ContainsKey(anchor), $"Section {m.Groups[1].Value} does not exist.");
+            var page = PageIndexOfDestination(json, objects, dests[anchor]);
+            Assert.Equal(LabelOf(json, page), m.Groups[2].Value);
+        }
+
+        // The Dutch chapter's own reference is written in Dutch.
+        Assert.Contains("paragraaf 4.5, pagina", all, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -443,21 +625,41 @@ public sealed class SampleManualTests : IClassFixture<SampleManualTests.Built>
     }
 
     [Fact]
-    public void EveryWorkaround_isMarkedOnThePage_withAPlaceholderNote()
+    public void EveryRemainingWorkaround_isMarkedOnThePage_andNoRemovedOneComesBack()
     {
         var all = Squash(Text());
-        // One note for each workaround the README lists.
+
+        // One note for each workaround that is still needed, each naming its open issue.
         foreach (var fragment in new[]
         {
-            "one-cell tables, because the Layout API has no shaded paragraph",
-            "button names in this table should be bold",
+            "one-cell tables, because the Layout API has no shaded paragraph (#703)",
             "Figure 1 has no caption",
-            "fonts are read by name from resources of the Standard14 package",
-            "Heading numbers are typed by hand",
-            "a bottom margin adds no space",
+            "no caption element that stays with a figure (#295)",
+            "heading numbers are typed by hand (#301)",
+            "a bottom margin adds no space (#704)",
+            "nothing can be placed outside the flow (#313)",
+            "written by hand from the headings the sample adds",
+            "cannot yet generate one (#294)",
+            "this index is written by hand",
+            "cannot yet collect the terms of a document (#294)",
         })
-            Assert.Contains(fragment, all, StringComparison.OrdinalIgnoreCase);
-        Assert.True(Regex.Matches(all, "Placeholder:").Count >= 6);
+            Assert.Contains(fragment, all, StringComparison.Ordinal);
+        Assert.Equal(5, Regex.Matches(all, "Placeholder:").Count);
+
+        // A workaround the library now removes must not return: page numbers typed as a stand-in,
+        // bold button names that are plain, a callout label that cannot be bold, fonts read by
+        // name, and an index with no pages.
+        foreach (var gone in new[]
+        {
+            "[p. ?]",
+            "page numbers below are not real",
+            "should be bold, as they are in the text",
+            "label cannot be bold",
+            "fonts are read by name",
+            "cannot fill in the page number",
+            "index needs the page of every term",
+        })
+            Assert.DoesNotContain(gone, all, StringComparison.Ordinal);
     }
 
     // ── The sample reaches VellumPdf through the Layout API only ─────────────
@@ -516,10 +718,10 @@ public sealed class SampleManualTests : IClassFixture<SampleManualTests.Built>
     public void TheKernelTypesTheSampleTouches_arePinned()
     {
         // Six are types Layout's own public members take or return: PdfConformance,
-        // PdfDocumentInfo,
-        // PdfRectangle, PdfPageLabelStyle, EmbeddedFontHandle and PdfImageXObject. PageSize (the A4
-        // value) and PngImageLoader (how an image is made) make values for those. A change to this
-        // list is a change to what a Layout-only program must reach for.
+        // PdfDocumentInfo, PdfRectangle, PdfPageLabelStyle, EmbeddedFontHandle and PdfImageXObject.
+        // PageSize (the A4 value), PngImageLoader (how an image is made) and Standard14 (which
+        // bundled face to ask for) make values for those. A change to this list is a change to
+        // what a Layout-only program must reach for (#706).
         var kernel = VellumReferences()
             .Where(r => r.Assembly == "VellumPdf.Kernel")
             .Select(r => r.Type)
@@ -533,6 +735,7 @@ public sealed class SampleManualTests : IClassFixture<SampleManualTests.Built>
                 "VellumPdf.Document.PdfPageLabelStyle",
                 "VellumPdf.Document.PdfRectangle",
                 "VellumPdf.Fonts.EmbeddedFontHandle",
+                "VellumPdf.Fonts.Standard14",
                 "VellumPdf.Images.PdfImageXObject",
                 "VellumPdf.Images.PngImageLoader",
             ],

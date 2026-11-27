@@ -59,7 +59,7 @@ public static class Appendices
             ],
             codeColumn: 0);
 
-        w.Section("Network and system");
+        w.Section("Network and system", index: ["firmware"]);
         w.Table(
             [150, 309],
             ["Command", "Effect"],
@@ -112,22 +112,35 @@ public static class Appendices
             ]);
     }
 
-    // The index is a placeholder: the Layout API collects no terms and reports no page numbers.
+    /// <summary>The terms of the index, in the order they are printed.</summary>
+    public static readonly string[] IndexTerms =
+    [
+        "app", "Auto mode", "carbon filter", "child lock", "console", "error codes", "factory reset",
+        "firmware", "HEPA filter", "Night mode", "pre-filter", "privacy", "service port", "timer",
+        "Wi-Fi",
+    ];
+
+    // The index is written by hand: the Layout API collects no terms (#294). Each term is
+    // registered on the element that explains it, as the chapters are written, and the library
+    // prints the page of that element.
     private static void Index(ManualWriter w)
     {
         w.Appendix("Index", PageBreakMode.None);
-        w.P("""
-            Placeholder: an index needs the page of every term, which this edition cannot supply. The
-            entries below are listed in alphabetical order with the page reference unknown.
-            """, keepWithNext: true);
-        foreach (var term in new[]
+        w.Placeholder("""
+            this index is written by hand, because the Layout API cannot yet collect the terms of a
+            document (#294). The entries link to the place where each term is explained, and the
+            library prints the page.
+            """);
+        foreach (var term in IndexTerms)
         {
-            "app", "Auto mode", "carbon filter", "child lock", "console", "error codes", "factory reset",
-            "firmware", "HEPA filter", "Night mode", "pre-filter", "privacy", "service port", "timer",
-            "Wi-Fi",
-        })
-        {
-            w.LeaderLine(term, ManualWriter.PagePlaceholder, w.Styles.Body);
+            var anchors = w.IndexEntries
+                .Where(e => string.Equals(e.Term, term, StringComparison.OrdinalIgnoreCase))
+                .Select(e => e.Anchor)
+                .Distinct()
+                .ToArray();
+            if (anchors.Length == 0)
+                throw new InvalidOperationException($"No element is registered for the index term \"{term}\".");
+            w.IndexLine(term, anchors, w.Styles.Body);
         }
     }
 }

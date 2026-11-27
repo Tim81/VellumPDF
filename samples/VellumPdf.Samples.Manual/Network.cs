@@ -23,7 +23,7 @@ public static class Network
             not offer.
             """);
 
-        w.Section("Joining a Wi-Fi network");
+        w.Section("Joining a Wi-Fi network", index: ["Wi-Fi"]);
         w.P("""
             The unit supports 2.4 GHz networks with WPA2 or WPA3. It cannot join a 5 GHz network or a
             network that asks for a login on a web page, such as a hotel network.
@@ -38,7 +38,7 @@ public static class Network
             weak. Move the unit closer to the router for the setup. You can move it back afterwards.
             """);
 
-        w.Section("The companion app");
+        w.Section("The companion app", index: ["app"]);
         w.P("""
             The app shows the particle and gas readings as a graph, lets you change the mode and the timer,
             and warns you when a filter needs replacing. It also holds the daily schedule. It does not
@@ -50,12 +50,12 @@ public static class Network
             "**Schedule** sets up to eight daily or weekly switching times.",
             "**Filters** shows the remaining life of each filter and links to the order page.");
 
-        w.Section("The service console");
+        w.Section("The service console", index: ["console"]);
         w.P("""
             For settings that the app does not offer, the unit has a text console on its service port. The
             port is a small round socket under the mains inlet in the base. Connect the serial service
             adapter from the box to it and to a computer, and open a terminal program.
-            """, keepWithNext: true);
+            """, keepWithNext: true, index: ["service port"]);
         w.Table(
             [140, 319],
             ["Setting", "Value"],
@@ -102,7 +102,7 @@ public static class Network
             network settings to the state they had when the unit left the factory.
             """);
 
-        w.Section("Firmware updates");
+        w.Section("Firmware updates", index: ["firmware"]);
         w.P("""
             When the unit is connected, it checks once a day for a new firmware version. If one is
             available, the app asks you to confirm the update. The unit downloads the file, checks its
@@ -129,7 +129,7 @@ public static class Network
             "al5> firmware apply\n" +
             "the unit restarts in 5 s");
 
-        w.Section("Privacy");
+        w.Section("Privacy", index: ["privacy"]);
         w.P("""
             The unit sends readings to the app only over your own network, unless you switch on remote
             access in the app. With remote access on, the readings pass through a relay server. They are

@@ -72,7 +72,7 @@ public static class ManualDocument
 
     // The contents list comes before the chapters, so a first pass over a scratch document learns
     // the headings. One list of chapters then drives both the body and the contents.
-    private static List<(string Number, string Title, int Level, string? Language)> CollectOutline()
+    private static List<OutlineEntry> CollectOutline()
     {
         using var scratch = new LayoutDocument();
         var writer = new ManualWriter(scratch, ManualStyles.Create(scratch));

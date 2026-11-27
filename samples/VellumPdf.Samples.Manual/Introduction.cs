@@ -38,7 +38,7 @@ public static class Introduction
             """);
         w.Placeholder("""
             Boxes like the NOTE above are one-cell tables, because the Layout API has no shaded
-            paragraph. A screen reader announces a table, and the label cannot be bold.
+            paragraph (#703). A screen reader announces a table.
             """);
 
         w.Section("Conventions");
@@ -53,8 +53,8 @@ public static class Introduction
             "A shaded **NOTE** box holds background information that is useful but not essential.",
             "A shaded **CAUTION** box is about something that can damage the device or its filters.",
             "A shaded **WARNING** box is about a risk of injury. Never skip these.",
-            "A reference such as [[6.2]] points to another part of the manual. This edition cannot fill in " +
-            "the page number, so it shows " + ManualWriter.PagePlaceholder + " in its place.");
+            "A reference such as [[6.2]] points to another part of the manual. The section number is a link, " +
+            "and the page number after it is a link too.");
         w.P("""
             Measurements are metric. Where a figure depends on the room, the manual says which room
             size it assumes. Times are given in 24-hour notation.
@@ -92,7 +92,7 @@ public static class Introduction
             ]);
         w.Placeholder("""
             Figure 1 has no caption. The image is scaled to fill a whole page, so nothing fits under it,
-            and the Layout API has no caption element that stays with a figure.
+            and the Layout API has no caption element that stays with a figure (#295).
             """);
         w.P("""
             Figure 1, on the next page, shows the unit with its layers pulled apart. The picture is scaled

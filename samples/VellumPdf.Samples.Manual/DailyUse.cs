@@ -38,10 +38,6 @@ public static class DailyUse
                 ["**Lock**", "Short", "Does nothing while the lock is off. Shows the lock state."],
                 ["**Lock**", "Long", "Switches the child lock on or off."],
             ]);
-        w.Placeholder("""
-            The button names in this table should be bold, as they are in the text. A table cell holds
-            one string in one style, so they are plain.
-            """);
         w.Sub("The lamps");
         w.Table(
             [100, 110, 249],
@@ -75,9 +71,9 @@ public static class DailyUse
             In **Auto** mode the fan speed depends on the particle reading and the gas reading, whichever
             is worse. When both readings fall back to the blue band, the fan slows down and runs at a low
             speed for ten minutes before it pauses. It starts again as soon as a reading rises.
-            """);
+            """, index: ["Auto mode"]);
 
-        w.Section("The timer");
+        w.Section("The timer", index: ["timer"]);
         w.P("""
             The timer switches the unit to standby after the chosen time. It works in every mode. Press
             **Timer** to step through one, two, four and eight hours. The lamp ring shows the choice by
@@ -89,7 +85,7 @@ public static class DailyUse
             up in the app or with the console command `aerolith schedule`.
             """);
 
-        w.Section("Night mode");
+        w.Section("Night mode", index: ["Night mode"]);
         w.P("""
             Night mode runs the fan at its lowest useful speed, at most 20 percent, and dims every lamp.
             It keeps measuring. If the air quality becomes poor while the room is occupied, the unit raises
@@ -100,7 +96,7 @@ public static class DailyUse
             whisper at one metre distance.
             """);
 
-        w.Section("Child lock");
+        w.Section("Child lock", index: ["child lock"]);
         w.P("""
             With the child lock on, the buttons on the unit do nothing. The remote control and the app keep
             working, so you stay in control. Hold **Lock** for three seconds to switch the lock on. The
