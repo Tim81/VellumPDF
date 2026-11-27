@@ -718,6 +718,22 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
     them. Reading a cut address back as one token needs marked content the library does not write
     yet (#588).
 
+- **The continuation limit keeps the verdict 2.3.3 gave for the cut and the word split
+  (#687, #594).** Since #562 and #590 a paragraph, heading or list item could need more or fewer
+  page continuations than on 2.3.3, so a text 2.3.3 saved could be refused at the limit of 50,000
+  continuations and a multi-run text 2.3.3 refused could be saved. The cut after a solidus or
+  hyphen (#594) moves a table cell the same way. Where the current wrap and the 2.3.3 wrap would
+  give different verdicts, the element now lays out as 2.3.3 did, through the shared limit
+  decision: a text 2.3.3 saved saves again, and one it refused is refused again. 2.3.3's wrap
+  reads each run's words on their own, reads U+202F and U+2007 as spaces and cuts a word at the
+  glyph. A document far from the limit keeps the current wrap and the cut after a solidus, and
+  lays out nothing more.
+  - **Deliberate output change**, for a `ParagraphRenderer` that a renderer of yours lays out, a
+    list or heading the document lays out as its twin, and a `ParagraphRenderer` built with a
+    start line: such a renderer wraps as 2.3.3 did, so a word that continues over a run boundary
+    is two words, U+202F and U+2007 are spaces, and no word is cut after a solidus or hyphen. A
+    paragraph with tab stops or a page reference is not affected.
+
 - **A list indent that leaves an entry no text width kept the marker and discarded the text
   (#476).** `ParagraphRenderer` drops a paragraph whose width is zero or less, while the marker's
   own paragraph has no margin, so a flat list whose `Indent` reached the list's area width saved as
