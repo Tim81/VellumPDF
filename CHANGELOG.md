@@ -15,11 +15,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   list, table or preformatted block still adds no space; on an image, separator or chart it
   already does, and the gap adds to it. The gap never carries over to another page: it is spent
   when it fits in what is left of the page, and otherwise dropped, with the next element starting
-  at the top of the next page. After the last element it adds no space and no page. Under `KeepWithNext` the gap
-  lies between the kept elements and counts when the document decides whether they hold. A value
-  that is not finite or is below zero throws `ArgumentOutOfRangeException` from the setter. A
-  document that sets none saves to the same bytes as before. 3.0 honours `Margins.Bottom` and
-  removes this property (#704).
+  at the top of the next page. After the last element it adds no space and no page. Under
+  `KeepWithNext` the gap lies between the kept elements and counts when the document decides
+  whether they hold. A value that is not finite or is below zero throws
+  `ArgumentOutOfRangeException` from the setter. A document that sets none saves to the same bytes
+  as before. 3.0 honours `Margins.Bottom` and removes this property (#704).
 - **`Standard14Substitutes.GetFontProgram` returns a bundled Liberation font (#702).** A Layout
   `Document` exposes no `PdfDocument` for `EmbedStandard14Font` to extend, so a program built on
   one could not call it.
