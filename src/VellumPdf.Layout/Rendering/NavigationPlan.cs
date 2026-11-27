@@ -38,7 +38,8 @@ internal sealed class NavigationPlan
     /// <summary>The page references the walk found, or null when the elements hold none.</summary>
     internal PageReferenceTable? References { get; private set; }
 
-    /// <summary>Whether an element of the document holds the anchor <paramref name="name"/>.</summary>
+    /// <summary>Whether an element of the document holds the anchor <paramref
+    /// name="name"/>.</summary>
     internal bool Declares(string name) => _byName is not null && _byName.ContainsKey(name);
 
     /// <summary>Whether a <see cref="PageBreak"/> in the flow starts a label range.</summary>
@@ -54,7 +55,8 @@ internal sealed class NavigationPlan
     /// <summary>
     /// The walk, which also reads every text style that links to an anchor and every page
     /// reference, and refuses before any layout what the elements alone decide: a link under a
-    /// PDF/UA-1 claim, a style that sets two links, a name no element holds, and a name only an item
+    /// PDF/UA-1 claim, a style that sets two links, a name no element holds, and a name only an
+    /// item
     /// below the second level of a list holds. The running bands are read through
     /// <paramref name="header"/> and <paramref name="footer"/>.
     /// </summary>

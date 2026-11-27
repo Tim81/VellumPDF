@@ -338,12 +338,14 @@ public sealed class DocumentRenderer
     /// holds, a style that sets two links, and a link under a PDF/UA-1 claim throw
     /// <see cref="InvalidOperationException"/> before any layout, naming the element, so a retry
     /// after the fix saves. A label that prints nothing, a reference held by a renderer this
-    /// instance was not given as an element, a link a renderer registers for a name no element holds,
+    /// instance was not given as an element, a link a renderer registers for a name no element
+    /// holds,
     /// and pagination that does not settle throw it after the layout started. In a renderer that
     /// holds a page reference, an element that answers differently the later time, or a
     /// <see cref="Header"/> or <see cref="Footer"/> replaced while it renders, makes the call throw
     /// "Pagination changed between the measuring and the drawing pass". <b>Do not replace</b>
-    /// <see cref="Header"/> or <see cref="Footer"/> while this call runs; 3.0 reads them once.</para>
+    /// <see cref="Header"/> or <see cref="Footer"/> while this call runs; 3.0 reads them
+    /// once.</para>
     /// </remarks>
     /// <exception cref="InvalidOperationException">
     /// An element needs more than <b>50,000</b> page continuations or is too tall for one page, or
@@ -506,7 +508,8 @@ public sealed class DocumentRenderer
 
         // What the elements alone decide about anchors and label ranges is refused here too, so the
         // document stays saveable: a repeated anchor, and a labelled break with nothing after it.
-        // The same walk reads every link to an anchor and every page reference, so a name no element
+        // The same walk reads every link to an anchor and every page reference, so a name no
+        // element
         // holds, and a link under a PDF/UA-1 claim, are refused here too.
         _navigation = NavigationPlan.Build(_renderers, _pdf.Conformance, Header, Footer);
         listRun.Navigation = _navigation;
@@ -706,7 +709,8 @@ public sealed class DocumentRenderer
     /// <summary>Measuring runs of the last <see cref="RunLayout"/>, read by tests.</summary>
     internal int MeasureRuns { get; private set; }
 
-    /// <summary>The page references of the last <see cref="RunLayout"/>, or null when it found none. Read by tests.</summary>
+    /// <summary>The page references of the last <see cref="RunLayout"/>, or null when it found
+    /// none. Read by tests.</summary>
     internal PageReferenceTable? ReferenceTable => _navigation.References;
 
     /// <summary>
@@ -1152,16 +1156,14 @@ public sealed class DocumentRenderer
             $"Pagination did not settle after {MaxMeasureRuns} layout passes: {cause}. " +
             "A string that depends on where its target lands can change the layout and so move " +
             "that target, and here the passes keep changing it instead of settling. " +
-            "The renderers have already measured, so lay the content out again in a new renderer " +
-            "or document.");
+            "A Document cannot be saved again after a layout that threw.");
     }
 
     private static InvalidOperationException PaginationChanged() =>
         new("Pagination changed between the measuring and the drawing pass: the drawing pass " +
             "reported a placement that differs from the last measuring run's, so a renderer " +
             "answered differently the later time. " +
-            "The renderers have already measured, so lay the content out again in a new renderer " +
-            "or document.");
+            "A Document cannot be saved again after a layout that threw.");
 
     // FreshPageArea is the area of the page a Nothing answer is retried on: the next page, or, for
     // the retry itself, the page it is already on. Under mirrored margins the two differ in x.

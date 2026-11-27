@@ -193,7 +193,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   - A tagged document gets one `Hn` structure element and one marked-content sequence per
     heading, whatever the number of runs. `Heading.Text` is the concatenation of the run texts and
     is the outline title unless `BookmarkTitle` is set; `Heading.Style` is the first run's style.
-  - A run is a link only through its own `LinkUri`. The annotation covers that run and a space
+  - A run is a link only through its own style's `LinkUri` or `LinkAnchor`, or as a
+    `TextRun.PageReference`. The annotation covers that run and a space
     that opens the next run, as in a `Paragraph`. On a list item, `ListItem.Style` styles the
     marker and the children that set no style of their own, not the item's runs.
   - A null sequence and a null run throw `ArgumentNullException`, and a run with a null style
@@ -212,15 +213,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   - The runs are read as one string. Line ends, other white-space control characters and the
     break points between words are those of a string cell, and a run boundary inside a word draws
     no space. A cell of runs that share one `TextStyle` instance and hold text draws the text,
-    positions and operators of the string cell of the same text and style, unless that style has
-    a `LinkUri`: the run cell links the text and the string cell drops the link.
+    positions and operators of the string cell of the same text and style, and since #475 a
+    `LinkUri` in that style links both.
   - Each line is as tall as the largest leading among the runs that hold text, and the first
     baseline lies one largest font size of those runs below the top of the cell's content,
     padding included. A run that holds only a line end or white space counts. `Cell.Style` and
     `TableElement.DefaultCellStyle` do not style a run; when no run holds text the cell takes
     them, as the string cell of the empty string.
   - A run is a link through its own `LinkUri`, over the width its text is drawn at on each line
-    it is on and cut to the cell. The cell's own `Style.LinkUri` is still dropped. Links in a cell
+    it is on and cut to the cell. A run cell's own `Style.LinkUri` does not link it. Links in a cell
     are not tagged.
   - A null sequence and a null run throw `ArgumentNullException`, and a run with a null style
     throws `ArgumentException`, from the constructor. So does a run that holds text and has a
@@ -530,7 +531,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 - **Links to anchors, and page references (#299, #692).** A style can link to a named anchor, and a
   run can print the page label of the page an anchor lands on, forward references included. A
-  document that uses neither saves to the same bytes as before.
+  document that uses neither, and sets no `LinkUri` on a cell or band style (see Changed), saves to
+  the same bytes as before.
   - `TextStyle.LinkAnchor` makes the text in that style a link to the anchor of that name. The link
     is a `/Dest (name)` on the annotation, not a GoTo action. It works in a paragraph, a heading, a
     list item (the marker too, as `LinkUri` does), a string cell, a run of a cell built from runs
@@ -543,8 +545,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
     outline title or `{chapter}`. The run is always a link to its anchor. It works in a paragraph, a
     heading, a list item and a run cell. The label is resolved by laying the document out until the
     labels stop changing (at most five passes), so a forward reference needs no second pass from the
-    caller. A label that returns to the value of an earlier pass, or that is still changing after five,
-    is refused after the layout, naming the references.
+    caller. Labels that all return together to the values of an earlier pass, or that are still changing
+    after five passes, are refused after the layout, naming the references.
   - A page reference or a link to an anchor under a PDF/UA-1 claim is refused before layout, naming
     the element: the link would be untagged. PDF/A-2a and PDF/A-2u save it.
   - **Attention:** once a document holds a page reference, the drawing pass is compared with the
@@ -561,10 +563,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - **`LinkUri` in the style of a table cell or running band now draws a link (#475).** A string
   cell given the style through `Cell.Style` or `TableElement.DefaultCellStyle` gets one `/Link`
   annotation per line it draws, over the width `TextStyle.MeasureString` gives the line and cut to the
-  cell. A running band given the style gets one per page over the text it draws. Both were dropped
+  cell. A running band given the style gets one per page over the text it draws, none over a band of
+  only white space. Both were dropped
   without a word before, so a document that sets the style on a cell or band changes: it gains these
   annotations and nothing else. A cell built from runs is still linked by its runs' styles only. A
-  style set on a cell of a PDF/UA-1 document keeps its earlier output, no link, and the save now reports
+  style set on a cell or band of a PDF/UA-1 document keeps its earlier output, no link, and the save now reports
   `LinkNotWritten` (701) once per table and once per band with the count of links left out; strict
   mode refuses it. A context built with no page, and a rectangle that would be written with a value
   that is not finite, write no cell or band link and report nothing. A paragraph link keeps throwing

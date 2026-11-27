@@ -303,13 +303,11 @@ public sealed class Paragraph
     /// has none and cannot be given one. A <see cref="Rendering.ParagraphRenderer"/> built to
     /// continue a paragraph from a later line reports none either, and is refused as an anchor on
     /// content never drawn.</para>
-    /// <para><b>A link or a page reference to a name no element holds is refused.</b>
-    /// <see cref="TextStyle.LinkAnchor"/> and <see cref="TextRun.PageReference(string, TextStyle)"/>
-    /// name an anchor, and the save throws <see cref="InvalidOperationException"/> before any
-    /// layout when no element holds the name, or when only an item below the second level of a list
-    /// does, so the document can still be saved once that is fixed. The page a reference prints is
-    /// the page this element's first line, row or entry lands on, however many pages it goes on to
-    /// fill.</para>
+    /// <para>A <see cref="TextStyle.LinkAnchor"/> or a
+    /// <see cref="TextRun.PageReference(string, TextStyle)"/> names an anchor; the refusals and
+    /// their
+    /// limits are on <see cref="TextStyle.LinkAnchor"/>. A reference prints the page this
+    /// element's first line is on.</para>
     /// </remarks>
     /// <exception cref="ArgumentException">
     /// Raised from this <c>init</c> accessor when the name breaks the rule above. It is also

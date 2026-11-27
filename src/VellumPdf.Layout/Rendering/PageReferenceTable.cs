@@ -9,7 +9,8 @@ using VellumPdf.Layout.Rendering.Table;
 
 namespace VellumPdf.Layout.Rendering;
 
-/// <summary>Where a text style or a page reference sits among the elements, for a message.</summary>
+/// <summary>Where a text style or a page reference sits among the elements, for a
+/// message.</summary>
 internal readonly record struct ElementSite(
     LayoutElementKind Kind, int Index, int Item = -1, int Child = -1, int Row = -1, int Cell = -1)
 {
@@ -50,7 +51,8 @@ internal sealed class PageReferenceEntry(TextRun run, ElementSite site)
 
     /// <summary>
     /// The run a renderer lays out in place of the reference: the label, in the reference's linked
-    /// style. Replaced when the label changes, so a wrap made from it is told from one made from the
+    /// style. Replaced when the label changes, so a wrap made from it is told from one made from
+    /// the
     /// next label.
     /// </summary>
     internal TextRun Effective => _effective ??= new TextRun(Label, Run.LinkedStyle);
@@ -140,7 +142,8 @@ internal sealed class PageReferenceTable : IPlanDependent
     /// <summary>
     /// What the bound allows a page numeral. A decimal numeral of 16 digits is out of reach of a
     /// document counting pages from 1, but a range that starts at a large <c>FirstNumber</c>, or a
-    /// letter or Roman style a long way in, prints a numeral longer than this, and the label is then
+    /// letter or Roman style a long way in, prints a numeral longer than this, and the label is
+    /// then
     /// counted at the allowance.
     /// </summary>
     internal const int NumeralBound = 16;
@@ -231,7 +234,8 @@ internal sealed class PageReferenceTable : IPlanDependent
     }
 
     /// <summary>
-    /// The message for a plan that does not settle: each reference whose strings changed in the last
+    /// The message for a plan that does not settle: each reference whose strings changed in the
+    /// last
     /// two runs, by site and anchor, with the strings it read in each run.
     /// </summary>
     internal string DescribeUnstable(string cause)
@@ -255,7 +259,7 @@ internal sealed class PageReferenceTable : IPlanDependent
         return $"Pagination did not settle: {cause}: {detail}. " +
             "A label that depends on where its anchor lands can change the layout and so move that " +
             "anchor, and here the passes keep changing it instead of settling. " +
-            "The renderers have already measured, so this document cannot be saved again.";
+            "A Document cannot be saved again after a layout that threw.";
     }
 
     /// <summary>

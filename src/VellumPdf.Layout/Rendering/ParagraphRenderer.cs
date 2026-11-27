@@ -132,11 +132,13 @@ public sealed partial class ParagraphRenderer : IRenderer, IPageBreakSource, IKe
     /// from anywhere else, this method throws <see cref="InvalidOperationException"/> naming the
     /// anchor, because there is no pagination to read. Called from a renderer of yours inside a
     /// save, it reads the placeholder label, and the save refuses the reference after the layout.
-    /// <b>Do not pass</b> a paragraph that holds a page reference to a renderer you lay out yourself.
+    /// <b>Do not pass</b> a paragraph that holds a page reference to a renderer you lay out
+    /// yourself.
     /// </para>
     /// </remarks>
     /// <exception cref="InvalidOperationException">
-    /// A page reference is laid out outside a save. A run that yields text has a <see cref="TextStyle.FontSize"/> or <see cref="TextStyle.Color"/>
+    /// A page reference is laid out outside a save. A run that yields text has a <see
+    /// cref="TextStyle.FontSize"/> or <see cref="TextStyle.Color"/>
     /// that is refused; see those members. It is also raised when the paragraph has a tab stop with
     /// a leader and a run has a font size the leader cannot be drawn at; see
     /// <see cref="Paragraph.TabStops"/>.

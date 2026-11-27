@@ -101,24 +101,34 @@ public sealed class TextRun(string Text, TextStyle Style)
     /// throws <see cref="InvalidOperationException"/> naming the anchor before any layout runs, so
     /// the document can still be saved once the name is fixed. The same save refuses the run for
     /// the reasons <see cref="TextStyle.LinkAnchor"/> gives (a PDF/UA-1 claim, a style that also
-    /// links elsewhere), and after the layout it refuses a label that is empty or only white space,
-    /// which prints nothing.
+    /// links elsewhere).
     /// <para>The label is the page's number, or its range's prefix and numeral once the document
     /// defines a page-label range. A forward reference is resolved by laying the document out until
-    /// the labels stop changing, up to five times, so the caller runs no second pass. The run is
-    /// always a link to the anchor, drawn in <paramref name="style"/> with the link added; the
-    /// style must not set <see cref="TextStyle.LinkUri"/> or <see cref="TextStyle.LinkAnchor"/>.
-    /// <see cref="Text"/> is empty, so the label is in no <c>Paragraph.Text</c>, outline entry,
-    /// bookmark title or <c>{chapter}</c>. The same instance in two places prints one label. A
-    /// reference in an item below the second level of a list is ignored, as the item is, because
-    /// the layout neither lays it out nor draws it.</para>
+    /// the labels stop changing, so the caller runs no second pass. The run is always a link to the
+    /// anchor, drawn in <paramref name="style"/> with the link added; the style must not set
+    /// <see cref="TextStyle.LinkUri"/> or <see cref="TextStyle.LinkAnchor"/>. <see cref="Text"/> is
+    /// empty, so the label is in no <c>Paragraph.Text</c>, outline entry, bookmark title or
+    /// <c>{chapter}</c>. The same instance in two places prints one label.</para>
+    /// <para><b>Pagination that does not settle is refused after the layout.</b> The save lays the
+    /// document out at most five times. It throws <see cref="InvalidOperationException"/> naming
+    /// the references when the labels are still changing after the fifth, and earlier when the
+    /// labels
+    /// of all references, taken together, are the labels of a pass two or more passes back. One
+    /// label
+    /// returning to an earlier value while another differs is not a repeat.</para>
+    /// <para><b>A label that is empty or only white space is refused</b> after the layout, because
+    /// it
+    /// prints nothing. A reference in an item below the second level of a list is ignored, as the
+    /// item is; see <see cref="TextStyle.LinkAnchor"/>.</para>
     /// <para>The document decides before any layout whether an element after a list can need about
-    /// as many page continuations as one element may take, and a label is not known then. It counts
-    /// each reference as the longest prefix of the document's label ranges plus 16 characters. An
-    /// element within 16 characters of that limit can be treated as near it where the same text
-    /// written out is not. A label longer than that, such as a letter style a long way in or a range
-    /// that starts at a large first number, is counted at 16.</para>
-    /// <para>A document that holds one lays its content out with the pagination loop. A renderer of
+    /// as many page continuations as one element may take, and no label is known then. It counts
+    /// each reference as the longest prefix of the document's label ranges plus 16 characters,
+    /// whatever the reference prints. An element can be treated as near the limit where the same
+    /// text written out is not, when its text written out is within that allowance, once for each
+    /// reference it holds, of the limit. A label longer than that bound, such as a letter style a
+    /// long way in or a range that starts at a large first number, is counted at the bound.</para>
+    /// <para>A document that holds one compares the drawing pass with the last layout. A renderer
+    /// of
     /// yours that answers differently on the later call makes the save throw
     /// <see cref="InvalidOperationException"/> naming a change of pagination, and after any layout
     /// refusal the document cannot be saved again. <b>Do not pass</b> a reference to a renderer you
@@ -127,7 +137,8 @@ public sealed class TextRun(string Text, TextStyle Style)
     /// </remarks>
     /// <param name="anchor">The anchor to print the page of.</param>
     /// <param name="style">The style of the label.</param>
-    /// <exception cref="ArgumentNullException"><paramref name="anchor"/> or <paramref name="style"/>
+    /// <exception cref="ArgumentNullException"><paramref name="anchor"/> or <paramref
+    /// name="style"/>
     /// is <see langword="null"/>.</exception>
     /// <exception cref="ArgumentException"><paramref name="anchor"/> is empty, longer than 127
     /// characters, or holds a character outside <c>A-Z a-z 0-9 . _ - :</c>.</exception>

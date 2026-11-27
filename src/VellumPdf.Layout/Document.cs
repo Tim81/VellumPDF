@@ -278,12 +278,11 @@ public sealed class Document : IDisposable
     /// <para>A value the enumeration does not name is accepted and stamped as PDF/A-2b.</para>
     /// <para>Do not pass a value the enumeration does not name. A later major version will refuse
     /// it.</para>
-    /// <para><b>A link to an anchor is refused under PDF/UA-1.</b> A <see cref="TextStyle.LinkAnchor"/>
-    /// or a <see cref="TextRun.PageReference(string, TextStyle)"/> makes the save throw
-    /// <see cref="InvalidOperationException"/>, naming the element, before any layout, because the
-    /// link would be untagged and ISO 14289-1, 7.18.5 does not allow that. PDF/A-2a and PDF/A-2u
-    /// save it. A <see cref="TextStyle.LinkUri"/> in the style of a table cell or running band is
-    /// left out under PDF/UA-1 and reported as <see cref="LayoutDiagnosticCode.LinkNotWritten"/>.</para>
+    /// <para>A link to an anchor under PDF/UA-1 is refused; see <see
+    /// cref="TextStyle.LinkAnchor"/>. A
+    /// <see cref="TextStyle.LinkUri"/> in the style of a table cell or running band is left out and
+    /// reported as <see cref="LayoutDiagnosticCode.LinkNotWritten"/>; see
+    /// <see cref="TextStyle.LinkUri"/>.</para>
     /// <para>Combined with <see cref="Encrypt"/>, the save throws
     /// <see cref="InvalidOperationException"/> for every PDF/A level, because ISO 19005-2 §6.1.3
     /// forbids the <c>Encrypt</c> key in a PDF/A file. For PDF/UA-1 it throws only when the
@@ -1203,8 +1202,9 @@ public sealed class Document : IDisposable
     /// PDF/UA-1, throws the same way, and in a document that holds a page reference a renderer that
     /// answers differently the later time makes the save throw naming a change of pagination.
     /// <b>Do not pass</b> a renderer that holds a page reference, or whose layout depends on how
-    /// many times it was called, to a document that holds one; 3.0 refuses the first and lays the
-    /// passes out alike.</para>
+    /// many times it was called, to a document that holds one; 3.0 refuses the first when it is
+    /// added
+    /// and lays the passes out alike.</para>
     /// </remarks>
     /// <exception cref="ArgumentNullException">
     /// <paramref name="renderer"/> is <see langword="null"/>.
@@ -1698,18 +1698,9 @@ public sealed class Document : IDisposable
     /// <see cref="Document"/>. </para>
     /// <para>A document with no pages throws as well. Add at least one element before you
     /// save.</para>
-    /// <para><b>A page reference or a link to an anchor can refuse the save.</b>
-    /// <see cref="InvalidOperationException"/> is thrown before any layout, so the document can be
-    /// saved once it is fixed, for a name no element holds, a style that sets two links, a
-    /// reference whose style sets a link, and any link to an anchor or page reference under a
-    /// PDF/UA-1 claim. It is thrown after the layout started, so the document cannot be saved
-    /// again, for a label that prints nothing, a reference held by a renderer the document did not
-    /// add, a link a renderer of yours registers for a name no element holds, and pagination that
-    /// does not settle in five layout passes or returns to a label of an earlier pass. In a document
-    /// that holds a page reference the drawing pass is also compared with the last measuring run,
-    /// and a renderer that answers differently the later time makes the save throw naming a change
-    /// of pagination. <b>Do not pass</b> such a renderer to a document that holds a page reference;
-    /// 3.0 lays the measuring and the drawing pass out alike.</para>
+    /// <para><b>A page reference or a link to an anchor can refuse the save.</b> The refusals, and
+    /// which of them leave the document saveable, are on <see cref="TextStyle.LinkAnchor"/> and
+    /// <see cref="TextRun.PageReference(string, TextStyle)"/>.</para>
     /// </remarks>
     /// <exception cref="ArgumentNullException">
     /// <paramref name="destination"/> is <see langword="null"/>. This is checked before the layout
@@ -1741,7 +1732,9 @@ public sealed class Document : IDisposable
     /// element after it, both before any layout, so the document stays saveable; and when an anchor's
     /// element was never drawn, after the layout, so the document cannot be saved again. It is also
     /// raised when a font registered with
-    /// <see cref="UseTrueTypeFont"/> lacks a table the save needs, and by every save after one whose
+    /// <see cref="UseTrueTypeFont"/> lacks a table the save needs, for a link to an anchor or a
+    /// page
+    /// reference that the remarks name, and by every save after one whose
     /// save threw once its layout had started. For the element inputs, the boundary
     /// documentation on the property you set says which values reach this. It is also raised when
     /// <see cref="StrictDiagnostics"/> is <see langword="true"/> and the layout reported an item
@@ -1848,18 +1841,9 @@ public sealed class Document : IDisposable
     /// above does not hold for that stream, which was truncated when you opened it.
     /// <see cref="SaveAsync(System.IO.Stream, System.Threading.CancellationToken)"/> builds the whole
     /// PDF in a <see cref="MemoryStream"/> instead, whose capacity is about 2 GB.</para>
-    /// <para><b>A page reference or a link to an anchor can refuse the save.</b>
-    /// <see cref="InvalidOperationException"/> is thrown before any layout, so the document can be
-    /// saved once it is fixed, for a name no element holds, a style that sets two links, a
-    /// reference whose style sets a link, and any link to an anchor or page reference under a
-    /// PDF/UA-1 claim. It is thrown after the layout started, so the document cannot be saved
-    /// again, for a label that prints nothing, a reference held by a renderer the document did not
-    /// add, a link a renderer of yours registers for a name no element holds, and pagination that
-    /// does not settle in five layout passes or returns to a label of an earlier pass. In a document
-    /// that holds a page reference the drawing pass is also compared with the last measuring run,
-    /// and a renderer that answers differently the later time makes the save throw naming a change
-    /// of pagination. <b>Do not pass</b> such a renderer to a document that holds a page reference;
-    /// 3.0 lays the measuring and the drawing pass out alike.</para>
+    /// <para><b>A page reference or a link to an anchor can refuse the save.</b> The refusals, and
+    /// which of them leave the document saveable, are on <see cref="TextStyle.LinkAnchor"/> and
+    /// <see cref="TextRun.PageReference(string, TextStyle)"/>.</para>
     /// </remarks>
     /// <exception cref="ArgumentNullException">
     /// <paramref name="path"/> is <see langword="null"/>. A null that an element or a written Kernel
@@ -1985,18 +1969,9 @@ public sealed class Document : IDisposable
     /// <see cref="Document"/>. </para>
     /// <para>A document with no pages throws as well. Add at least one element before you
     /// save.</para>
-    /// <para><b>A page reference or a link to an anchor can refuse the save.</b>
-    /// <see cref="InvalidOperationException"/> is thrown before any layout, so the document can be
-    /// saved once it is fixed, for a name no element holds, a style that sets two links, a
-    /// reference whose style sets a link, and any link to an anchor or page reference under a
-    /// PDF/UA-1 claim. It is thrown after the layout started, so the document cannot be saved
-    /// again, for a label that prints nothing, a reference held by a renderer the document did not
-    /// add, a link a renderer of yours registers for a name no element holds, and pagination that
-    /// does not settle in five layout passes or returns to a label of an earlier pass. In a document
-    /// that holds a page reference the drawing pass is also compared with the last measuring run,
-    /// and a renderer that answers differently the later time makes the save throw naming a change
-    /// of pagination. <b>Do not pass</b> such a renderer to a document that holds a page reference;
-    /// 3.0 lays the measuring and the drawing pass out alike.</para>
+    /// <para><b>A page reference or a link to an anchor can refuse the save.</b> The refusals, and
+    /// which of them leave the document saveable, are on <see cref="TextStyle.LinkAnchor"/> and
+    /// <see cref="TextRun.PageReference(string, TextStyle)"/>.</para>
     /// </remarks>
     /// <inheritdoc cref="Save(System.IO.Stream)" path="/exception[@cref='T:System.ArgumentNullException' or @cref='T:System.InvalidOperationException' or @cref='T:System.IO.IOException' or @cref='T:System.ArgumentOutOfRangeException' or @cref='T:System.NullReferenceException' or @cref='T:System.IndexOutOfRangeException' or @cref='T:System.IO.InvalidDataException' or @cref='T:System.OverflowException' or @cref='T:System.OutOfMemoryException']"/>
     /// <exception cref="NotSupportedException">
@@ -2073,18 +2048,9 @@ public sealed class Document : IDisposable
     /// during the copy can leave the file truncated. Everything <see cref="Save(string)"/> says
     /// about symbolic links, permissions, the advisory lock, the extra in-memory copy of the PDF, which
     /// has no 2 GB limit, and the final copy not being atomic applies here too.</para>
-    /// <para><b>A page reference or a link to an anchor can refuse the save.</b>
-    /// <see cref="InvalidOperationException"/> is thrown before any layout, so the document can be
-    /// saved once it is fixed, for a name no element holds, a style that sets two links, a
-    /// reference whose style sets a link, and any link to an anchor or page reference under a
-    /// PDF/UA-1 claim. It is thrown after the layout started, so the document cannot be saved
-    /// again, for a label that prints nothing, a reference held by a renderer the document did not
-    /// add, a link a renderer of yours registers for a name no element holds, and pagination that
-    /// does not settle in five layout passes or returns to a label of an earlier pass. In a document
-    /// that holds a page reference the drawing pass is also compared with the last measuring run,
-    /// and a renderer that answers differently the later time makes the save throw naming a change
-    /// of pagination. <b>Do not pass</b> such a renderer to a document that holds a page reference;
-    /// 3.0 lays the measuring and the drawing pass out alike.</para>
+    /// <para><b>A page reference or a link to an anchor can refuse the save.</b> The refusals, and
+    /// which of them leave the document saveable, are on <see cref="TextStyle.LinkAnchor"/> and
+    /// <see cref="TextRun.PageReference(string, TextStyle)"/>.</para>
     /// </remarks>
     /// <inheritdoc cref="Save(string)" path="/exception[@cref='T:System.ArgumentNullException' or @cref='T:System.IO.DirectoryNotFoundException' or @cref='T:System.UnauthorizedAccessException' or @cref='T:System.IO.IOException' or @cref='T:System.InvalidOperationException']"/>
     /// <inheritdoc cref="Save(System.IO.Stream)" path="/exception[@cref='T:System.ObjectDisposedException' or @cref='T:System.ArgumentOutOfRangeException' or @cref='T:System.NotSupportedException' or @cref='T:System.NullReferenceException' or @cref='T:System.IndexOutOfRangeException' or @cref='T:System.IO.InvalidDataException' or @cref='T:System.OverflowException' or @cref='T:System.OutOfMemoryException']"/>

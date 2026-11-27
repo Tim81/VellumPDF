@@ -105,7 +105,7 @@ public sealed class Heading
     /// band throws <see cref="InvalidOperationException"/> when a template repeats
     /// <c>{chapter}</c> so often that the titles it prints add up to more than
     /// <see cref="int.MaxValue"/> characters; see <see cref="RunningBand.ChapterToken"/>.</para>
-    /// <para><b>A page reference leaves its spaces in the title.</b> The title is built from the
+    /// <para><b>A page reference leaves a gap in the title.</b> The title is built from the
     /// text of the runs, and a <see cref="TextRun.PageReference(string, TextStyle)"/> has none, so
     /// "See ", a reference and " end" give the title "See  end", with both spaces. Set this
     /// property to give the outline the title you want.</para>
@@ -201,13 +201,11 @@ public sealed class Heading
     /// <remarks>
     /// The rule, the refusals and the position are those of <see cref="Paragraph.Anchor"/>. A
     /// heading that splits across pages is anchored on the page its first line is on.
-    /// <para><b>A link or a page reference to a name no element holds is refused.</b>
-    /// <see cref="TextStyle.LinkAnchor"/> and <see cref="TextRun.PageReference(string, TextStyle)"/>
-    /// name an anchor, and the save throws <see cref="InvalidOperationException"/> before any
-    /// layout when no element holds the name, or when only an item below the second level of a list
-    /// does, so the document can still be saved once that is fixed. The page a reference prints is
-    /// the page this element's first line, row or entry lands on, however many pages it goes on to
-    /// fill.</para>
+    /// <para>A <see cref="TextStyle.LinkAnchor"/> or a
+    /// <see cref="TextRun.PageReference(string, TextStyle)"/> names an anchor; the refusals and
+    /// their
+    /// limits are on <see cref="TextStyle.LinkAnchor"/>. A reference prints the page this
+    /// element's first line is on.</para>
     /// </remarks>
     /// <inheritdoc cref="Paragraph.Anchor" path="/exception"/>
     public string? Anchor
@@ -282,7 +280,9 @@ public sealed class Heading
     /// Helvetica, as an empty string does. The sequence is copied: changing it afterwards changes
     /// nothing. A <see langword="null"/> literal binds to the string constructor, not to this one.
     /// <para>Each run is drawn in its own style, and <see cref="Style"/> does not style the others.
-    /// A run is a link only through its own <see cref="TextStyle.LinkUri"/>. The annotation
+    /// A run is a link only through its own style's <see cref="TextStyle.LinkUri"/> or
+    /// <see cref="TextStyle.LinkAnchor"/>, or as a <see cref="TextRun.PageReference(string,
+    /// TextStyle)"/>. The annotation
     /// covers that run and also a space that opens the next run, because the space belongs to the
     /// run before it, as in a <see cref="Paragraph"/>.</para>
     /// <para>The style of a run that draws no text, one that is empty or holds only white space,

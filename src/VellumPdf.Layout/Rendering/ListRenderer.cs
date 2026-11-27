@@ -73,7 +73,8 @@ public sealed class ListRenderer : IRenderer, IPageBreakSource, IKeepSource, IPl
     // one it replaces, because the pieces an earlier layout returned still hold it.
     private sealed class Built(long save, List<Entry> items, int indentClamped, int clampSkipped, ReferenceReads? reads)
     {
-        // The labels of the page references the entries were built from, or null when they hold none.
+        // The labels of the page references the entries were built from, or null when they hold
+        // none.
         // A layout that finds one of them changed builds the entries again, so the gutter and the
         // wrap are those of the label the list now holds.
         internal ReferenceReads? Reads { get; } = reads;
@@ -717,6 +718,12 @@ public sealed class ListRenderer : IRenderer, IPageBreakSource, IKeepSource, IPl
     /// <exception cref="ArgumentOutOfRangeException">
     /// The start item is negative and the list has no items, which <see cref="Layout"/> accepts;
     /// see the constructor.
+    /// </exception>
+    /// <exception cref="InvalidOperationException">
+    /// A style of an item sets <see cref="TextStyle.LinkAnchor"/>, and the document is PDF/UA-1 or
+    /// the
+    /// layout in progress holds no element with that anchor; see
+    /// <see cref="ParagraphRenderer.Draw"/>.
     /// </exception>
     /// <exception cref="ArgumentException">
     /// A position written here is <c>NaN</c> or infinite, which

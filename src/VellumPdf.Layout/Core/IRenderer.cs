@@ -76,7 +76,8 @@ public interface IRenderer
     /// <para><b>In a document that holds a page reference, a renderer that answers differently the
     /// later time is refused.</b> Such a document resolves the labels against measuring runs and
     /// then compares each placement the drawing pass reports with the last run's: the page it is
-    /// on, the key it is reported under and the count. A renderer that returns another result in the
+    /// on, the key it is reported under and the count. A renderer that returns another result in
+    /// the
     /// drawing pass than in the measuring runs makes the save throw
     /// <see cref="InvalidOperationException"/> naming a change of pagination, and the document
     /// cannot be saved again. The placements compared are those of headings, anchored elements and

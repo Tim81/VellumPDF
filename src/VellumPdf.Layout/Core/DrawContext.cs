@@ -224,7 +224,8 @@ public sealed class DrawContext
     /// Registers a link annotation to the named destination <paramref name="name"/>, as
     /// <see cref="AddUriLinkAnnotation"/> registers one to a URI: the same rectangle, the same
     /// registration, so a context with no page throws the same <see cref="ArgumentNullException"/>.
-    /// A destination is named, not given as a GoTo action, because ISO 32000-1, 12.6.4.2 prefers the
+    /// A destination is named, not given as a GoTo action, because ISO 32000-1, 12.6.4.2 prefers
+    /// the
     /// direct form.
     /// </summary>
     /// <exception cref="InvalidOperationException">
@@ -246,9 +247,12 @@ public sealed class DrawContext
 
     /// <summary>
     /// Registers a link to <paramref name="uri"/> or to the anchor <paramref name="anchor"/> over
-    /// <paramref name="box"/> for a table cell or a running band, and says whether it did. A context
-    /// with no page writes none, and so does a box whose rectangle the annotation would write with a
-    /// value that is not finite; neither is reported. Removed in 3.0 (#688), which refuses both where
+    /// <paramref name="box"/> for a table cell or a running band, and says whether it did. A
+    /// context
+    /// with no page writes none, and so does a box whose rectangle the annotation would write with
+    /// a
+    /// value that is not finite; neither is reported. Removed in 3.0 (#688), which refuses both
+    /// where
     /// the box is made.
     /// </summary>
     internal bool TryAddLinkAnnotation(LayoutBox box, string? uri, string? anchor, LinkOwner owner)

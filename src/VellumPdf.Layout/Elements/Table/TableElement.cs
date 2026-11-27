@@ -79,10 +79,10 @@ public sealed class TableElement
     /// <remarks>
     /// Null means <see cref="TextStyle.Default"/> for cells that have no style of their own.
     /// Refusals on size, leading, font and text colour are on <see cref="TextStyle"/> and are
-    /// raised from the save. A <see cref="TextStyle.LinkUri"/> or <see cref="TextStyle.LinkAnchor"/>
-    /// in it links every string cell that takes it, as <see cref="Cell.Style"/> says; a cell built
-    /// from runs ignores it. Under a PDF/UA-1 claim a <see cref="TextStyle.LinkUri"/> is not written
-    /// and the save reports <see cref="LayoutDiagnosticCode.LinkNotWritten"/> once for the table.
+    /// raised from the save. A <see cref="TextStyle.LinkUri"/> or <see
+    /// cref="TextStyle.LinkAnchor"/>
+    /// in it links every string cell that takes it, and a cell built from runs ignores it; see
+    /// <see cref="Cell.Style"/>.
     /// <para>A table with no default cell style does not take
     /// <see cref="Document.SetDefaultFont"/>; its cells take <see cref="TextStyle.Default"/>. The
     /// font is then Helvetica, which is not embedded. While <see cref="Document.Conformance"/> is
@@ -220,13 +220,11 @@ public sealed class TableElement
     /// <remarks>
     /// The rule, the refusals and the position are those of <see cref="Paragraph.Anchor"/>. A table
     /// that splits across pages is anchored on the page of its first row.
-    /// <para><b>A link or a page reference to a name no element holds is refused.</b>
-    /// <see cref="TextStyle.LinkAnchor"/> and <see cref="TextRun.PageReference(string, TextStyle)"/>
-    /// name an anchor, and the save throws <see cref="InvalidOperationException"/> before any
-    /// layout when no element holds the name, or when only an item below the second level of a list
-    /// does, so the document can still be saved once that is fixed. The page a reference prints is
-    /// the page this element's first line, row or entry lands on, however many pages it goes on to
-    /// fill.</para>
+    /// <para>A <see cref="TextStyle.LinkAnchor"/> or a
+    /// <see cref="TextRun.PageReference(string, TextStyle)"/> names an anchor; the refusals and
+    /// their
+    /// limits are on <see cref="TextStyle.LinkAnchor"/>. A reference prints the page this
+    /// element's first row is on.</para>
     /// </remarks>
     /// <inheritdoc cref="Paragraph.Anchor" path="/exception"/>
     public string? Anchor

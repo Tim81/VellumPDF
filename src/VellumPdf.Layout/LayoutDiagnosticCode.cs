@@ -23,7 +23,8 @@ public enum LayoutDiagnosticCode
 {
     // Reserved, not defined here, so that later members do not collide:
     //   105 SymbolFontMeasuredAsZero (Error), 204 ListDepthCapped, 205 ListEntriesCapped, 206
-    //   ListEntrySkipped (all Error), 302 SurplusCell (Error), 402 UnknownBandToken. The rest of the
+    //   ListEntrySkipped (all Error), 302 SurplusCell (Error), 402 UnknownBandToken. The rest of
+    // the
     //   8xx block stays free for later pagination reports.
 
     /// <summary>
@@ -291,8 +292,10 @@ public enum LayoutDiagnosticCode
     /// A link in the <see cref="Core.TextStyle.LinkUri"/> of a table cell, of
     /// <see cref="Elements.Table.TableElement.DefaultCellStyle"/> or of a running band was not
     /// written, because the document's conformance is PDF/UA-1, where an untagged link breaks ISO
-    /// 14289-1, 7.18.5. <see cref="LayoutDiagnostic.Count"/> is the number of links not written: the
-    /// lines of the table's cells that would have carried one, or, for a band, the pages it was drawn
+    /// 14289-1, 7.18.5. <see cref="LayoutDiagnostic.Count"/> is the number of links not written:
+    /// the
+    /// lines of the table's cells that would have carried one, or, for a band, the pages it was
+    /// drawn
     /// on.
     /// </summary>
     /// <remarks>
