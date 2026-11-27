@@ -65,7 +65,7 @@ public sealed class ListRenderer : IRenderer, IPageBreakSource, IKeepSource, IPl
 
     // One entry of the flattened list: the marker and the text paragraph of an item or a child.
     // Clamped is set when BuildItems narrowed the gutter. MarkerStyle is the style the entry's
-    // marker is set in, which CanDrawEntry reads together with the entry's runs. ClampCounted is
+    // marker is set in, which the entry's drawability reads together with its runs. ClampCounted is
     // set on the twin for an entry BuildItems counted in ClampSkipped, so that an entry whose
     // marker is also cut at a page end is not counted a second time as a move.
     private readonly record struct Entry(
@@ -574,15 +574,15 @@ public sealed class ListRenderer : IRenderer, IPageBreakSource, IKeepSource, IPl
             // text are both Nothing splits the list before it in both layouts, which PartUnplaced
             // reads as placed. An entry the clamp would have narrowed is counted as a clamp and
             // never as a move as well: its text has no width here, but PartUnplaced also reads a
-            // marker that is cut at the page end, without looking at the text. An entry the
-            // document cannot draw is not counted: moving it would draw it, marker and text, on the
-            // next page in a font that makes the save throw, so the twin gives nothing up for it.
+            // marker that is cut at the page end, without looking at the text. An
+            // entry whose marker or text the new layout would draw in a font the document cannot
+            // draw is not counted: that makes the save throw, so the twin gives nothing up for it.
             // A continuation piece is laid out at a page top, so the page-top term covers it and it
             // needs no term of its own.
             if (countsMoves && !entry.ClampCounted
                 && !(i == _startItem && context.AtPageTop)
                 && PartUnplaced(markerResult, contentResult, contentRenderer, area.Width)
-                && CanDrawEntry(ListLayoutRun.Current, entry.MarkerStyle, entry.Item, skipWhitespaceRuns: true))
+                && !DrawingWouldThrow(ListLayoutRun.Current, entry.MarkerStyle, entry.Item))
                 moveSites++;
 
             if ((markerResult.Status == LayoutResult.Outcome.Nothing
@@ -1114,19 +1114,11 @@ public sealed class ListRenderer : IRenderer, IPageBreakSource, IKeepSource, IPl
     // Whether everything an entry would draw can be drawn in the document: its marker, which is
     // set in the style the entry inherits, and each run that holds text (ListLayoutRun.CanDraw
     // says what that asks of a style). A run with no text draws nothing, so its style is not read.
-    // An item built from a string has one run, in the style it inherits, so that style is the only
-    // one to read.
-    //
-    // One predicate answers two questions, and they differ only for a white-space-only run. Which
-    // layout the document uses (skipWhitespaceRuns false) reads such a run, although the wrap
-    // collapses white space and the run may yield no fragment, because that is the safe direction
-    // for choosing the twin. Whether the entry is given up in the twin, which is what the 207
-    // count asks (skipWhitespaceRuns true), must not read it: the wrap draws no fragment in that
-    // style, so drawing the entry does not make the save throw and the twin does lose its text.
-    // A character the wrap keeps is one that NormaliseWhitespace does not turn into a space.
+    // A white-space-only run is read although it may yield no fragment, so this is stricter than
+    // the draw, in the safe direction. An item built from a string has one run, in the style it
+    // inherits, so that style is the only one to read. This chooses the layout the document uses.
     // Removed in 3.0 (#688), which refuses such a font where the style is built.
-    private static bool CanDrawEntry(
-        ListLayoutRun? run, TextStyle markerStyle, ListItem item, bool skipWhitespaceRuns = false)
+    private static bool CanDrawEntry(ListLayoutRun? run, TextStyle markerStyle, ListItem item)
     {
         if (!ListLayoutRun.CanDraw(run, markerStyle)) return false;
         if (item.OwnRuns is not { } runs) return true;
@@ -1135,22 +1127,23 @@ public sealed class ListRenderer : IRenderer, IPageBreakSource, IKeepSource, IPl
         {
             // A reference draws its label, whatever the label turns out to be.
             if (!runs[i].HoldsText) continue;
-            if (skipWhitespaceRuns && !runs[i].IsReference && !HoldsKeptCharacter(runs[i].Text)) continue;
             if (runs[i].Style is not { } style || !ListLayoutRun.CanDraw(run, style)) return false;
         }
 
         return true;
     }
 
-    private static bool HoldsKeptCharacter(string text)
-    {
-        foreach (var c in text)
-        {
-            if (c == '\n' || NoBreakSpaces.IsNoBreakSpace(c) || !char.IsWhiteSpace(c)) return true;
-        }
-
-        return false;
-    }
+    // Whether drawing the entry in the new layout would draw text in a font the document cannot
+    // draw, which makes the save throw: its marker, or a word of the tokens ParagraphRenderer
+    // places for its runs. That is the wrap's own reading of which style each piece of text is
+    // drawn in, so a run the wrap draws nothing for does not count. It measures nothing, so it
+    // records no glyph. The width the clamp gives the text does not
+    // change which styles the wrap places. Asked only for the entries the 207 count would
+    // otherwise count. Removed in 3.0 (#688), with the twin.
+    private static bool DrawingWouldThrow(ListLayoutRun? run, TextStyle markerStyle, ListItem item) =>
+        !ListLayoutRun.CanDraw(run, markerStyle)
+        || (item.OwnRuns is { } runs
+            && ParagraphRenderer.DrawsWordInStyle(runs, style => !ListLayoutRun.CanDraw(run, style)));
 
     /// <summary>
     /// Whether any entry of <paramref name="list"/> holds something the document cannot draw. It
@@ -1253,10 +1246,10 @@ public sealed class ListRenderer : IRenderer, IPageBreakSource, IKeepSource, IPl
                 gutter = clampedGutter;
                 indentClamped++;
             }
-            else if (wouldClamp && CanDrawEntry(ListLayoutRun.Current, itemStyle, item, skipWhitespaceRuns: true))
+            else if (wouldClamp && !DrawingWouldThrow(ListLayoutRun.Current, itemStyle, item))
             {
-                // An entry the document cannot draw is not counted: its marker, or its text once
-                // given a width, is drawn in a font that makes the save throw, so the twin gives
+                // An entry whose marker or text the new layout would draw in a font the document
+                // cannot draw is not counted: that makes the save throw, so the twin gives
                 // nothing up for it.
                 clampSkipped++;
                 clampCounted = true;
@@ -1331,8 +1324,7 @@ public sealed class ListRenderer : IRenderer, IPageBreakSource, IKeepSource, IPl
                         childGutter = clampedChildGutter;
                         indentClamped++;
                     }
-                    else if (childWouldClamp
-                        && CanDrawEntry(ListLayoutRun.Current, childStyle, child, skipWhitespaceRuns: true))
+                    else if (childWouldClamp && !DrawingWouldThrow(ListLayoutRun.Current, childStyle, child))
                     {
                         // Not counted for an undrawable entry, for the reason at the item above.
                         clampSkipped++;

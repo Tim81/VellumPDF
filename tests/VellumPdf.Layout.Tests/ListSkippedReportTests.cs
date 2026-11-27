@@ -413,32 +413,60 @@ public sealed class ListSkippedReportTests
 
     // ── An entry in a font the document cannot draw ──────────────────────────
 
-    private static TextStyle Undrawable(string kind) => new()
+    private static TextStyle Undrawable(string kind, double size = 10) => new()
     {
         FontRef = kind == "foreign-handle"
             ? new Document().UseTrueTypeFont(FontReportSupport.DejaVuBytes)
             : new FontReference((Standard14)99),
-        FontSize = 10,
+        FontSize = size,
     };
 
     private static ListElement OneEntry(params TextRun[] runs) =>
         new ListElement(ListStyle.OrderedDecimal) { Indent = 1000 }.Add(new ListItem(runs) { Style = H(10) });
 
+    // The entry an undrawable run is added to: "abc", the run, then "def" unless the shape says
+    // otherwise. The shapes are where the run sits and what it holds.
+    private static TextRun[] RunsOf(string shape, TextStyle bad)
+    {
+        var abc = new TextRun("abc", H(10));
+        var def = new TextRun("def", H(10));
+        return shape switch
+        {
+            "space" => [abc, new TextRun(" ", bad), def],
+            "tab" => [abc, new TextRun(new string((char)9, 1), bad), def],
+            "lf-middle" => [abc, new TextRun(new string((char)10, 1), bad), def],
+            "lf-trailing" => [abc, new TextRun(new string((char)10, 1), bad)],
+            "lf-leading" => [new TextRun(new string((char)10, 1), bad), abc],
+            "crlf-middle" => [abc, new TextRun(new string((char)13, 1) + new string((char)10, 1), bad), def],
+            _ => throw new ArgumentOutOfRangeException(nameof(shape)),
+        };
+    }
+
     /// <summary>
-    /// An entry whose only run in a font the document cannot draw is white space loses its text in
-    /// the twin, and drawing it would not make the save throw: the wrap draws no fragment in that
-    /// style. The twin does give that entry up, so it is reported and strict mode refuses.
+    /// An entry whose only run in a font the document cannot draw is one the wrap draws nothing
+    /// for loses its text in the twin, and drawing it would not make the save throw. The twin does
+    /// give that entry up, so it is reported and strict mode refuses.
     /// </summary>
     [Theory]
-    [InlineData("foreign-handle")]
-    [InlineData("undefined-standard14")]
-    public void AnEntryWhoseOnlyUndrawableRunIsWhiteSpace_isCounted(string kind)
+    [InlineData("foreign-handle", "space")]
+    [InlineData("foreign-handle", "tab")]
+    [InlineData("foreign-handle", "lf-middle")]
+    [InlineData("foreign-handle", "lf-trailing")]
+    [InlineData("foreign-handle", "lf-leading")]
+    [InlineData("foreign-handle", "crlf-middle")]
+    [InlineData("undefined-standard14", "space")]
+    [InlineData("undefined-standard14", "tab")]
+    [InlineData("undefined-standard14", "lf-middle")]
+    [InlineData("undefined-standard14", "lf-trailing")]
+    [InlineData("undefined-standard14", "lf-leading")]
+    [InlineData("undefined-standard14", "crlf-middle")]
+    public void AnEntryWhoseOnlyUndrawableRunDrawsNothing_isCounted(string kind, string shape)
     {
         Document Build(bool strict)
         {
             var doc = Page(header: false);
             doc.StrictDiagnostics = strict;
-            doc.Add(OneEntry(new TextRun("abc", H(10)), new TextRun(" ", Undrawable(kind)), new TextRun("def", H(10))));
+            doc.Add(OneEntry(RunsOf(shape, Undrawable(kind))));
             return doc;
         }
 
@@ -452,17 +480,75 @@ public sealed class ListSkippedReportTests
     }
 
     /// <summary>
-    /// An entry whose text, and not only white space, is in a font the document cannot draw stays
-    /// exempt: giving that text a width would draw it, which makes the save throw.
+    /// The same entry at a move site: moving it would not make the save throw.
     /// </summary>
     [Theory]
     [InlineData("foreign-handle")]
     [InlineData("undefined-standard14")]
-    public void AnEntryWhoseTextIsInAnUndrawableFont_isNotCounted(string kind)
+    public void AMoveSiteWhoseOnlyUndrawableRunDrawsNothing_isCounted(string kind)
+    {
+        var doc = Page(header: false);
+        var list = new ListElement(ListStyle.OrderedDecimal);
+        list.Add(new ListItem([new TextRun("t0", H(14))]) { Style = H(10) });
+        list.Add(new ListItem([new TextRun("t1", H(14)), new TextRun(new string((char)10, 1), Undrawable(kind))])
+        { Style = H(10) });
+        doc.Add(list);
+
+        Save(doc);
+
+        var item = Assert.Single(Skipped(doc));
+        Assert.Equal(1, item.Count);
+    }
+
+    /// <summary>The same for a child entry, whose clamp is counted.</summary>
+    [Theory]
+    [InlineData("foreign-handle")]
+    [InlineData("undefined-standard14")]
+    public void AChildWhoseOnlyUndrawableRunDrawsNothing_isCounted(string kind)
+    {
+        var doc = Page(header: false);
+        var list = new ListElement(ListStyle.OrderedDecimal) { Indent = 90 };
+        var parent = new ListItem([new TextRun("a", H(10))]) { Style = H(10) };
+        parent.AddChild(new ListItem([new TextRun("abc", H(10)), new TextRun(new string((char)10, 1), Undrawable(kind))])
+        { Style = H(10) });
+        list.Add(parent);
+        doc.Add(list);
+
+        Save(doc);
+
+        var item = Assert.Single(Skipped(doc));
+        Assert.Equal(1, item.Count);
+    }
+
+    /// <summary>
+    /// A no-break space is drawn, so an entry whose only run in such a font is one stays exempt:
+    /// drawing it would make the save throw.
+    /// </summary>
+    [Theory]
+    [InlineData("foreign-handle")]
+    [InlineData("undefined-standard14")]
+    public void AnEntryWhoseUndrawableRunIsANoBreakSpace_isNotCounted(string kind)
     {
         var doc = Page(header: false);
         doc.StrictDiagnostics = true;
-        doc.Add(OneEntry(new TextRun("abc", Undrawable(kind))));
+        doc.Add(OneEntry(
+            new TextRun("abc", H(10)), new TextRun(new string((char)0xA0, 1), Undrawable(kind)), new TextRun("def", H(10))));
+
+        Save(doc);
+
+        Assert.Empty(Skipped(doc));
+    }
+
+    /// <summary>
+    /// An entry whose text is in a font the document cannot draw stays exempt: giving that text a
+    /// width would draw it, which makes the save throw.
+    /// </summary>
+    [Fact]
+    public void AnEntryWhoseTextIsInAnUndrawableFont_isNotCounted()
+    {
+        var doc = Page(header: false);
+        doc.StrictDiagnostics = true;
+        doc.Add(OneEntry(new TextRun("abc", Undrawable("foreign-handle"))));
 
         Save(doc);
 
@@ -471,21 +557,44 @@ public sealed class ListSkippedReportTests
 
     /// <summary>
     /// An entry whose marker is in a font the document cannot draw throws when the save draws the
-    /// marker, in the twin as it did before this change, and reports no skipped clamp.
+    /// marker, in the twin as it did before. Strict mode publishes the diagnostics before the
+    /// write, so it shows that the entry is not counted: the exception is the write's own, and
+    /// not a refusal for 207.
     /// </summary>
     [Theory]
     [InlineData("foreign-handle")]
     [InlineData("undefined-standard14")]
-    public void AnEntryWhoseMarkerIsInAnUndrawableFont_throwsAndIsNotCounted(string kind)
+    public void AnEntryWhoseMarkerIsInAnUndrawableFont_isNotCounted(string kind)
     {
         var doc = Page(header: false);
+        doc.StrictDiagnostics = true;
         doc.Add(new ListElement(ListStyle.OrderedDecimal) { Indent = 1000 }
             .Add(new ListItem([new TextRun("abc", H(10))]) { Style = Undrawable(kind) }));
 
         if (kind == "foreign-handle") Assert.Throws<ArgumentException>(() => Save(doc));
         else Assert.Throws<IndexOutOfRangeException>(() => Save(doc));
+    }
+
+    /// <summary>
+    /// A marker in such a font that does not fit the page end is not drawn by the twin, so the save
+    /// does not throw, and the new layout would move the entry and draw the marker. The entry is
+    /// exempt: only the part dropped is reported.
+    /// </summary>
+    [Theory]
+    [InlineData("foreign-handle")]
+    [InlineData("undefined-standard14")]
+    public void AMarkerInAnUndrawableFontThatDoesNotFit_isNotCountedAsAMove(string kind)
+    {
+        var bad = Undrawable(kind, size: 20);
+        var doc = Page(header: false);
+        doc.Add(new ListElement(ListStyle.OrderedDecimal)
+            .Add(new ListItem([new TextRun("a", H(10))]) { Style = H(10) })
+            .Add(new ListItem([new TextRun("b", H(10))]) { Style = bad }));
+
+        Save(doc);
 
         Assert.Empty(Skipped(doc));
+        Assert.Contains(doc.Diagnostics, d => d.Code == LayoutDiagnosticCode.ListEntryPartDropped);
     }
 
     // ── Both ─────────────────────────────────────────────────────────────────

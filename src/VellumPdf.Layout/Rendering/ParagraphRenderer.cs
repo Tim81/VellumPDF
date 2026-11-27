@@ -910,38 +910,13 @@ public sealed partial class ParagraphRenderer : IRenderer, IPageBreakSource, IKe
         Tab,
     }
 
-    /// <summary>
-    /// Greedy word-wrap across all runs. A word is a maximal sequence of characters other than
-    /// U+0020 and line feed, counted across the runs, so it can change style part-way; each style
-    /// change inside it is a fragment boundary, and nothing is drawn between the pieces.
-    /// <para>
-    /// Hard line breaks: <c>\n</c>, <c>\r\n</c>, and lone <c>\r</c> all produce explicit line
-    /// breaks. The normalisation is per run, so a <c>\r</c> ending one run and a <c>\n</c> starting
-    /// the next are two breaks. Input is normalised so that <c>\r\n</c> and lone <c>\r</c> are
-    /// replaced with <c>\n</c> before splitting, preventing stray <c>\r</c> glyphs in Standard-14
-    /// output.
-    /// </para>
-    /// <para>
-    /// Word splitting uses <see cref="NormaliseWhitespace"/> to convert Unicode whitespace
-    /// (tab, thin space, en/em space, etc.) to plain spaces, then splits on space. The no-break
-    /// spaces (U+00A0, U+202F and U+2007) are intentionally <em>not</em> split points because they
-    /// are semantically a non-breaking join between words: <c>Pourquoi ?</c> written with U+202F
-    /// before the question mark cannot wrap between the two.
-    /// </para>
-    /// </summary>
-    /// <returns>
-    /// The lines, and for each line how it ended. A line that holds a word's last piece after a
-    /// forced cut ends where the word ends, so what follows decides its kind.
-    /// </returns>
-    internal static (List<LineFragment[]> Lines, List<LineEnd> Ends) WordWrap(
-        IReadOnlyList<TextRun> runs, double maxWidth, out int nullStyleRuns,
-        IReadOnlyList<TabStop>? stops = null)
+    // The tokens WordWrap places, before anything is measured: the word pieces, line breaks and
+    // tabs of the runs, each with the style it is drawn in. A break has no style, and a run that
+    // holds no word yields no token, so a style that appears here is one that draws text.
+    private static List<(string Text, TextStyle? Style, TokenKind Kind)> Tokenise(
+        IReadOnlyList<TextRun> runs, bool tabbed, out int nullStyleRuns)
     {
         nullStyleRuns = 0;
-        var tabbed = stops is not null;
-        var lines = new List<LineFragment[]>();
-        var ends = new List<LineEnd>();
-
         // Flatten all runs into a sequence of word pieces and line breaks. Pieces of one word that
         // share a style instance are joined here, before anything is measured, so that two runs
         // sharing an instance measure and draw as the single run holding their text would. A piece
@@ -1008,6 +983,58 @@ public sealed partial class ParagraphRenderer : IRenderer, IPageBreakSource, IKe
             // A null style that yielded a word threw above, so what is left here yielded none.
             if (run.Style is null) nullStyleRuns++;
         }
+
+        return tokens;
+    }
+
+    /// <summary>
+    /// Whether the wrap of <paramref name="runs"/> draws a word in a style for which
+    /// <paramref name="refused"/> is true. It reads the tokens the wrap places and measures
+    /// nothing, so it records no glyph. A style that is only in a run of line breaks, white space
+    /// the wrap collapses or no text is not drawn, and does not count.
+    /// </summary>
+    internal static bool DrawsWordInStyle(IReadOnlyList<TextRun> runs, Func<TextStyle, bool> refused)
+    {
+        foreach (var token in Tokenise(runs, tabbed: false, out _))
+        {
+            if (token.Kind is TokenKind.WordStart or TokenKind.WordContinue && refused(token.Style!)) return true;
+        }
+
+        return false;
+    }
+
+    /// <summary>
+    /// Greedy word-wrap across all runs. A word is a maximal sequence of characters other than
+    /// U+0020 and line feed, counted across the runs, so it can change style part-way; each style
+    /// change inside it is a fragment boundary, and nothing is drawn between the pieces.
+    /// <para>
+    /// Hard line breaks: <c>\n</c>, <c>\r\n</c>, and lone <c>\r</c> all produce explicit line
+    /// breaks. The normalisation is per run, so a <c>\r</c> ending one run and a <c>\n</c> starting
+    /// the next are two breaks. Input is normalised so that <c>\r\n</c> and lone <c>\r</c> are
+    /// replaced with <c>\n</c> before splitting, preventing stray <c>\r</c> glyphs in Standard-14
+    /// output.
+    /// </para>
+    /// <para>
+    /// Word splitting uses <see cref="NormaliseWhitespace"/> to convert Unicode whitespace
+    /// (tab, thin space, en/em space, etc.) to plain spaces, then splits on space. The no-break
+    /// spaces (U+00A0, U+202F and U+2007) are intentionally <em>not</em> split points because they
+    /// are semantically a non-breaking join between words: <c>Pourquoi ?</c> written with U+202F
+    /// before the question mark cannot wrap between the two.
+    /// </para>
+    /// </summary>
+    /// <returns>
+    /// The lines, and for each line how it ended. A line that holds a word's last piece after a
+    /// forced cut ends where the word ends, so what follows decides its kind.
+    /// </returns>
+    internal static (List<LineFragment[]> Lines, List<LineEnd> Ends) WordWrap(
+        IReadOnlyList<TextRun> runs, double maxWidth, out int nullStyleRuns,
+        IReadOnlyList<TabStop>? stops = null)
+    {
+        var tabbed = stops is not null;
+        var lines = new List<LineFragment[]>();
+        var ends = new List<LineEnd>();
+
+        var tokens = Tokenise(runs, tabbed, out nullStyleRuns);
 
         if (tokens.Count == 0)
         {

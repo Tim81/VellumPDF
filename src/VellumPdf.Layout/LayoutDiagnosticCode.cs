@@ -221,12 +221,12 @@ public enum LayoutDiagnosticCode
     /// <para><b>A list that left no such entry does not report this code</b>, whichever cause
     /// applied, so a document whose lists lose nothing saves under strict mode with the bytes it
     /// saves without it. That covers an empty list and a list none of whose entries the clamp would
-    /// have narrowed or the new layout would have moved. It also covers an entry whose marker, or
-    /// whose text in a run that is not white space, is in a font the document cannot draw:
-    /// narrowing or moving that entry would draw it in that font, which makes the save throw, so
-    /// leaving it as it was gives nothing up. A run of white space alone in such a font is not
-    /// drawn, so it does not exempt the entry.</para>
-    /// <para>Three lists differ from that rule.</para>
+    /// have narrowed or the new layout would have moved. An entry counts unless drawing it in the
+    /// new layout would draw text in a font the document cannot draw: that makes the save throw,
+    /// so leaving it as it was gives nothing up.</para>
+    /// <para>Three lists depart from the definition above: two do not report this code although
+    /// they left such an entry, and one reports it although the new layout would have placed its
+    /// entries as the twin did.</para>
     /// <list type="bullet">
     /// <item>A list a renderer of yours holds is laid out as before and does not report this code
     /// or <see cref="ListEntryPartDropped"/>, because the document did not place it.</item>
@@ -234,10 +234,11 @@ public enum LayoutDiagnosticCode
     /// this code, although it can report <see cref="ListEntryPartDropped"/>, so such a list can
     /// save under strict mode although it differs from the new layout.</item>
     /// <item>A list that holds an entry no page holds is placed where each entry falls by the new
-    /// layout too. On its own it reports only <see cref="ListEntryPartDropped"/>. When the
-    /// continuation limit or a document-wide cause also lays it out as its twin, it reports this
-    /// code as well, and the twin does not look for such an entry, so it counts that list's
-    /// entries as it counts any other's.</item>
+    /// layout too. On its own it reports <see cref="ListEntryPartDropped"/> and not this code.
+    /// When the continuation limit or a document-wide cause also lays it out as its twin, it
+    /// reports this code, because the twin does not look for such an entry and counts that list's
+    /// entries as it counts any other's, and reports <see cref="ListEntryPartDropped"/> only when
+    /// an entry is also dropped.</item>
     /// </list>
     /// <para>A moved entry is counted by the piece of the list that starts it, in the layout the
     /// list was given, so the count of a list that runs over several pages adds up its pieces and

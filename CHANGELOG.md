@@ -793,10 +793,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
     list of the document is clamped or moved. The save gives what it gave before this change: the
     same bytes, or the same exception and message. `StrictDiagnostics` refuses it where a list
     reports 207 or 208. `ListIndentClampSkipped` (207) reports a list the document placed this way
-    as that code describes. An entry whose marker or text is in a font the document cannot draw
-    is not counted, because narrowing or moving it would draw it in that font, which makes the
-    save throw; a run of white space alone in such a font is not drawn, so it does not exempt the
-    entry. `ListEntryPartDropped` (208) reports an entry left with a part missing.
+    as that code describes. `ListEntryPartDropped` (208) reports an entry left with a part
+    missing.
   - **A document that holds a renderer of yours lays every list out as it was before the clamp
     and the moving of entries.** That is any renderer that is not one of the library's own, added
     with `Document.Add(IRenderer)` or `DocumentRenderer.Add(IRenderer)`, wherever it sits and
