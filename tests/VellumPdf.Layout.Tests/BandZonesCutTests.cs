@@ -129,6 +129,19 @@ public sealed class BandZonesCutTests
     }
 
     [Fact]
+    public void ARunBoundaryWithNoSpace_inAZoneWithNoSpace_cutsInsideTheRunAndNotAtTheBoundary()
+    {
+        // No literal space anywhere: the zone falls back to the last place that fits, mid-word as a
+        // string band's single long word is, and the point where the runs meet is not a cut.
+        using var doc = Pages(NewPage(), 1);
+        doc.Header = new RunningBand(Runs("ab", "cdefghijklmnopqrstuvwxyz"), BandZone.Empty, new BandZone(new string('R', 37), Courier10));
+
+        var line = Header(PageContents(Save(doc))[0]);
+
+        Assert.Equal([(20.0, "ab"), (32.0, "cde"), (58.0, new string('R', 37))], line);
+    }
+
+    [Fact]
     public void AZoneCutAcrossRuns_neverPrintsAPartOfATokenValue_forAnySplitOfTheTemplate()
     {
         var random = new Random(3650);
