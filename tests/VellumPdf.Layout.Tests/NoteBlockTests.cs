@@ -709,8 +709,8 @@ public sealed class NoteBlockTests
         {
             var page = 60 + rng.Next(0, 18) * 12 + rng.Next(0, 12);
             var border = new[] { 0.0, 0.5, 1.0, 2.0 }[rng.Next(4)];
-            var top = rng.Next(0, 5) * rng.Next(0, 20) + (rng.Next(3) == 0 ? 0.5 : 0);
-            var bottom = rng.Next(0, 5) * rng.Next(0, 20) + (rng.Next(3) == 0 ? 0.25 : 0);
+            var top = new[] { 0, 5, 20, 40, 60, 80, 100 }[rng.Next(7)] + rng.Next(0, 12) + (rng.Next(3) == 0 ? 0.5 : 0);
+            var bottom = new[] { 0, 5, 20, 40, 60, 80, 100 }[rng.Next(7)] + rng.Next(0, 12) + (rng.Next(3) == 0 ? 0.25 : 0);
             var lead = rng.Next(0, 6);
             var counts = Enumerable.Range(0, rng.Next(1, 5)).Select(_ => rng.Next(1, 14)).ToArray();
 
