@@ -377,19 +377,25 @@ public sealed class ListDocumentFontRuleTests
         Assert.All(doc.Diagnostics, d => Assert.Equal(LayoutElementKind.List, d.ElementKind));
     }
 
+    /// <summary>
+    /// The list that would have moved an entry reports the fallback, and the list of the entry the
+    /// document cannot draw does not: moving that entry would draw text the document cannot draw.
+    /// </summary>
     [Fact]
-    public void BothVisibleLists_reportTheFallback()
+    public void OnlyTheListThatWouldHaveMovedAnEntry_reportsTheFallback()
     {
         var doc = ShiftedByAMove("foreign", Visible, header: false, twin: false, badFirst: false);
 
         Outcome(doc);
 
-        Assert.Equal(2, doc.Diagnostics.Count(d => d.Code == LayoutDiagnosticCode.ListIndentClampSkipped));
+        var skipped = Assert.Single(doc.Diagnostics, d => d.Code == LayoutDiagnosticCode.ListIndentClampSkipped);
+        Assert.Equal(1, skipped.Count);
     }
 
     /// <summary>
     /// The count is the entries the clamp would have narrowed, from the same gutters the clamp
-    /// reads, and 1 when it would have narrowed none.
+    /// reads. A list the clamp would have narrowed nothing in, and an entry in a font the document
+    /// cannot draw, are not counted.
     /// </summary>
     [Fact]
     public void TheFallbackCount_isTheEntriesTheClampWouldHaveNarrowed()
@@ -411,10 +417,9 @@ public sealed class ListDocumentFontRuleTests
         Outcome(doc);
 
         var skipped = doc.Diagnostics.Where(d => d.Code == LayoutDiagnosticCode.ListIndentClampSkipped).ToArray();
-        Assert.Equal(3, skipped.Length);
+        Assert.Equal(2, skipped.Length);
         Assert.Equal(2, skipped[0].Count);
         Assert.Equal(2, skipped[1].Count);
-        Assert.Equal(1, skipped[2].Count);
     }
 
     /// <summary>A list with no items has nothing to report.</summary>
@@ -424,11 +429,14 @@ public sealed class ListDocumentFontRuleTests
         var doc = Page(200, 100, 0, header: false);
         doc.Add(new ListElement(ListStyle.Unordered));
         doc.Add(new ListElement(ListStyle.Unordered) { Indent = 1000 }
+            .Add(new ListItem("clamped", H(10))));
+        doc.Add(new ListElement(ListStyle.Unordered) { Indent = 1000 }
             .Add(new ListItem([new TextRun("bad", Bad("undefined", 10))])));
 
         Outcome(doc);
 
-        Assert.Single(doc.Diagnostics, d => d.Code == LayoutDiagnosticCode.ListIndentClampSkipped);
+        var skipped = Assert.Single(doc.Diagnostics, d => d.Code == LayoutDiagnosticCode.ListIndentClampSkipped);
+        Assert.Equal(1, skipped.ElementIndex);
     }
 
     /// <summary>
