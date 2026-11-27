@@ -185,3 +185,12 @@ VellumPdf.Layout.Elements.LineSeparator.SpaceAfter.get -> double
 VellumPdf.Layout.Elements.LineSeparator.SpaceAfter.init -> void
 VellumPdf.Layout.Elements.PieChart.SpaceAfter.get -> double
 VellumPdf.Layout.Elements.PieChart.SpaceAfter.init -> void
+static VellumPdf.Layout.Elements.LayoutImage.FromBytes(byte[]! data) -> VellumPdf.Layout.Elements.LayoutImage!
+static VellumPdf.Layout.Elements.LayoutImage.FromBytes(byte[]! data, VellumPdf.Images.ImageLoadOptions! options) -> VellumPdf.Layout.Elements.LayoutImage!
+static VellumPdf.Layout.Elements.LayoutImage.FromBytes(byte[]! data, VellumPdf.Images.GifLoadOptions! options) -> VellumPdf.Layout.Elements.LayoutImage!
+static VellumPdf.Layout.Elements.LayoutImage.FromFile(string! path) -> VellumPdf.Layout.Elements.LayoutImage!
+static VellumPdf.Layout.Elements.LayoutImage.FromFile(string! path, VellumPdf.Images.ImageLoadOptions! options) -> VellumPdf.Layout.Elements.LayoutImage!
+static VellumPdf.Layout.Elements.LayoutImage.FromFile(string! path, VellumPdf.Images.GifLoadOptions! options) -> VellumPdf.Layout.Elements.LayoutImage!
+static VellumPdf.Layout.Elements.LayoutImage.FromStream(System.IO.Stream! stream) -> VellumPdf.Layout.Elements.LayoutImage!
+static VellumPdf.Layout.Elements.LayoutImage.FromStream(System.IO.Stream! stream, VellumPdf.Images.ImageLoadOptions! options) -> VellumPdf.Layout.Elements.LayoutImage!
+static VellumPdf.Layout.Elements.LayoutImage.FromStream(System.IO.Stream! stream, VellumPdf.Images.GifLoadOptions! options) -> VellumPdf.Layout.Elements.LayoutImage!
