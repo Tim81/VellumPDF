@@ -286,16 +286,19 @@ public sealed class LongWordLimitTests
     // A list laid out as its twin for a reason other than the limit lays its entries out as it
     // always did: one that holds an entry no page holds is placed as it was before the fixes of
     // #682 (and the drawability ruling), a document that holds a renderer of the caller's lays
-    // every list out as its twin. U+202F joins the word before it and a word is cut after a place.
+    // every list out as its twin. U+202F joins the word before it and a word is cut after a place,
+    // on the pages after the first too, where the document places the pieces of the twin.
     [Fact]
     public void AListLaidOutAsItsTwinForAnotherReason_keepsTheCurrentWrap()
     {
         string[] Lines(Action<Document, ListElement> arrange)
         {
-            using var doc = new Document { PageSize = new PdfRectangle(0, 0, 100, 400), Margins = new EdgeInsets(10) };
+            using var doc = new Document { PageSize = new PdfRectangle(0, 0, 100, 70), Margins = new EdgeInsets(10) };
             var list = new ListElement { DefaultStyle = Courier(), Indent = 20 };
             list.Add("aaaa/bbbbbbbbbbbb");
             list.Add("cccc\u202Fdd eeee");
+            list.Add(new ListItem([new TextRun("a b ", Courier()), new TextRun("c d", new TextStyle { Font = Standard14.Courier, FontSize = 10 })]));
+            list.Add("ee ff");
             arrange(doc, list);
             return [.. ContentStreamReadback.TextPlacements(PdfTestUtil.DecompressAllFlatStreams(LinkSupport.Save(doc)))
                 .Select(p => p.Text).Where(s => s.Length > 0 && s != "\u2022" && !s.StartsWith("\u2022", StringComparison.Ordinal))];

@@ -155,6 +155,15 @@ public sealed class LayoutContext
     internal static LayoutContext Addressed(LayoutBox area, IRenderer child, ContinuationMode mode) =>
         new(area) { Session = mode == ContinuationMode.Twin ? null : ContinuationSession.ViewFor(child, mode, null) };
 
+    // Removed in 3.0 (#688). Whether the document called this renderer as the twin because of the
+    // continuation limit: the one it chose, which TwinChosen records, or one it is probing. A
+    // renderer the document placed as its twin because the first piece reported nothing is not one;
+    // that is no decision of the limit's.
+    internal bool IsLimitTwin(IRenderer renderer) =>
+        Session is { Mode: ContinuationMode.Twin } session
+        && ReferenceEquals(session.Called, renderer)
+        && (session.TwinChosen || session.Probing);
+
     // Removed in 3.0 (#688). The same context with WrapAsBefore set or cleared.
     internal LayoutContext WithWrapAsBefore(bool on) =>
         on == WrapAsBefore

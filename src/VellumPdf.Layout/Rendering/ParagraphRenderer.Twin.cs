@@ -72,9 +72,7 @@ public sealed partial class ParagraphRenderer : IContinuationTwin
         _lines is not null
             ? _activeIsTwin
             : TwinWrapApplies()
-                && (context.WrapAsBefore
-                    || context.Session is { Mode: ContinuationMode.Twin } session
-                        && ReferenceEquals(session.Called, this));
+                && (context.WrapAsBefore || context.IsLimitTwin(this));
 
     [System.Diagnostics.CodeAnalysis.MemberNotNull(nameof(_lines), nameof(_lineEnds))]
     private void Activate(double width, bool twin)

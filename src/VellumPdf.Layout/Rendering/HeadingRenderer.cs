@@ -87,7 +87,7 @@ internal sealed class HeadingRenderer : IRenderer, IPlacementSource, IPageBreakS
         }
 
         var innerContext = mode == ContinuationMode.Twin
-            ? context.WithWrapAsBefore(context.Session is { } twinSession && ReferenceEquals(twinSession.Called, this))
+            ? context.WithWrapAsBefore(context.IsLimitTwin(this))
             : context.Address(this, _inner, context.Area, context.AtPageTop, context.HonourLineCounts);
         var result = _inner.Layout(innerContext);
         if (result.OccupiedArea.HasValue)

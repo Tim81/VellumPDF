@@ -305,8 +305,7 @@ public sealed class TableRenderer : IRenderer, IPageBreakSource, IKeepSource, IP
         // The twin the document chose or is probing also cuts a word wider than its column at the
         // glyph, as it was cut before places after a solidus or hyphen were used (#594); a table that
         // a renderer of the caller's forwards to does not. Removed in 3.0 (#688).
-        _cutsAtGlyphs = _readsUnbrokenForTheLimit
-            && context.Session is { } glyphSession && ReferenceEquals(glyphSession.Called, this);
+        _cutsAtGlyphs = _readsUnbrokenForTheLimit && context.IsLimitTwin(this);
         using var cutAtGlyphs = LongWordBreaks.CutAtGlyphs(_cutsAtGlyphs);
         var mode = context.ModeFor(this);
         _laidOutBy = null;

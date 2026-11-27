@@ -477,7 +477,7 @@ public sealed class ListRenderer : IRenderer, IPageBreakSource, IKeepSource, IPl
         if (area.IsEmpty) return LayoutResult.Nothing();
 
         _childrenWrapAsBefore = _unclamped
-            && (context.Session is { Mode: ContinuationMode.Twin } twinSession && ReferenceEquals(twinSession.Called, this)
+            && (context.IsLimitTwin(this)
                 || ((byte)_handoff & 8) != 0 && ((byte)_handoff & AllListsNearLimit) != 0
                 || ((byte)_placement & 8) != 0 && ((byte)_placement & AllListsNearLimit) != 0);
 
