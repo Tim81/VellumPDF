@@ -150,11 +150,12 @@ public sealed class LongWordLimitTests
 
     // The rows of the review: the current wrap and 2.3.3's give a different number of lines at a
     // run boundary that holds U+00A0, at an empty run and at a run of U+00A0 alone. The pages are
-    // those of a v2.3.3 build and of main (31f1261 and 56df51b agree on them), made with the same
-    // runs repeated and one 12 pt line to a page of 80 x 37 pt with 10 pt margins. The verdict at
+    // those of a v2.3.3 build and of main (31f1261 and 56df51b agree on them; main has no cut after
+    // a place, so its 255 pages for the address row become the 340 of the current wrap), made with
+    // the same runs repeated and one 12 pt line to a page of 80 x 37 pt with 10 pt margins. The verdict at
     // the harness limit of 300 has to be 2.3.3's: saved when its pages fit, refused when they do
     // not, whether the runs share one style instance or each has its own.
-    private sealed record Boundary(string Name, int Repeats, int Pages233, int PagesMain, string[] Runs);
+    private sealed record Boundary(string Name, int Repeats, int Pages233, int PagesCurrent, string[] Runs);
 
     private static readonly Boundary[] Boundaries =
     [
@@ -166,7 +167,9 @@ public sealed class LongWordLimitTests
         new("nbsp-only, 2.3.3 refuses", 68, 340, 272, ["ccccc dd", "ccccccc", "aaaa", "\u00A0", "ccccc dd", "dd", "dd\n"]),
         new("empty run, 2.3.3 saves", 85, 170, 340, ["e", "aa bbbb", "bbbbbb", "", "e", "e\n"]),
         new("empty run, 2.3.3 refuses", 57, 342, 285, ["e", "mmmmm nnnnn", "", "jj kk ll", "mmmmm nnnnn", "jj kk ll\n"]),
-        new("no boundary special, 2.3.3 refuses", 114, 342, 228, ["iiiiiiiiiii", "aaa "])
+        new("no boundary special, 2.3.3 refuses", 114, 342, 228, ["iiiiiiiiiii", "aaa "]),
+        new("address with a place, 2.3.3 saves", 85, 255, 340, ["aaaaaaaaaaaa/bbbbbbbbbbbb "]),
+        new("no-break spaces in a word, 2.3.3 saves", 90, 270, 360, ["cccc jjjjjj jjj vvvvvv sss "])
     ];
 
     private static readonly Setup OneLinePerPage = new() { PageWidth = 80, PageHeight = 37 };
@@ -197,7 +200,7 @@ public sealed class LongWordLimitTests
 
         // The port of 2.3.3's wrap makes the pages of a v2.3.3 build, and the current wrap those of main.
         Assert.Equal(boundary.Pages233, ParagraphRenderer.WordWrapAsBefore(Repeated(), 60).Lines.Count);
-        Assert.Equal(boundary.PagesMain, ParagraphRenderer.WordWrap(Repeated(), 60, out _).Lines.Count);
+        Assert.Equal(boundary.PagesCurrent, ParagraphRenderer.WordWrap(Repeated(), 60, out _).Lines.Count);
 
         var saves = boundary.Pages233 < 300;
         Assert.Equal(name.EndsWith("saves", StringComparison.Ordinal), saves);
