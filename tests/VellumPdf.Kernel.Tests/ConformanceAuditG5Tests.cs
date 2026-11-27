@@ -1452,7 +1452,7 @@ public sealed class ConformanceAuditG5Tests
         Assert.Null(Description(q.MetadataXml).Element(Dc + "language"));
     }
 
-    [Fact(Skip = "Gap #614 (refusal in 3.0): Document.Language is not validated as BCP 47, so a tag such as 'not a tag' is written to /Lang and fails veraPDF 7.2-29 under PDF/UA-1; the member's documentation says so.")]
+    [Fact(Skip = "Gap #749 (the 3.0 refusal is #614): Document.Language is not validated as BCP 47, so a tag such as 'not a tag' is written to /Lang and fails veraPDF 7.2-29 under PDF/UA-1; the member's documentation says so.")]
     public void Iso14289_1_7_2_LanguageThatIsNotATagIsNotWrittenUnderPdfUA1()
     {
         using var doc = new PdfDocument { Language = "not a tag", Conformance = PdfConformance.PdfUA1, Timestamp = Pinned, DocumentId = PinnedId };
@@ -1488,7 +1488,7 @@ public sealed class ConformanceAuditG5Tests
             Assert.False(Parsed(claim, FixturePath.Layout).Catalog.Has("ViewerPreferences"));
     }
 
-    [Fact(Skip = "Gap #474: a PDF/UA-1 claim is stamped on a Layout document with no title or no language; the file has no dc:title (ISO 14289-1, 7.1) and no /Lang (7.2), and fails veraPDF 7.1-9 and 7.2-34; Document.Language says to set it explicitly.")]
+    [Fact(Skip = "Gap #748 (the 3.0 refusal is #474): a PDF/UA-1 claim is stamped on a Layout document with no title or no language; the file has no dc:title (ISO 14289-1, 7.1) and no /Lang (7.2), and fails veraPDF 7.1-9 and 7.2-34; Document.Language says to set it explicitly.")]
     public void Iso14289_1_7_1_PdfUA1RefusesOrCarriesATitleAndALanguage()
     {
         var doc = new LayoutDocument { Conformance = PdfConformance.PdfUA1, Timestamp = Pinned, DocumentId = PinnedId };
@@ -1577,7 +1577,7 @@ public sealed class ConformanceAuditG5Tests
         Assert.All(tags, t => Assert.Matches(@"^[a-zA-Z]{1,8}(-[a-zA-Z0-9]{1,8})*$", t));
     }
 
-    [Fact(Skip = "Gap #614 (refusal in 3.0): Document.Language is not validated as BCP 47, so a tag such as 'not a tag' is written to the catalog /Lang under PDF/A-2a, where 6.7.4 makes a malformed value a shall; the member's documentation says so.")]
+    [Fact(Skip = "Gap #749 (the 3.0 refusal is #614): Document.Language is not validated as BCP 47, so a tag such as 'not a tag' is written to the catalog /Lang under PDF/A-2a, where 6.7.4 makes a malformed value a shall; the member's documentation says so.")]
     public void Iso19005_2_6_7_4_LanguageThatIsNotATagIsNotWrittenUnderPdfA2a()
     {
         using var doc = new PdfDocument { Language = "not a tag", Conformance = PdfConformance.PdfA2a, Timestamp = Pinned, DocumentId = PinnedId };
