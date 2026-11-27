@@ -211,3 +211,12 @@ VellumPdf.Layout.Elements.NoteBlock.Padding.init -> void
 VellumPdf.Layout.Elements.NoteBlock.Paragraphs.get -> System.Collections.Generic.IReadOnlyList<VellumPdf.Layout.Elements.Paragraph!>!
 VellumPdf.Layout.Elements.NoteBlock.SpaceAfter.get -> double
 VellumPdf.Layout.Elements.NoteBlock.SpaceAfter.init -> void
+static VellumPdf.Layout.Elements.LayoutImage.FromBytes(byte[]! data) -> VellumPdf.Layout.Elements.LayoutImage!
+static VellumPdf.Layout.Elements.LayoutImage.FromBytes(byte[]! data, VellumPdf.Images.ImageLoadOptions! options) -> VellumPdf.Layout.Elements.LayoutImage!
+static VellumPdf.Layout.Elements.LayoutImage.FromBytes(byte[]! data, VellumPdf.Images.GifLoadOptions! options) -> VellumPdf.Layout.Elements.LayoutImage!
+static VellumPdf.Layout.Elements.LayoutImage.FromFile(string! path) -> VellumPdf.Layout.Elements.LayoutImage!
+static VellumPdf.Layout.Elements.LayoutImage.FromFile(string! path, VellumPdf.Images.ImageLoadOptions! options) -> VellumPdf.Layout.Elements.LayoutImage!
+static VellumPdf.Layout.Elements.LayoutImage.FromFile(string! path, VellumPdf.Images.GifLoadOptions! options) -> VellumPdf.Layout.Elements.LayoutImage!
+static VellumPdf.Layout.Elements.LayoutImage.FromStream(System.IO.Stream! stream) -> VellumPdf.Layout.Elements.LayoutImage!
+static VellumPdf.Layout.Elements.LayoutImage.FromStream(System.IO.Stream! stream, VellumPdf.Images.ImageLoadOptions! options) -> VellumPdf.Layout.Elements.LayoutImage!
+static VellumPdf.Layout.Elements.LayoutImage.FromStream(System.IO.Stream! stream, VellumPdf.Images.GifLoadOptions! options) -> VellumPdf.Layout.Elements.LayoutImage!
