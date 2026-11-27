@@ -57,22 +57,28 @@ public interface IRenderer
     /// reads every cell unbroken (#679); see
     /// <see cref="VellumPdf.Layout.Elements.Table.Cell.Content"/>. Your <see cref="Draw"/> must
     /// forward to the same renderer.</para>
-    /// <para><b>Text wraps as 2.3.3 wrapped it only where the limit of page continuations chooses
-    /// that layout.</b> The document keeps the verdict 2.3.3 gave at that limit (#687): where its
-    /// limit decision finds that the current wrap and the 2.3.3 wrap reach the limit differently,
-    /// it lays the element out as 2.3.3 did, so what 2.3.3 saved is saved and what it refused is
-    /// refused. That wrap is used for a paragraph, heading, list item or table the decision gives
-    /// its twin, for the entries of a list laid out as its twin for the limit, and for the entries
-    /// of every list of a document in which an element after a list can need about as many page
-    /// continuations as one element may use. The decision probes an element only where the length
-    /// of its text passes the continuations left, so a paragraph longer than that is probed
-    /// whatever its page count. Everywhere else text wraps as the document wraps what it lays out
-    /// itself, and every other description in this library of how a word is cut, how a run
-    /// boundary joins a word or what U+202F and U+2007 are applies: in a renderer of yours that
-    /// lays out a library renderer, in a <see cref="VellumPdf.Layout.Rendering.ParagraphRenderer"/>
-    /// built with a start line, in a table your renderer forwards to, and in a list laid out as its
-    /// twin because the document holds a renderer of yours, an entry's font cannot be drawn or an
-    /// entry fits no page.</para>
+    /// <para><b>A long word is cut after a solidus, reverse solidus or hyphen-minus only in text the
+    /// document lays out itself, and everywhere else text wraps exactly as it did before that
+    /// cut.</b> The text the document lays out itself is what is added to it and placed by its own
+    /// loop: paragraphs, headings, list items, the cells of a table added directly, and the
+    /// paragraphs of a <see cref="VellumPdf.Layout.Elements.NoteBlock"/>. The limit decision, which
+    /// keeps the verdict of the limit of page continuations, sees the first four. A note block is
+    /// new, so it has no earlier layout and no twin: it cuts after a place and, near the limit, is
+    /// refused where its lines pass it.</para>
+    /// <para>These paths cut a long word at the glyph, tokenise as before and so give the bytes and
+    /// the verdict of the version before the cut: a library renderer that your renderer lays out,
+    /// a <see cref="VellumPdf.Layout.Rendering.ParagraphRenderer"/> built with a start line,
+    /// whether your renderer forwards to it or the document lays it out, a table your renderer
+    /// forwards to, and a list the document lays out as its twin because it holds a renderer of
+    /// yours, an entry's font cannot be drawn or an entry fits no page.</para>
+    /// <para>Within the text the document lays out itself, the limit decision keeps what 2.3.3
+    /// gave at the limit (#687, #594). It probes an element only where the length of its text
+    /// passes the continuations left, so a paragraph longer than that is probed whatever its page
+    /// count. Where the current wrap and the 2.3.3 wrap reach the limit differently, the element
+    /// is laid out as 2.3.3 did: for the twin the decision gives a paragraph, heading, list item or
+    /// table, for the entries of a list laid out as its twin for the limit, and for the entries of
+    /// every list of a document in which an element after a list can need about as many page
+    /// continuations as one element may use.</para>
     /// <para>The 2.3.3 wrap reads each run's words on their own, so a word that continues over a
     /// run boundary is two words, whether the runs are those of a paragraph, a heading or a list
     /// item. U+202F and U+2007 are spaces. A word wider than the line is cut at the glyph, never
@@ -81,8 +87,9 @@ public interface IRenderer
     /// <see cref="ArgumentException"/>, as 2.3.3 refused it, where the document's own wrap joins
     /// and saves it, so the decision keeps the refusal. A paragraph with tab stops or a page
     /// reference has no 2.3.3 wrap, because 2.3.3 had neither, and wraps as the document wraps
-    /// it. <b>Do not</b> rely on which wrap an element gets near the
-    /// limit: 3.0 wraps one way.</para>
+    /// it. <b>Do not</b> rely on the verdict of a path the limit decision cannot see: a renderer of
+    /// yours that lays out a library renderer takes the word split of #562 and #590 as it stands, so
+    /// a text 2.3.3 saved can still be refused there at the limit. 3.0 wraps one way.</para>
     /// <para><b>A <see cref="VellumPdf.Layout.Rendering.ListRenderer"/> that your renderer lays out
     /// is laid out as it was before the fixes of #476 and #685.</b> Through the context you were
     /// given, through <see cref="LayoutContext.WithArea"/> or through the public

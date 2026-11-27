@@ -82,6 +82,11 @@ public sealed class LayoutContext
     /// </summary>
     internal ContinuationSession? Session { get; init; }
 
+    // Removed in 3.0 (#688). True on the context a built-in renderer that lays paragraphs out by
+    // itself, a note block, gives them: the cut after a solidus or hyphen applies to them although no
+    // document session addresses them. A note block is new API, so it has no 2.3.3 behaviour to keep.
+    internal bool CutAtPlaces { get; init; }
+
     // Removed in 3.0 (#688). True on the context a list laid out for the continuation limit gives
     // its entries, so that a paragraph in one wraps as 2.3.3 did and the list's verdict is 2.3.3's.
     internal bool WrapAsBefore { get; init; }

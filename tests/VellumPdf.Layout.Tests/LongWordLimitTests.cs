@@ -212,11 +212,11 @@ public sealed class LongWordLimitTests
         if (!saves) Assert.True(IsLimitRefusal(o.Error));
     }
 
-    // Outside the limit's decision the current wrap and the cut after a place apply, as on main: a
-    // table that a renderer of the caller's forwards to cuts after a place and draws the lines it
-    // laid out.
+    // A path the limit decision cannot see wraps exactly as main does: main's tokenisation and a cut
+    // at the glyph, so main's bytes and main's verdict. A table that a renderer of the caller's
+    // forwards to cuts at the glyph and draws the lines it laid out.
     [Fact]
-    public void AForwardedTable_cutsAfterThePlace_andDrawsWhatItLaidOut()
+    public void AForwardedTable_cutsAtTheGlyph_andDrawsWhatItLaidOut()
     {
         var table = new TableElement { DefaultCellStyle = Courier() }.SetColumnWidths(72);
         table.AddRow().AddCell("aaaa/bbbbbbbbbbbb");
@@ -224,15 +224,15 @@ public sealed class LongWordLimitTests
         var o = Run(new Setup { PageWidth = 92 }, new Log(), new Forward(new TableRenderer(table)));
 
         Assert.Null(o.Error);
-        Assert.Equal(["aaaa/", "bbbbbbbbbb", "bb"], Shown(o));
+        Assert.Equal(["aaaa/bbbbb", "bbbbbbb"], Shown(o));
     }
 
     // The same for a paragraph a renderer of the caller's forwards to, with or without tab stops,
-    // and for U+202F, which main joins to the word before it.
+    // and U+202F, which main joins to the word before it.
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
-    public void AForwardedParagraph_keepsTheCurrentWrap(bool tabStops)
+    public void AForwardedParagraph_wrapsAsMainDoes(bool tabStops)
     {
         var paragraph = new Paragraph("aaaa/bbbbbbbbbbbb", Courier());
         if (tabStops) paragraph = new Paragraph("aaaa/bbbbbbbbbbbb", Courier()) { TabStops = [new TabStop(30)] };
@@ -240,7 +240,7 @@ public sealed class LongWordLimitTests
         var o = Run(Narrow, new Log(), new Forward(new ParagraphRenderer(paragraph)));
 
         Assert.Null(o.Error);
-        Assert.Equal(["aaaa/", "bbbbbbbbbb", "bb"], Shown(o));
+        Assert.Equal(["aaaa/bbbbb", "bbbbbbb"], Shown(o));
 
         var joined = Run(Narrow, new Log(), new Forward(new ParagraphRenderer(new Paragraph("cccc\u202Fdd eeee", Courier()))));
         Assert.Equal(["cccc\u00A0dd", "eeee"], Shown(joined));
@@ -258,22 +258,24 @@ public sealed class LongWordLimitTests
     }
 
     // A paragraph laid out under a context the document did not address, as a caller's wrapper
-    // lays it out, wraps as the document wraps it: the word is cut after the place, in three lines.
+    // lays it out, wraps as main does: the word is cut at the glyph, in two lines.
     [Fact]
-    public void ARendererACallerHolds_wrapsAsTheDocumentDoes()
+    public void ARendererACallerHolds_wrapsAsMainDoes()
     {
         var renderer = new ParagraphRenderer(new Paragraph("aaaa/bbbbbbbbbbbb", Courier()));
 
         var result = renderer.Layout(new LayoutContext(new LayoutBox(0, 0, 60, 1000)));
 
-        Assert.Equal(3 * 12, result.OccupiedArea!.Value.Height);
+        Assert.Equal(2 * 12, result.OccupiedArea!.Value.Height);
     }
 
-    // A start line a caller made indexes the lines of the current wrap, which has three here.
+    // A renderer a caller built with a start line wraps as main does, forwarded or added to the
+    // document, and the limit decision is not asked: the start indexes the lines of main's wrap,
+    // two here, so a start of 2 is past the last line.
     [Theory]
-    [InlineData(2, true)]
-    [InlineData(3, false)]
-    public void AStartLineACallerMade_readsTheLinesOfTheCurrentWrap(int start, bool saves)
+    [InlineData(1, true)]
+    [InlineData(2, false)]
+    public void AStartLineACallerMade_readsTheLinesOfMainsWrap(int start, bool saves)
     {
         var renderer = new ParagraphRenderer(new Paragraph("aaaaaaa/bbbbbbbbbbbb", Courier()), start);
 
@@ -281,35 +283,104 @@ public sealed class LongWordLimitTests
 
         Assert.Equal(saves, o.Error is null);
         if (!saves) Assert.IsType<InvalidOperationException>(o.Error);
+        Assert.Equal(0, o.Probes);
     }
 
-    // A list laid out as its twin for a reason other than the limit lays its entries out as it
-    // always did: one that holds an entry no page holds is placed as it was before the fixes of
-    // #682 (and the drawability ruling), a document that holds a renderer of the caller's lays
-    // every list out as its twin. U+202F joins the word before it and a word is cut after a place,
-    // on the pages after the first too, where the document places the pieces of the twin.
+    // The paths the limit decision cannot see keep main's verdict at the limit. Each is the address
+    // of the first test, which main saves in 228 pages for a paragraph, 263 for a list item and 245
+    // for a cell; cut after the solidus each would need about 1.4 times as many and pass 300.
+    public enum UnseenPath
+    {
+        ForwardedParagraph,
+        ForwardedStartLineParagraph,
+        StartLineAddedDirectly,
+        ForwardedList,
+        ListAfterARendererOfTheCallers,
+        ListWithAnEntryNoPageHolds,
+        ForwardedTable,
+    }
+
+    [Theory]
+    [InlineData(UnseenPath.ForwardedParagraph, 228)]
+    [InlineData(UnseenPath.ForwardedStartLineParagraph, 228)]
+    [InlineData(UnseenPath.StartLineAddedDirectly, 228)]
+    [InlineData(UnseenPath.ForwardedList, 263)]
+    [InlineData(UnseenPath.ListAfterARendererOfTheCallers, 263)]
+    [InlineData(UnseenPath.ListWithAnEntryNoPageHolds, 247)]
+    [InlineData(UnseenPath.ForwardedTable, 245)]
+    public void APathTheLimitDecisionCannotSee_keepsMainsVerdict(UnseenPath path, int pagesOfMain)
+    {
+        var style = Courier();
+        IRenderer[] elements = path switch
+        {
+            UnseenPath.ForwardedParagraph => [new Forward(Element(Kind.Paragraph, Address))],
+            UnseenPath.ForwardedStartLineParagraph => [new Forward(new ParagraphRenderer(new Paragraph(Address, style), 1))],
+            UnseenPath.StartLineAddedDirectly => [new ParagraphRenderer(new Paragraph(Address, style), 1)],
+            UnseenPath.ForwardedList => [new Forward(Element(Kind.ListItem, Address))],
+            UnseenPath.ListAfterARendererOfTheCallers => [new Block(5), Element(Kind.ListItem, Address)],
+            UnseenPath.ListWithAnEntryNoPageHolds =>
+            [
+                new ListRenderer(new ListElement(ListStyle.OrderedDecimal) { DefaultStyle = style, Indent = 20 }
+                    .Add(new ListItem("x", new TextStyle { Font = Standard14.Courier, FontSize = 70 }))
+                    .Add(string.Concat(Enumerable.Repeat(new string('a', 40) + "/", 600)))),
+            ],
+            _ => [new Forward(Element(Kind.CellString, Address))],
+        };
+
+        // The entry of the last row is a marker of 70 pt, which fits no page of 140 pt.
+        var setup = path == UnseenPath.ListWithAnEntryNoPageHolds ? new Setup { PageWidth = 100, PageHeight = 140 } : new Setup();
+
+        var o = Run(setup, new Log(), elements);
+
+        Assert.Null(o.Error);
+        Assert.Equal(pagesOfMain, o.Pages);
+    }
+
+    // A list laid out as its twin for a reason other than the limit lays its entries out as main
+    // does: one that holds an entry no page holds is placed as it was before the fixes of #682 (and
+    // the drawability ruling), a document that holds a renderer of the caller's lays every list out
+    // as its twin. U+202F joins the word before it and a word is cut at the glyph, on the pages
+    // after the first too, where the document places the pieces of the twin; the same list in a
+    // document without those reasons cuts after the place.
     [Fact]
-    public void AListLaidOutAsItsTwinForAnotherReason_keepsTheCurrentWrap()
+    public void AListLaidOutAsItsTwinForAnotherReason_wrapsAsMainDoes()
     {
         string[] Lines(Action<Document, ListElement> arrange)
         {
             using var doc = new Document { PageSize = new PdfRectangle(0, 0, 100, 70), Margins = new EdgeInsets(10) };
             var list = new ListElement { DefaultStyle = Courier(), Indent = 20 };
             list.Add("aaaa/bbbbbbbbbbbb");
-            list.Add("cccc\u202Fdd eeee");
+            list.Add("cccc dd eeee");
             list.Add(new ListItem([new TextRun("a b ", Courier()), new TextRun("c d", new TextStyle { Font = Standard14.Courier, FontSize = 10 })]));
             list.Add("ee ff");
             arrange(doc, list);
             return [.. ContentStreamReadback.TextPlacements(PdfTestUtil.DecompressAllFlatStreams(LinkSupport.Save(doc)))
-                .Select(p => p.Text).Where(s => s.Length > 0 && s != "\u2022" && !s.StartsWith("\u2022", StringComparison.Ordinal))];
+                .Select(p => p.Text).Where(s => s.Length > 0)];
         }
 
         var plain = Lines((doc, list) => doc.Add(list));
         var withCallerRenderer = Lines((doc, list) => { doc.Add(new Forward(new LayoutImageSpacer())); doc.Add(list); });
+        string[] entryNoPageHolds;
+        {
+            using var doc = new Document { PageSize = new PdfRectangle(0, 0, 100, 140), Margins = new EdgeInsets(10) };
+            var list = new ListElement(ListStyle.OrderedDecimal) { DefaultStyle = Courier(), Indent = 20 };
+            list.Add(new ListItem("x", new TextStyle { Font = Standard14.Courier, FontSize = 70 }));
+            list.Add("aaaa/bbbbbbbbbbbb");
+            list.Add("cccc dd eeee");
+            list.Add("ee ff");
+            doc.Add(list);
+            entryNoPageHolds = [.. ContentStreamReadback.TextPlacements(PdfTestUtil.DecompressAllFlatStreams(LinkSupport.Save(doc)))
+                .Select(p => p.Text).Where(s => s.Length > 0)];
+        }
 
         Assert.Contains("aaaa/", plain);
-        Assert.Contains("cccc\u00A0dd", plain);
-        Assert.Equal(plain, withCallerRenderer);
+        Assert.Contains("cccc dd", plain);
+        foreach (var other in new[] { withCallerRenderer, entryNoPageHolds })
+        {
+            Assert.Contains("aaaa/bbbbb", other);
+            Assert.Contains("cccc dd", other);
+            Assert.Contains("ee ff", other);
+        }
     }
 
     private sealed class LayoutImageSpacer : IRenderer
@@ -317,6 +388,47 @@ public sealed class LongWordLimitTests
         public LayoutResult Layout(LayoutContext context) => LayoutResult.Full(context.Area.WithHeight(5));
 
         public void Draw(DrawContext context) { }
+    }
+
+    // The third case of the limit: the entries of every list of a document in which an element after
+    // a list comes near the limit wrap as 2.3.3 did, on the first page (the list reads what the
+    // document handed it) and on the pages after it (the pieces read what they carry). The same list
+    // before a short paragraph wraps as the document does, joining U+202F to the word before it.
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void TheEntriesOfAListBeforeAnElementNearTheLimit_wrapAs2_3_3Did(bool near)
+    {
+        var list = new ListElement { DefaultStyle = Courier(), Indent = 20 };
+        list.Add("cccc dd eeee");
+        for (var i = 0; i < 8; i++) list.Add("xx yy");
+        list.Add("ffff gg hh");
+        var after = near ? new string('w', 9) + " " : "w ";
+
+        var o = Run(new Setup { PageWidth = 100, PageHeight = 100 }, new Log(),
+            new ListRenderer(list), new ParagraphRenderer(new Paragraph(string.Concat(Enumerable.Repeat(after, near ? 60 : 3)), Courier())));
+
+        Assert.Null(o.Error);
+        var shown = Shown(o);
+        Assert.Equal(near, shown.Contains("cccc dd"));
+        Assert.Equal(near, shown.Contains("ffff gg hh"));
+        Assert.Equal(!near, shown.Contains("cccc dd"));
+        Assert.Equal(!near, shown.Contains("ffff gg hh"));
+    }
+
+    // A note block is new API: its paragraphs cut after a place like any text the document lays out,
+    // it has no twin and reports nothing to the limit decision. Near the limit it is refused where
+    // its own lines pass the limit, with no probe, where a cut at the glyph would have saved it.
+    [Fact]
+    public void ANoteBlockNearTheLimit_isRefusedWhereItsLinesPassTheLimit_andIsNotProbed()
+    {
+        var o = Run(new Setup(), new Log(), new NoteBlockRenderer(new NoteBlock().Add(new Paragraph(Address, Courier()))));
+
+        Assert.True(IsLimitRefusal(o.Error));
+        Assert.Equal(0, o.Probes);
+
+        var shown = Run(new Setup(), new Log(), new NoteBlockRenderer(new NoteBlock().Add(new Paragraph("aaaa/bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", Courier()))));
+        Assert.Contains("aaaa/", Shown(shown));
     }
 
     // A run with no style that holds no word does not change a paragraph's verdict: 2.3.3 read it as

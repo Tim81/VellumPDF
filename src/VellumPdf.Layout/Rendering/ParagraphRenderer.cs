@@ -162,6 +162,16 @@ public sealed partial class ParagraphRenderer : IRenderer, IPageBreakSource, IKe
         // The wrap the layout reads is the current one, or the twin's when the document did not
         // address this renderer or chose the twin (ParagraphRenderer.Twin.cs).
         var twinWrap = WantsTwinWrap(context);
+        if (_lines is null)
+        {
+            // A paragraph cuts after a place only when the document, or a built-in parent that it
+            // addressed, lays it out. Under any other context, and when a caller built it with a
+            // start line, it wraps as main does, at the glyph, and the limit decision is not asked.
+            _asMain = _startLine != 0;
+            _cutsAtPlaces = !twinWrap && !_asMain
+                && (context.CutAtPlaces || context.Session is { } placeSession && ReferenceEquals(placeSession.Called, this));
+        }
+
         Activate(area.Width, twinWrap);
         if (!twinWrap
             && context.Session is { Probing: false, IsView: false, Mode: ContinuationMode.Undecided } session
@@ -226,6 +236,8 @@ public sealed partial class ParagraphRenderer : IRenderer, IPageBreakSource, IKe
             _tabStopsBeyond = _tabStopsBeyond,
             _activeIsTwin = _activeIsTwin,
             _twinApplies = _twinApplies,
+            _asMain = _asMain,
+            _cutsAtPlaces = _cutsAtPlaces,
             _joinedAcrossRuns = _joinedAcrossRuns,
             StructType = StructType,
             ParentStructElem = ParentStructElem,
@@ -244,6 +256,8 @@ public sealed partial class ParagraphRenderer : IRenderer, IPageBreakSource, IKe
             _tabStopsBeyond = _tabStopsBeyond,
             _activeIsTwin = _activeIsTwin,
             _twinApplies = _twinApplies,
+            _asMain = _asMain,
+            _cutsAtPlaces = _cutsAtPlaces,
             _joinedAcrossRuns = _joinedAcrossRuns,
             MinLinesRelaxed = relaxed,
             StructType = StructType,
@@ -299,6 +313,7 @@ public sealed partial class ParagraphRenderer : IRenderer, IPageBreakSource, IKe
         var stops = StopsWithin(_para, width, out _tabStopsBeyond);
         _reads = null;
         var runs = PageReferences.Effective(_para.Runs, ref _reads);
+        using var glyphCuts = LongWordBreaks.CutAtGlyphs(!_cutsAtPlaces);
         (_lines, _lineEnds) = WordWrapJoined(runs, width, out var nullStyleRuns, stops, out var joined);
         _joinedAcrossRuns = joined;
         _nullStyleRuns = nullStyleRuns;

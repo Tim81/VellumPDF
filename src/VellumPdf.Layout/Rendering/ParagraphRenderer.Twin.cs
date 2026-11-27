@@ -32,6 +32,14 @@ public sealed partial class ParagraphRenderer : IContinuationTwin
     // did not (U+202F and U+2007) and 2 when it reads it alike.
     private byte _readsApart;
 
+    // True when a caller built this renderer with a start line: it wraps as main does and reports
+    // nothing to the limit decision, because the start indexes lines of the wrap main makes.
+    private bool _asMain;
+
+    // Whether the wrap in _lines may cut a word after a place. Read before the first wrap; a count of
+    // the lines a list asks for before any layout is the document's own, so it defaults to true.
+    private bool _cutsAtPlaces = true;
+
     private ParagraphRenderer? _twin;
 
     // The renderer laid out the way 2.3.3 laid it out, from the same start. Explicit: the class is
@@ -98,7 +106,7 @@ public sealed partial class ParagraphRenderer : IContinuationTwin
     /// element only where this bound passes what the limit leaves, so a paragraph far from the
     /// limit costs no layout pass.
     /// </summary>
-    internal long? TwinBound() => TwinWrapApplies() ? 2L + TextLength() : null;
+    internal long? TwinBound() => !_asMain && TwinWrapApplies() ? 2L + TextLength() : null;
 
     // Whether the two wraps can give this paragraph more lines than its own: its tokeniser joined a
     // word across a run boundary (the wrap's own decision, made whether the runs share a style

@@ -302,10 +302,12 @@ public sealed class TableRenderer : IRenderer, IPageBreakSource, IKeepSource, IP
         // document called, in a placement it has not decided for the twin. Under any other context
         // (a caller's renderer that forwards here, WithArea, the public constructor) the table is
         // laid out as it was before breaks were honoured, by its twin. Removed in 3.0 (#688).
-        // The twin the document chose or is probing also cuts a word wider than its column at the
-        // glyph, as it was cut before places after a solidus or hyphen were used (#594); a table that
-        // a renderer of the caller's forwards to does not. Removed in 3.0 (#688).
-        _cutsAtGlyphs = _readsUnbrokenForTheLimit && context.IsLimitTwin(this);
+        // A word wider than its column is cut after a solidus or hyphen (#594) only in the table the
+        // document laid out itself, which its limit decision can probe. The twin, the one the
+        // decision chose or is measuring, and a table that a renderer of the caller's forwards to
+        // cut at the glyph, as main does. Removed in 3.0 (#688).
+        _cutsAtGlyphs = _readsUnbrokenForTheLimit
+            || !(context.Session is { } placeSession && ReferenceEquals(placeSession.Called, this));
         using var cutAtGlyphs = LongWordBreaks.CutAtGlyphs(_cutsAtGlyphs);
         var mode = context.ModeFor(this);
         _laidOutBy = null;

@@ -16,9 +16,9 @@ namespace VellumPdf.Layout.Rendering;
 /// A word wider than the line is cut after the last solidus, reverse solidus or hyphen-minus that
 /// leaves the line no wider than its width, so a web address or a path ends a line at a segment.
 /// No glyph is added at the cut. A word that fits is never cut, and a word with no such place that
-/// fits is cut at the character that does not fit, as every wider word was before. An element that
-/// wraps as 2.3.3 did cuts at the character always; those elements are listed in
-/// <see cref="VellumPdf.Layout.Core.IRenderer.Layout"/>.
+/// fits is cut at the character that does not fit, as every wider word was before. Text that the
+/// document does not lay out itself, and the 2.3.3 wrap the limit decision chooses, cut at the
+/// character always; <see cref="VellumPdf.Layout.Core.IRenderer.Layout"/> lists them.
 /// <para>
 /// The places come from UAX #14 (revision 55). Its default rules allow a break after a solidus and
 /// after a hyphen-minus (LB31) unless an earlier rule forbids it. The specification advises a
