@@ -24,6 +24,13 @@ public sealed partial class ParagraphRenderer : IContinuationTwin
     // exception, so a paragraph that holds one of them has no twin wrap and wraps as it does now.
     private byte _twinApplies;
 
+    // Whether the wrap in _lines cut a word at a place, which the 2.3.3 wrap never did.
+    private bool _cutAtAPlace;
+
+    // 0 until read, then 1 when the current tokeniser reads the text as 2.3.3 did not and 2 when it
+    // reads it alike, from the tokeniser's own join decision.
+    private byte _readsApart;
+
     private ParagraphRenderer? _twin;
 
     // The renderer laid out the way 2.3.3 laid it out, from the same start. Explicit: the class is
@@ -89,6 +96,42 @@ public sealed partial class ParagraphRenderer : IContinuationTwin
     /// limit costs no layout pass.
     /// </summary>
     internal long? TwinBound() => TwinWrapApplies() ? 2L + TextLength() : null;
+
+    // Whether the two wraps can give this paragraph a different number of lines: its own wrap cut a
+    // word at a place, a word continues over a run boundary (a WordContinue token of the current
+    // tokeniser), or the current tokeniser reads a white-space character as part of a word where
+    // 2.3.3's read it as a space (U+202F, U+2007). It reads what the tokeniser decides and keeps no
+    // list of characters of its own.
+    private bool WrapsCanDiffer()
+    {
+        if (_cutAtAPlace) return true;
+        if (_readsApart != 0) return _readsApart == 1;
+
+        var apart = false;
+        foreach (var run in _para.Runs)
+        {
+            if (NormaliseWhitespace(run.Text) != NormaliseWhitespaceBefore(run.Text))
+            {
+                apart = true;
+                break;
+            }
+        }
+
+        if (!apart)
+        {
+            foreach (var token in Tokenise(_para.Runs, tabbed: false, out _))
+            {
+                if (token.Kind == TokenKind.WordContinue)
+                {
+                    apart = true;
+                    break;
+                }
+            }
+        }
+
+        _readsApart = apart ? (byte)1 : (byte)2;
+        return apart;
+    }
 
     private long TextLength()
     {
