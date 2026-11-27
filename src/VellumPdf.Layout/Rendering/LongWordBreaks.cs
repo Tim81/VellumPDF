@@ -16,7 +16,9 @@ namespace VellumPdf.Layout.Rendering;
 /// A word wider than the line is cut after the last solidus, reverse solidus or hyphen-minus that
 /// leaves the line no wider than its width, so a web address or a path ends a line at a segment.
 /// No glyph is added at the cut. A word that fits is never cut, and a word with no such place that
-/// fits is cut at the character that does not fit, as every wider word was before.
+/// fits is cut at the character that does not fit, as every wider word was before. An element that
+/// wraps as 2.3.3 did cuts at the character always; those elements are listed in
+/// <see cref="VellumPdf.Layout.Core.IRenderer.Layout"/>.
 /// <para>
 /// The places come from UAX #14 (revision 55). Its default rules allow a break after a solidus and
 /// after a hyphen-minus (LB31) unless an earlier rule forbids it. The specification advises a
@@ -24,9 +26,10 @@ namespace VellumPdf.Layout.Rendering;
 /// distance away; here it is used only for a word that cannot fit its line, so it is never used
 /// for a word the line holds. The reverse solidus is this library's own tailoring, read as a
 /// solidus because that is how a path is written; UAX #14 gives it the class PR. The characters
-/// <c>=</c>, <c>&amp;</c>, <c>_</c> and <c>#</c> are AL and <c>.</c> is IS, which LB28 and LB29
-/// keep joined to the letter after them, so none is a place. <c>?</c> is EX and LB31 would allow a break after it, but only the solidus
-/// carries the guidance for web addresses, so it is left out too.
+/// <c>=</c>, <c>&amp;</c>, <c>_</c> and <c>#</c> are AL and <c>.</c> is IS. Before a letter, LB28
+/// (AL x AL) and LB29 (IS x AL) keep them joined to it, and before a digit LB23 (AL x NU) and
+/// LB25 (IS x NU) do, so none is a place. <c>?</c> is EX and LB31 would allow a break after it,
+/// but only the solidus carries the guidance for web addresses, so it is left out too.
 /// </para>
 /// <para>
 /// A place is preferred when no rule forbids it. LB25 forbids a break before a digit after a
@@ -35,10 +38,18 @@ namespace VellumPdf.Layout.Rendering;
 /// place fits on the line, and before a cut at the character.
 /// </para>
 /// <para>
-/// The test errs towards fewer places. A place needs a letter or digit after the character, and a
-/// letter or digit before a hyphen-minus (LB20a holds a hyphen that starts a word, and LB21 a
-/// second hyphen). Hebrew letters on either side are left out (LB21a, LB21b), and so are kana and
-/// the symbols of the CJK block, which include nonstarters (LB21).
+/// The test errs towards fewer places, and is not UAX #14 rule for rule. A place needs a letter
+/// or digit after the character, which leaves out what LB13 (closing marks, EX, SY), LB15d (the
+/// full stop and the other IS) and the nonstarters of LB21 keep joined to what precedes them. It
+/// needs a letter or digit before a hyphen-minus too, which leaves out a hyphen that starts a
+/// word (LB20a) and any hyphen that follows another; the second is a coarsening, because LB31
+/// allows the break after <c>--</c> before a letter. A Hebrew letter after the character, or
+/// before a hyphen-minus, is no place (LB21b holds SY x HL, LB21a holds HL HY x non-HL), which is
+/// coarser than the rules where it is a hyphen-minus or a reverse solidus that precedes the
+/// Hebrew letter. Kana, including the halfwidth and the small forms, and the symbols of the CJK
+/// block are no place after the character, because LB21 holds the small kana and the other
+/// nonstarters once they are resolved to NS. A Hebrew letter before a solidus is a place, as LB21b
+/// allows.
 /// </para>
 /// </remarks>
 internal static class LongWordBreaks
@@ -46,13 +57,22 @@ internal static class LongWordBreaks
     private const byte Preferred = 1;
     private const byte Forbidden = 2;
 
-    // How many times a cut was made at a place and not at the glyph, on this thread, so that a
-    // wrap can tell that its lines are not the ones a cut at the glyph gives. Read by the
-    // paragraph, which compares it before and after a wrap. Removed in 3.0 (#688) with the twin.
-    [ThreadStatic]
-    private static int s_placeCuts;
+    // The text of a rune, taken from a table for the characters below U+0100, so that measuring a
+    // long word one character at a time allocates no string for most of them.
+    private static readonly string[] s_latin1 = BuildLatin1();
 
-    internal static int PlaceCuts => s_placeCuts;
+    private static string[] BuildLatin1()
+    {
+        var table = new string[256];
+        for (var i = 0; i < table.Length; i++) table[i] = ((char)i).ToString();
+        return table;
+    }
+
+    internal static string RuneText(Rune rune) => rune.Value < s_latin1.Length ? s_latin1[rune.Value] : rune.ToString();
+
+    // The characters a word is cut after: the only definition, read by the pre-filter and by the
+    // tier test alike.
+    private static bool IsPlaceCharacter(int value) => value is '/' or '\\' or '-';
 
     // True while a table's twin lays out or draws: a word is then cut at the glyph, as it was
     // before places were used. Removed in 3.0 (#688) with the twin.
@@ -164,21 +184,19 @@ internal static class LongWordBreaks
 
                 if (overflowAt < 0) return lines;
 
-                var cut = LineEnd(tiers, start, overflowAt);
-                if (cut != overflowAt) s_placeCuts++;
-                start = cut;
+                start = LineEnd(tiers, start, overflowAt);
                 starts?.Add(start);
                 lines++;
             }
         }
 
         // The tiers of the places of the word, or empty when it has none.
-        private ReadOnlySpan<byte> Analyse()
+        internal ReadOnlySpan<byte> Analyse()
         {
             var word = Runes;
             var any = false;
             for (var i = 1; i < word.Length && !any; i++)
-                any = word[i - 1].Value is '/' or '\\' or '-';
+                any = IsPlaceCharacter(word[i - 1].Value);
             if (!any) return default;
 
             _tiers ??= ArrayPool<byte>.Shared.Rent(_runes.Length);
@@ -238,38 +256,36 @@ internal static class LongWordBreaks
 
     /// <summary>
     /// The tier of each break place of a word, by the index of the character the break falls
-    /// before: 0 for no place, 1 for a preferred place and 2 for one that LB25 forbids. For tests.
+    /// before: 0 for no place, 1 for a preferred place and 2 for one that LB25 forbids. Null when
+    /// the word has none. It reads the word through <see cref="Word.Analyse"/>, which the wrap
+    /// reads too. For tests.
     /// </summary>
     internal static byte[]? Tiers(ReadOnlySpan<Rune> word)
     {
-        var tiers = new byte[word.Length];
-        var found = false;
-        for (var i = 1; i < word.Length; i++)
-        {
-            tiers[i] = TierBefore(word, i);
-            found |= tiers[i] != 0;
-        }
-
-        return found ? tiers : null;
+        using var scratch = new Word(word.Length);
+        foreach (var rune in word) scratch.Add(rune, 0);
+        var tiers = scratch.Analyse();
+        return tiers.IsEmpty ? null : tiers.ToArray();
     }
 
     // The tier of a break before word[i], for 0 < i < word.Length.
     private static byte TierBefore(ReadOnlySpan<Rune> word, int i)
     {
         var before = word[i - 1].Value;
-        if (before is not ('/' or '\\' or '-')) return 0;
+        if (!IsPlaceCharacter(before)) return 0;
 
-        // A letter or digit after the character is one that no rule keeps joined to it: LB13 and
-        // LB21 hold closing marks, a full stop, a second solidus or hyphen and nonstarters to
-        // what precedes them. Hebrew is left out for LB21b, and kana and the CJK symbols for LB21.
+        // A letter or digit after the character is one that no rule keeps joined to it: LB13 holds
+        // closing marks, EX and a second solidus, LB15d the full stop and the other IS, and LB21 a
+        // hyphen and the nonstarters, to what precedes them. Hebrew is left out for LB21b, and
+        // kana and the CJK symbols for LB21.
         var next = word[i];
         if (!IsPlainLetterOrDigit(next)) return 0;
 
         if (before == '-')
         {
-            // LB20a holds a hyphen that starts a word, LB21 one that follows another hyphen, and
-            // LB21a a hyphen between Hebrew and other text. A letter or digit before it rules
-            // all of them out.
+            // LB20a holds a hyphen that starts a word and LB21a one between Hebrew and other
+            // text. A letter or digit before the hyphen rules both out, and also a hyphen that
+            // follows another, which LB31 would allow: that part is a coarsening.
             if (i < 2 || !IsPlainLetterOrDigit(word[i - 2])) return 0;
             // LB25: HY x NU.
             return Rune.GetUnicodeCategory(next) == UnicodeCategory.DecimalDigitNumber ? Forbidden : Preferred;
@@ -285,7 +301,8 @@ internal static class LongWordBreaks
         return j >= 0 && IsNumeric(word[j]) ? Forbidden : Preferred;
     }
 
-    // A letter or a decimal digit that is not Hebrew, kana or one of the CJK symbols.
+    // A letter or a decimal digit that is not Hebrew, kana (halfwidth and small forms included)
+    // or one of the symbols of the CJK block.
     private static bool IsPlainLetterOrDigit(Rune rune)
     {
         switch (Rune.GetUnicodeCategory(rune))
@@ -301,7 +318,9 @@ internal static class LongWordBreaks
         }
 
         var v = rune.Value;
-        return !(v is >= 0x0590 and <= 0x05FF || v is >= 0xFB1D and <= 0xFB4F || v is >= 0x3000 and <= 0x30FF);
+        var hebrew = v is >= 0x0590 and <= 0x05FF or >= 0xFB1D and <= 0xFB4F;
+        var kana = v is >= 0x3000 and <= 0x30FF or >= 0x31F0 and <= 0x31FF or >= 0xFF66 and <= 0xFF9F;
+        return !hebrew && !kana;
     }
 
     // NU of UAX #14: the decimal digits, and the Arabic decimal and thousands separators.

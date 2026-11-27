@@ -81,8 +81,7 @@ internal sealed class HeadingRenderer : IRenderer, IPlacementSource, IPageBreakS
         if (mode == ContinuationMode.Undecided && context.Session is { Probing: false, IsView: false } session
             && ReferenceEquals(session.Called, this))
         {
-            var width = context.Area.Deflate(_heading.Margins).Width;
-            if (width > 0 && _inner.TwinDifferenceBound(width) is { } bound)
+            if (context.Area.Deflate(_heading.Margins).Width > 0 && _inner.TwinBound() is { } bound)
                 session.Report(this, bound);
         }
 

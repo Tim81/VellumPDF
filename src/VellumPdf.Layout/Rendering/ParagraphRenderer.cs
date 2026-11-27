@@ -71,7 +71,9 @@ public sealed partial class ParagraphRenderer : IRenderer, IPageBreakSource, IKe
     /// than the text holds, and makes <see cref="Draw"/> throw. A start past the last line lays out
     /// as <see cref="LayoutResult.Outcome.Nothing"/>, so a document saving it throws
     /// <see cref="InvalidOperationException"/> saying the element is too tall to fit. A renderer
-    /// built directly ignores the paragraph's <see cref="Paragraph.Language"/>.
+    /// built directly ignores the paragraph's <see cref="Paragraph.Language"/>. A renderer built
+    /// with a start other than 0 wraps its text as 2.3.3 did, because the start indexes the lines of
+    /// that wrap; <see cref="IRenderer.Layout"/> says what that wrap is.
     /// <para>Do not pass a start outside the paragraph's lines. 3.0 will throw
     /// from this call.</para>
     /// </remarks>
@@ -166,7 +168,7 @@ public sealed partial class ParagraphRenderer : IRenderer, IPageBreakSource, IKe
         if (!twinWrap
             && context.Session is { Probing: false, IsView: false, Mode: ContinuationMode.Undecided } session
             && ReferenceEquals(session.Called, this)
-            && TwinDifferenceBound(area.Width) is { } bound)
+            && TwinBound() is { } bound)
             session.Report(this, bound);
 
         // The line height is a property of the wrap, so it is taken once per wrap: every later
@@ -224,13 +226,8 @@ public sealed partial class ParagraphRenderer : IRenderer, IPageBreakSource, IKe
             _lineHeightTaken = true,
             _nullStyleRuns = _nullStyleRuns,
             _tabStopsBeyond = _tabStopsBeyond,
-            _otherLines = _otherLines,
-            _otherEnds = _otherEnds,
             _activeIsTwin = _activeIsTwin,
-            _firstWidth = _firstWidth,
             _twinApplies = _twinApplies,
-            _mayDiffer = _mayDiffer,
-            _cutAtAPlace = _cutAtAPlace,
             StructType = StructType,
             ParentStructElem = ParentStructElem,
             ElementLanguage = ElementLanguage,
@@ -246,13 +243,8 @@ public sealed partial class ParagraphRenderer : IRenderer, IPageBreakSource, IKe
             _occupied = _occupied,
             _nullStyleRuns = _nullStyleRuns,
             _tabStopsBeyond = _tabStopsBeyond,
-            _otherLines = _otherLines,
-            _otherEnds = _otherEnds,
             _activeIsTwin = _activeIsTwin,
-            _firstWidth = _firstWidth,
             _twinApplies = _twinApplies,
-            _mayDiffer = _mayDiffer,
-            _cutAtAPlace = _cutAtAPlace,
             MinLinesRelaxed = relaxed,
             StructType = StructType,
             ParentStructElem = ParentStructElem,
@@ -292,7 +284,6 @@ public sealed partial class ParagraphRenderer : IRenderer, IPageBreakSource, IKe
             ClearPlacement();
         }
 
-        if (double.IsNaN(_firstWidth)) _firstWidth = width;
         if (_activeIsTwin)
         {
             (_lines, _lineEnds) = WordWrapAsBefore(_para.Runs, width);
@@ -308,10 +299,7 @@ public sealed partial class ParagraphRenderer : IRenderer, IPageBreakSource, IKe
         var stops = StopsWithin(_para, width, out _tabStopsBeyond);
         _reads = null;
         var runs = PageReferences.Effective(_para.Runs, ref _reads);
-        var cutsBefore = LongWordBreaks.PlaceCuts;
         (_lines, _lineEnds) = WordWrap(runs, width, out var nullStyleRuns, stops);
-        _cutAtAPlace = LongWordBreaks.PlaceCuts != cutsBefore;
-        _mayDiffer = 0;
         _nullStyleRuns = nullStyleRuns;
         WrapCalls++;
     }
@@ -326,13 +314,13 @@ public sealed partial class ParagraphRenderer : IRenderer, IPageBreakSource, IKe
         // The subtraction Deflate makes, so the width is the one Layout would wrap at.
         var width = boxWidth - _para.Margins.Left - _para.Margins.Right;
         if (width <= 0) return 0;
-        EnsureNewWrap(width);
-        var count = (_activeIsTwin ? _otherLines : _lines)!.Count;
+        EnsureWrapped(width);
 
-        // The count a bound is made from covers both wraps, so a list that bounds its units with it
-        // holds for its twin as well.
-        if (TwinWrapApplies() && MayDiffer())
-            count = TwinLineCount(width) is { } twinCount ? Math.Max(count, twinCount) : (int)Math.Min(int.MaxValue, TextLength());
+        // A list bounds its units with this, and the bound has to hold for the twin's wrap too. Every
+        // line of either wrap holds a character, so a text is at most as many lines as it has
+        // characters.
+        var count = _lines.Count;
+        if (TwinWrapApplies()) count = (int)Math.Min(int.MaxValue, Math.Max(count, TextLength()));
         return count;
     }
 
@@ -1273,7 +1261,7 @@ public sealed partial class ParagraphRenderer : IRenderer, IPageBreakSource, IKe
             var style = tokens[k].Style!;
             foreach (var rune in tokens[k].Text.EnumerateRunes())
             {
-                word.Add(rune, style.FontRef.MeasureString(rune.ToString(), style.FontSize));
+                word.Add(rune, style.FontRef.MeasureString(LongWordBreaks.RuneText(rune), style.FontSize));
                 pieceOf.Add(k);
             }
         }
@@ -1307,7 +1295,7 @@ public sealed partial class ParagraphRenderer : IRenderer, IPageBreakSource, IKe
                     piece = pieceOf[i];
                 }
 
-                fragment.Append(runes[i].ToString());
+                fragment.Append(runes[i]);
                 fragmentW += widths[i];
             }
 

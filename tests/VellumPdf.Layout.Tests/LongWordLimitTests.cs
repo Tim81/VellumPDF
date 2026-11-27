@@ -147,18 +147,112 @@ public sealed class LongWordLimitTests
         Assert.Equal(2, near.Probes);
     }
 
-    // A paragraph whose text cannot need another number of lines makes no second wrap.
-    [Fact]
-    public void AParagraphThatCannotDiffer_makesNoSecondWrap()
+    // The rows of the review: the current wrap and 2.3.3's give a different number of lines at a
+    // run boundary that holds U+00A0, at an empty run and at a run of U+00A0 alone. Each text is
+    // repeated until the lines of one wrap are within the limit and the lines of the other are
+    // past it, and the verdict has to be the one 2.3.3's wrap gives: saved when its lines fit and
+    // refused when they do not.
+    private static readonly Dictionary<string, string[]> Boundaries = new()
     {
-        var plain = new ParagraphRenderer(new Paragraph("plain words with no place to cut at all", Courier()));
-        var cut = new ParagraphRenderer(new Paragraph(new string('x', 20) + "/" + new string('y', 40), Courier()));
+        ["nbsp-end, 2.3.3 saves"] = ["fff gggg", "hhhhhhh ii\u00A0", "fff gggg\n"],
+        ["nbsp-end, 2.3.3 refuses"] = ["dd\u00A0", "ccccccc", "hhhhhhh ii", "e\n"],
+        ["nbsp-start, 2.3.3 saves"] = ["e", "\u00A0dd", "aaaa", "e", "fff gggg\n"],
+        ["nbsp-start, 2.3.3 refuses"] = ["ccccc dd", "mmmmm nnnnn", "jj kk ll", "ccccccc", "\u00A0ccccccc "],
+        ["nbsp-only, 2.3.3 saves"] = ["jj kk ll", "fff gggg", "aaaa", "\u00A0", "jj kk ll", "hhhhhhh ii\n"],
+        ["nbsp-only, 2.3.3 refuses"] = ["ccccc dd", "ccccccc", "aaaa", "\u00A0", "ccccc dd", "dd", "dd\n"],
+        ["empty run, 2.3.3 saves"] = ["e", "aa bbbb", "bbbbbb", "", "e", "e\n"],
+        ["empty run, 2.3.3 refuses"] = ["e", "mmmmm nnnnn", "", "jj kk ll", "mmmmm nnnnn", "jj kk ll\n"],
+        ["no boundary special, 2.3.3 refuses"] = ["iiiiiiiiiii", "aaa "],
+    };
 
-        _ = Run(new Setup(), new Log(), plain);
-        _ = Run(new Setup(), new Log(), cut);
+    public static TheoryData<string, Kind> BoundaryRows()
+    {
+        var rows = new TheoryData<string, Kind>();
+        foreach (var name in new[] { "nbsp-end", "nbsp-start", "nbsp-only", "empty run" })
+        {
+            foreach (var kind in new[] { Kind.Paragraph, Kind.Heading, Kind.ListItem })
+            {
+                rows.Add(name + ", 2.3.3 saves", kind);
+                rows.Add(name + ", 2.3.3 refuses", kind);
+            }
+        }
 
-        Assert.False(plain.MadeTheOtherWrap);
-        Assert.True(cut.MadeTheOtherWrap);
+        foreach (var kind in new[] { Kind.Paragraph, Kind.Heading, Kind.ListItem })
+            rows.Add("no boundary special, 2.3.3 refuses", kind);
+        return rows;
+    }
+
+    [Theory]
+    [MemberData(nameof(BoundaryRows))]
+    public void ARunBoundaryThe2_3_3WrapReadsAlone_getsThe2_3_3Verdict(string name, Kind kind)
+    {
+        var style = Courier();
+
+        // The text is repeated until the longer of the two wraps is past the limit's 300 pages of
+        // 6 lines.
+        List<TextRun> Repeated(int count) =>
+            [.. Enumerable.Range(0, count).SelectMany(_ => Boundaries[name].Select(s => new TextRun(s, style)))];
+
+        var repeats = 100;
+        int current, before;
+        do
+        {
+            repeats += 10;
+            var probe = Repeated(repeats);
+            current = ParagraphRenderer.WordWrap(probe, 60, out _).Lines.Count;
+            before = ParagraphRenderer.WordWrapAsBefore(probe, 60).Lines.Count;
+        }
+        while (Math.Max(current, before) <= 1900);
+        var all = Repeated(repeats);
+
+        // The fixture is one the two wraps part on, across the limit.
+        Assert.True(Math.Min(current, before) < 1700, $"{name}: {current} and {before} lines");
+        var saves = before < 1700;
+        Assert.Equal(name.EndsWith("saves", StringComparison.Ordinal), saves);
+
+        var o = Run(Narrow, new Log(), Element(kind, "", all, indent: 0));
+
+        Assert.Equal(saves, o.Error is null);
+        if (!saves) Assert.True(IsLimitRefusal(o.Error));
+    }
+
+    // A table that a renderer of the caller's forwards to lays out and draws at the glyph, so the
+    // lines it draws are the lines it laid out; drawing them again with the cut after a place
+    // would draw a third line the row has no height for.
+    [Fact]
+    public void AForwardedTable_drawsWhatItLaidOut()
+    {
+        var table = new TableElement { DefaultCellStyle = Courier() }.SetColumnWidths(72);
+        table.AddRow().AddCell("aaaa/bbbbbbbbbbbb");
+
+        var o = Run(new Setup { PageWidth = 92 }, new Log(), new Forward(new TableRenderer(table)));
+
+        Assert.Null(o.Error);
+        var shown = ContentStreamReadback.TextPlacements(PdfTestUtil.DecompressAllFlatStreams(o.Bytes!))
+            .Select(p => p.Text).Where(s => s.Length > 0).ToArray();
+        Assert.Equal(["aaaa/bbbbb", "bbbbbbb"], shown);
+    }
+
+    // A paragraph with tab stops has no 2.3.3 wrap, so a renderer that forwards to it still cuts
+    // after a place.
+    [Fact]
+    public void AForwardedParagraphWithTabStops_keepsTheCutAfterAPlace()
+    {
+        var paragraph = new Paragraph("aaaa/bbbbbbbbbbbb", Courier()) { TabStops = [new TabStop(30)] };
+
+        var o = Run(Narrow, new Log(), new Forward(new ParagraphRenderer(paragraph)));
+
+        Assert.Null(o.Error);
+        var shown = ContentStreamReadback.TextPlacements(PdfTestUtil.DecompressAllFlatStreams(o.Bytes!))
+            .Select(p => p.Text).Where(s => s.Length > 0).ToArray();
+        Assert.Equal(["aaaa/", "bbbbbbbbbb", "bb"], shown);
+    }
+
+    private sealed class Forward(IRenderer inner) : IRenderer
+    {
+        public LayoutResult Layout(LayoutContext context) => inner.Layout(context);
+
+        public void Draw(DrawContext context) => inner.Draw(context);
     }
 
     // A paragraph laid out under a context the document did not address, as a caller's wrapper

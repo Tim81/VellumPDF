@@ -112,6 +112,19 @@ public sealed class LongWordBreakTests
     [InlineData("ab12/34cd-efghijklm", new[] { "ab12/34cd-", "efghijklm" })]
     // The characters of IS between the digit and the solidus do not change the reading.
     [InlineData("1.5/2cdefghijklmnop", new[] { "1.5/", "2cdefghijk", "lmnop" })]
+    // Two places LB25 forbids on one line: the last that fits is used, not the first.
+    [InlineData("ab-1-2345678901", new[] { "ab-1-", "2345678901" })]
+    // A place right after the first character of a line is a place.
+    [InlineData("/uuuuuuuuuuuuuu", new[] { "/", "uuuuuuuuuu", "uuuu" })]
+    // The characters of SY and IS between the digit and the solidus are skipped, whichever they
+    // are and however many: the place before the 2 is LB25's, so the earlier one is used, and
+    // the line then ends at the forbidden place because nothing else fits it.
+    [InlineData("ab/1,/2cccccccccccc", new[] { "ab/", "1,/", "2ccccccccc", "ccc" })]
+    [InlineData("ab/1:/2cccccccccccc", new[] { "ab/", "1:/", "2ccccccccc", "ccc" })]
+    [InlineData("ab/1;/2cccccccccccc", new[] { "ab/", "1;/", "2ccccccccc", "ccc" })]
+    [InlineData("ab/1./2cccccccccccc", new[] { "ab/", "1./", "2ccccccccc", "ccc" })]
+    [InlineData("ab/1//2cccccccccccc", new[] { "ab/", "1//", "2ccccccccc", "ccc" })]
+    [InlineData("ab/1\\/2cccccccccccc", new[] { "ab/", "1\\/", "2ccccccccc", "ccc" })]
     public void ABreakBeforeADigitThatLb25ForbidsIsTheFallback(string word, string[] expected) =>
         Assert.Equal(expected, Paragraph(word));
 
@@ -145,6 +158,11 @@ public sealed class LongWordBreakTests
         // Hebrew on either side (LB21a, LB21b), and kana and CJK symbols (LB21).
         Assert.Null(Tiers("a/\u05D0b"));
         Assert.Null(Tiers("\u05D0-b"));
+        // A Hebrew letter before a solidus is a place: LB21b holds the break after it only.
+        Assert.Equal(new byte[] { 0, 0, 1 }, Tiers("\u05D0/b"));
+        // Halfwidth and small kana (CJ in UAX #14) are no place either.
+        Assert.Null(Tiers("a/\uFF67b"));
+        Assert.Null(Tiers("a/\u31F0b"));
         Assert.Null(Tiers("a-\u30A1b"));
         Assert.Null(Tiers("a/\u3001b"));
         // A letter of another script, and an ideograph, are free after a solidus.

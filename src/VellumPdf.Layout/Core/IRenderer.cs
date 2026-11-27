@@ -55,12 +55,41 @@ public interface IRenderer
     /// <see cref="VellumPdf.Layout.Rendering.Table.TableRenderer"/> reads the breaks of its
     /// cells only when the document called it, so one that your <see cref="Layout"/> forwards to
     /// reads every cell unbroken (#679); see
-    /// <see cref="VellumPdf.Layout.Elements.Table.Cell.Content"/>. A
-    /// <see cref="VellumPdf.Layout.Rendering.ParagraphRenderer"/> that your renderer lays out wraps
-    /// its text as 2.3.3 did: a word that continues over a run boundary is two words, U+202F and
-    /// U+2007 are spaces, and a word wider than the line is cut at the glyph, never after a
-    /// solidus, reverse solidus or hyphen-minus (#562, #590, #594). Your <see cref="Draw"/> must
+    /// <see cref="VellumPdf.Layout.Elements.Table.Cell.Content"/>. Your <see cref="Draw"/> must
     /// forward to the same renderer.</para>
+    /// <para><b>Text wraps as 2.3.3 wrapped it in these places, and nowhere else.</b> Every other
+    /// sentence of this library that describes how a word is cut, how a run boundary joins a word
+    /// or what U+202F and U+2007 are, describes the wrap the document gives text it lays out
+    /// itself, and is read with this paragraph. The 2.3.3 wrap applies to:</para>
+    /// <list type="bullet">
+    /// <item>a <see cref="VellumPdf.Layout.Rendering.ParagraphRenderer"/> that your renderer lays
+    /// out, through the context you were given, through <see cref="LayoutContext.WithArea"/> or
+    /// through the public <see cref="LayoutContext"/> constructor;</item>
+    /// <item>a <see cref="VellumPdf.Layout.Rendering.ParagraphRenderer"/> built with a start line
+    /// other than 0, wherever it is laid out, because the start indexes the lines of that
+    /// wrap;</item>
+    /// <item>the entries of a <see cref="VellumPdf.Layout.Rendering.ListRenderer"/> that is laid
+    /// out as its twin: one your renderer lays out, and every list of a document that holds a
+    /// renderer of yours, an entry in a font the document cannot draw, or an element after a list
+    /// that can need about as many page continuations as one element may use;</item>
+    /// <item>the cells of a <see cref="VellumPdf.Layout.Rendering.Table.TableRenderer"/> that your
+    /// renderer forwards to, whose words are cut at the glyph;</item>
+    /// <item>a paragraph, heading, list item or table cell for which the document's limit decision
+    /// finds that the current wrap and the 2.3.3 wrap reach the limit of page continuations
+    /// differently. The element then lays out as 2.3.3 did, so what 2.3.3 saved is saved and what
+    /// it refused is refused.</item>
+    /// </list>
+    /// <para>That wrap reads each run's words on their own, so a word that continues over a run
+    /// boundary is two words, whether the runs are those of a paragraph, a heading or a list item.
+    /// U+202F and U+2007 are spaces. A word wider than the line is cut at the glyph, never after a
+    /// solidus, reverse solidus or hyphen-minus. A surrogate pair split between two runs of an
+    /// embedded font is refused with <see cref="ArgumentException"/>, as 2.3.3 refused it, where
+    /// the document's own wrap joins and saves it. A paragraph with tab stops, a page reference or
+    /// a run with a null style is exempt, because 2.3.3 had none of these: it wraps as the
+    /// document wraps it, and a forwarded paragraph with tab stops is cut after a solidus where one
+    /// fits. A renderer wraps once, in the mode of its first layout, so one that your renderer
+    /// laid out first and the document lays out later keeps the 2.3.3 wrap. <b>Do not</b> rely on
+    /// which wrap such an element gets: 3.0 wraps one way, whatever called it.</para>
     /// <para><b>A <see cref="VellumPdf.Layout.Rendering.ListRenderer"/> that your renderer lays out
     /// is laid out as it was before the fixes of #476 and #685.</b> Through the context you were
     /// given, through <see cref="LayoutContext.WithArea"/> or through the public

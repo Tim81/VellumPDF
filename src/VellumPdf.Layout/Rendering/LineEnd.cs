@@ -17,7 +17,8 @@ internal enum LineEnd : byte
 
     /// <summary>
     /// The line ended inside a word that is wider than the line, cut between two characters: after
-    /// a solidus, a reverse solidus or a hyphen-minus where one fits, and at the glyph otherwise.
+    /// a solidus, a reverse solidus or a hyphen-minus where one fits, a place that LB25 forbids
+    /// where no other fits, and at the glyph otherwise. The 2.3.3 wrap cuts at the glyph alone.
     /// </summary>
     Forced,
 
