@@ -40,7 +40,7 @@ internal static class NoteBlockSupport
         [.. Regex.Matches(content, @"^\((?<t>(?:\\.|[^\\)])*)\) Tj$", RegexOptions.Multiline).Select(m => m.Groups["t"].Value)];
 
     /// <summary>
-    /// The structure tree as nested type names, read from the written objects: <c>Document(Aside(P,P))</c>.
+    /// The structure tree as nested type names, read from the written objects: <c>Document(Div(P,P))</c>.
     /// A leaf holds a marked-content id and no children.
     /// </summary>
     internal static string StructTree(byte[] pdf)

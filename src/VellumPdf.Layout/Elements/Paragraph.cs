@@ -118,7 +118,8 @@ public sealed class Paragraph
     /// paragraph: the overflow of a split paragraph never breaks again, and a renderer built to
     /// continue the paragraph from a later line breaks like the first piece when it is added
     /// directly. See <see cref="PageBreakMode"/> for what else is ignored and how parity is
-    /// counted, and <see cref="PageBreak"/> for how breaks combine.</para>
+    /// counted, and <see cref="PageBreak"/> for how breaks combine. A <see cref="NoteBlock"/>
+    /// refuses a paragraph that sets it, when the paragraph is added; set it on the block.</para>
     /// </remarks>
     /// <exception cref="ArgumentOutOfRangeException">
     /// Raised from this <c>init</c> accessor when the value is not one of

@@ -86,7 +86,7 @@ public sealed class NoteBlockBoundTests
     {
         string[] texts =
         [
-            "", "x", "x\nx", "\n", "\n\n", "ab cd ef gh ij kl", "WWWWWWWWWW", "a\tb\nc", "one two three four five six seven eight nine ten",
+            "x", "x\nx", "\n", "\n\n", "ab cd ef gh ij kl", "WWWWWWWWWW", "a\tb\nc", "one two three four five six seven eight nine ten",
         ];
         var rng = new Random(20261127);
         var taken = 0;

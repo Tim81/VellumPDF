@@ -151,35 +151,30 @@ internal sealed class NoteBlockRenderer : IRenderer, IPageBreakSource, IKeepSour
 
         // Filling the piece without the bottom border and padding gives the most the page can hold.
         // When that holds every paragraph, the piece may be the last one and must then carry the
-        // bottom border and padding, so it is filled again with them reserved: the closing lines
-        // move to the next page with that padding rather than leave a piece of padding alone.
-        // When even the first line does not fit with them reserved, the block is split before its
-        // last line instead, so that line and the bottom padding go to a page of their own. A piece
-        // that does not complete without the reserve is not the last one and needs none. The fill
-        // that runs last is the one whose placement the paragraphs hold, so it is the one used.
-        var piece = Fill(context, children, width, reserveBottom: false, cut: 0);
+        // bottom border and padding, so it is filled again with them reserved: the lines that do
+        // not fit above the padding move to the next page with it, rather than leave a piece of
+        // padding alone. When not even the first line fits with the padding reserved, the fewest
+        // trailing lines move instead: the last line, which is the last paragraph's last line at
+        // that paragraph's own line height. A piece that does not complete without the reserve is
+        // not the last one and needs none. The paragraphs hold the placement of the fill that ran
+        // last, and each piece keeps the placement of its own, so a fill that is not used leaves
+        // nothing behind.
+        var piece = Fill(context, children, width, reserveBottom: false);
         if (piece.Placed.Count == 0)
             return LayoutResult.Nothing(
                 "The note block's top border and padding and its first line do not fit on an empty page.");
 
         if (piece.Complete)
         {
-            var reserved = Fill(context, children, width, reserveBottom: true, cut: 0);
-            if (reserved.Placed.Count > 0)
+            var unreserved = piece;
+            piece = Fill(context, children, width, reserveBottom: true);
+            if (piece.Placed.Count == 0)
             {
-                piece = reserved;
-            }
-            else
-            {
-                // The cut takes the room the last paragraph had left over and half a line more, so
-                // the last line cannot fit and the lines before it still do.
-                var slack = context.Area.Height - (piece.Bottom - context.Area.Y);
-                var held = Fill(context, children, width, reserveBottom: false, cut: slack + 0.5 * piece.Placed[^1].Renderer.LineHeight);
-                if (held.Placed.Count == 0 || held.Complete)
+                piece = HoldBackLastLine(unreserved, children);
+                if (piece is null)
                     return LayoutResult.Nothing(
                         "The note block's last line and its bottom border and padding do not fit on an empty page, " +
                         "or the block is one line that does not fit between its top and bottom insets.");
-                piece = held;
             }
         }
 
@@ -207,16 +202,55 @@ internal sealed class NoteBlockRenderer : IRenderer, IPageBreakSource, IKeepSour
         return LayoutResult.Partial(occupied, split, overflow);
     }
 
+    // The piece that ends before the last line of the unreserved piece, which must have placed
+    // every paragraph; null when there is no line to keep. The last line is the last paragraph's,
+    // so
+    // the kept lines of that paragraph keep its own line height; a last paragraph of one line
+    // leaves
+    // the piece before it. The lines held back start the next piece, which holds them and the
+    // bottom
+    // border and padding or is refused by its own layout.
+    private Attempt? HoldBackLastLine(Attempt unreserved, ParagraphRenderer[] children)
+    {
+        var placed = unreserved.Placed;
+        var last = placed[^1];
+        last.Renderer.RestorePlacement(last.Placement);
+        var lastIndex = _startIndex + placed.Count - 1;
+        var kept = new List<Placed>(placed);
+        var held = new Attempt { Complete = false };
+        if (last.Renderer.PlacedLines >= 2)
+        {
+            var (head, rest) = last.Renderer.SplitOffTrailingLines(1);
+            var box = head.Placement.Occupied;
+            kept[^1] = new Placed(head, box, head.Placement);
+            held.NextIndex = lastIndex;
+            held.NextCarried = rest;
+            held.Bottom = box.Bottom;
+        }
+        else
+        {
+            if (placed.Count == 1)
+                return null;
+            kept.RemoveAt(kept.Count - 1);
+            held.NextIndex = lastIndex;
+            held.NextCarried = lastIndex == _startIndex ? _carried : null;
+            held.Bottom = kept[^1].Box.Bottom;
+        }
+
+        held.Placed.AddRange(kept);
+        return held;
+    }
+
     // The height left for the next paragraph. The room is the area's height less what is used,
     // less the reserve, in that order, which is how a paragraph with the same top and bottom
     // margins forms its own, so a block fits wherever that paragraph fits.
-    private static double Room(double height, double used, double reserve, double cut) =>
-        height - used - reserve - cut;
+    private static double Room(double height, double used, double reserve) =>
+        height - used - reserve;
 
-    // Lays the paragraphs of this piece out from its first one until one does not fit whole. cut
-    // takes that much more off the bottom, to hold a line back. Paragraphs are placed in order and a
-    // piece ends between any two lines: a block has no keep rules of its own among them.
-    private Attempt Fill(LayoutContext context, ParagraphRenderer[] children, double width, bool reserveBottom, double cut)
+    // Lays the paragraphs of this piece out from its first one until one does not fit whole.
+    // Paragraphs are placed in order and a piece ends between any two lines: a block has no keep
+    // rules of its own among them, and its paragraphs have no vertical margins.
+    private Attempt Fill(LayoutContext context, ParagraphRenderer[] children, double width, bool reserveBottom)
     {
         var block = _block;
         var area = context.Area;
@@ -239,12 +273,12 @@ internal sealed class NoteBlockRenderer : IRenderer, IPageBreakSource, IKeepSour
                 var gap = children[i - 1].Paragraph.SpaceAfter;
                 if (gap > 0)
                 {
-                    if (gap <= Room(area.Height, used, reserve, cut)) used += gap;
+                    if (gap <= Room(area.Height, used, reserve)) used += gap;
                     else break;
                 }
             }
 
-            var childArea = new LayoutBox(left, area.Y + used, width, Room(area.Height, used, reserve, cut));
+            var childArea = new LayoutBox(left, area.Y + used, width, Room(area.Height, used, reserve));
             var answer = renderer.Layout(new LayoutContext(childArea));
 
             if (answer.Status == LayoutResult.Outcome.Full)
@@ -298,7 +332,8 @@ internal sealed class NoteBlockRenderer : IRenderer, IPageBreakSource, IKeepSour
         {
             if (_isFirst || _shared.Structure is null)
             {
-                // Div in every file: it is standard in the default namespace of PDF 1.7 and 2.0. Aside
+                // Div in every file: it is standard in the default namespace of PDF 1.7 and 2.0.
+                // Aside
                 // is a PDF 2.0 type that needs its own structure namespace, which the Kernel does
                 // not write yet.
                 _shared.Structure = new PdfStructElem("Div");

@@ -1123,13 +1123,17 @@ public sealed class Document : IDisposable
     /// element the keep rules of the document see; see <see cref="NoteBlock"/>.</para>
     /// </remarks>
     /// <exception cref="ArgumentNullException">
-    /// <paramref name="block"/> is <see langword="null"/>.
+    /// <paramref name="block"/> is <see langword="null"/>. Also raised from the save, not from this
+    /// call, with <c>ParamName</c> <c>Style</c>, when a run of a paragraph in the block holds text
+    /// and has a null style; see <see cref="TextRun"/>.
     /// </exception>
     /// <exception cref="InvalidOperationException">
     /// Raised from <see cref="Save(System.IO.Stream)"/> and the other save overloads, not from this
     /// call, before any layout, when the block holds no paragraph, when a paragraph has a tab stop
-    /// beyond the width left for it, or when the anchor of the block or of a paragraph in it is
-    /// held by another element too. Raised after the layout has started when the block is too tall
+    /// beyond the width left for it, when the anchor of the block or of a
+    /// paragraph in it is held by another element too, and when a link or a page reference in a
+    /// paragraph names an anchor no element holds or, under PDF/UA-1, names any anchor (see
+    /// <see cref="TextStyle.LinkAnchor"/>). Raised after the layout has started when the block is too tall
     /// to fit, as <see cref="NoteBlock"/> says, when a style a paragraph uses has a size or leading
     /// that is refused or a text colour with a channel that is not finite (see
     /// <see cref="TextStyle.FontSize"/>, <see cref="TextStyle.Leading"/> and

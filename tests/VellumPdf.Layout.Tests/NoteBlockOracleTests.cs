@@ -38,8 +38,9 @@ public sealed class NoteBlockOracleTests : IDisposable
 
     // A heading, a paragraph, a block of three paragraphs with a bold lead-in, and a table, long enough
     // to span three pages of 300 x 200 pt. With links, the first paragraph of the block holds a link to
-    // a URI and a page reference, and a paragraph after the block holds the anchor; PDF/UA-1 refuses
-    // both before layout, so its fixture leaves them out.
+    // a URI and a page reference, and a paragraph after the block holds the anchor. PDF/UA-1 refuses
+    // the page reference before layout. It accepts the URI link, which fails veraPDF's ua1 rules on
+    // untagged links at the top level too, outside this element, so its fixture leaves both out.
     private static Document Build(PdfConformance claim, bool tagged, bool links = true)
     {
         var doc = NewDoc(300, 200);

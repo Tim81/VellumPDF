@@ -427,7 +427,9 @@ public sealed class NoteBlockTests
     [InlineData("KeepTogether")]
     [InlineData("MinLinesBeforeBreak")]
     [InlineData("MinLinesAfterBreak")]
-    public void AParagraphThatSetsAKeepRequestOrALineCountIsRefusedWhereItIsAdded(string property)
+    [InlineData("Margins.Top")]
+    [InlineData("Margins.Bottom")]
+    public void AParagraphThatSetsAKeepRequestALineCountOrAVerticalMarginIsRefusedWhereItIsAdded(string property)
     {
         var paragraph = property switch
         {
@@ -435,6 +437,8 @@ public sealed class NoteBlockTests
             "KeepWithNext" => new Paragraph("a") { KeepWithNext = true },
             "KeepTogether" => new Paragraph("a") { KeepTogether = true },
             "MinLinesBeforeBreak" => new Paragraph("a") { MinLinesBeforeBreak = 2 },
+            "Margins.Top" => new Paragraph("a") { Margins = new EdgeInsets(7, 0, 0, 0) },
+            "Margins.Bottom" => new Paragraph("a") { Margins = new EdgeInsets(0, 0, 7, 0) },
             _ => new Paragraph("a") { MinLinesAfterBreak = 3 },
         };
 
@@ -446,6 +450,31 @@ public sealed class NoteBlockTests
         // The defaults are accepted: a count of 1 asks for nothing.
         var accepted = new NoteBlock().Add(new Paragraph("a") { MinLinesBeforeBreak = 1, MinLinesAfterBreak = 1 });
         Assert.Single(accepted.Paragraphs);
+    }
+
+    [Fact]
+    public void ALeftAndRightMarginIsKeptAndNarrowsOnlyThatParagraph()
+    {
+        using var doc = NewDoc(300, 200);
+        doc.Add(new NoteBlock { Padding = new EdgeInsets(4) }
+            .Add(new Paragraph("a", Courier10) { Margins = new EdgeInsets(0, 8, 0, 12) })
+            .Add(new Paragraph("b", Courier10)));
+        var content = Assert.Single(PageContents(Save(doc)));
+
+        // 20 + padding 4 + the 12 pt left margin, and 20 + 4 for the paragraph with none.
+        Assert.Equal(["36 166", "24 154"], TmPositions(content));
+    }
+
+    [Theory]
+    [InlineData("")]
+    public void AParagraphWithNoTextIsRefusedWhereItIsAdded(string text)
+    {
+        var empty = new Paragraph(text, Courier10);
+        var one = Assert.Throws<ArgumentException>("paragraph", () => new NoteBlock().Add(empty));
+        Assert.Contains("text", one.Message, StringComparison.Ordinal);
+        Assert.Throws<ArgumentException>("paragraphs", () => new NoteBlock([new Paragraph("ok"), empty]));
+        Assert.Throws<ArgumentException>("paragraph", () => new NoteBlock().Add(new Paragraph([new TextRun("", Courier10), new TextRun("", Courier10)])));
+        Assert.Single(new NoteBlock().Add(" ", Courier10).Paragraphs);
     }
 
     [Fact]
@@ -694,6 +723,65 @@ public sealed class NoteBlockTests
     }
 
     /// <summary>
+    /// A 30 pt line and then a 12 pt line, with 80 above and below: the last page holds the 12 pt line
+    /// and the bottom padding, the first the 30 pt line and the top padding. The line that moves is
+    /// the last paragraph's, whatever height another paragraph gives its lines.
+    /// </summary>
+    [Fact]
+    public void TheLineThatMovesIsMeasuredAtItsOwnParagraphsLineHeight()
+    {
+        var tall = new TextStyle { Font = VellumPdf.Fonts.Standard14.Courier, FontSize = 25, Leading = 30 };
+        using var doc = NewDoc(300, 200);
+        doc.Add(new NoteBlock { Padding = new EdgeInsets(80, 0, 80, 0), Background = Tint }
+            .Add("B01", tall)
+            .Add("L02", Courier10));
+        var pages = PageContents(Save(doc));
+
+        Assert.Equal(2, pages.Count);
+        Assert.Equal(["B01"], Shown(pages[0]));
+        Assert.Equal(["L02"], Shown(pages[1]));
+
+        // Page 1: 80 + 30, PDF y 200 - 130. Page 2: 12 + 80, PDF y 200 - 112.
+        Assert.Equal(["20 70 260 110"], Rects(pages[0]));
+        Assert.Equal(["20 88 260 92"], Rects(pages[1]));
+
+        // Swapped, the 12 pt line is first and the 30 pt line moves.
+        using var swapped = NewDoc(300, 200);
+        swapped.Add(new NoteBlock { Padding = new EdgeInsets(80, 0, 80, 0), Background = Tint }
+            .Add("L02", Courier10)
+            .Add("B01", tall));
+        var swappedPages = PageContents(Save(swapped));
+        Assert.Equal(["20 88 260 92"], Rects(swappedPages[0]));
+        Assert.Equal(["20 70 260 110"], Rects(swappedPages[1]));
+    }
+
+    /// <summary>
+    /// 13 lines of 12 pt leave 4 pt of the 160. With 30 below them the lines above the padding are 10
+    /// of 13, so L11 to L13 move; with 50 below, 9 of 13 stay and L10 to L13 move. The last page holds
+    /// the lines that moved and the whole of the bottom padding.
+    /// </summary>
+    [Theory]
+    [InlineData(30, 10)]
+    [InlineData(50, 9)]
+    public void TheLinesThatDoNotFitAboveTheBottomPaddingMoveWithIt(double padding, int stay)
+    {
+        using var doc = NewDoc(300, 200);
+        doc.Add(new NoteBlock { Padding = new EdgeInsets(0, 0, padding, 0), Background = Tint }
+            .Add(new Paragraph(Lines(13), Courier10)));
+        var pages = PageContents(Save(doc));
+
+        Assert.Equal(2, pages.Count);
+        Assert.Equal(stay, Shown(pages[0]).Count);
+        Assert.Equal(13 - stay, Shown(pages[1]).Count);
+        Assert.Equal("L" + (stay + 1).ToString("00", System.Globalization.CultureInfo.InvariantCulture), Shown(pages[1])[0]);
+
+        // The last page: the moved lines, then the padding below them.
+        var moved = 13 - stay;
+        var height = moved * 12 + padding;
+        Assert.Equal([$"20 {200 - 20 - height} 260 {height}"], Rects(pages[1]));
+    }
+
+    /// <summary>
     /// Random geometry, paragraphs and page positions. Whatever is saved draws each line once and
     /// in order, holds no blank page, has the top bar on its first page and the bottom bar on its
     /// last only; and a block is refused only where an empty page cannot hold the top inset and the
@@ -713,22 +801,24 @@ public sealed class NoteBlockTests
             var bottom = new[] { 0, 5, 20, 40, 60, 80, 100 }[rng.Next(7)] + rng.Next(0, 12) + (rng.Next(3) == 0 ? 0.25 : 0);
             var lead = rng.Next(0, 6);
             var counts = Enumerable.Range(0, rng.Next(1, 5)).Select(_ => rng.Next(1, 14)).ToArray();
+            var heights = counts.Select(_ => new[] { 6.0, 12.0, 24.0 }[rng.Next(3)]).ToArray();
 
             var block = new NoteBlock { BorderWidth = border, Background = Tint, Padding = new EdgeInsets(top, 4, bottom, 4) };
             var next = 1;
-            foreach (var c in counts)
+            for (var k = 0; k < counts.Length; k++)
             {
-                block.Add(new Paragraph(Lines(c, next), Courier10) { SpaceAfter = rng.Next(3) == 0 ? rng.Next(0, 9) : 0 });
-                next += c;
+                var style = new TextStyle { Font = Standard14.Courier, FontSize = heights[k] / 1.2, Leading = heights[k] };
+                block.Add(new Paragraph(Lines(counts[k], next), style) { SpaceAfter = rng.Next(3) == 0 ? rng.Next(0, 9) : 0 });
+                next += counts[k];
             }
 
             var total = next - 1;
             var contentHeight = page - 40.0;
-            var line = 12.0;
-            var firstFits = border + top + line <= contentHeight;
-            var lastFits = line + border + bottom <= contentHeight;
-            var singleFits = total > 1 || border + top + line + border + bottom <= contentHeight;
-            var expectSaved = firstFits && lastFits && singleFits;
+            var firstFits = border + top + heights[0] <= contentHeight;
+            var lastFits = heights[^1] + border + bottom <= contentHeight;
+            var singleFits = total > 1 || border + top + heights[0] + border + bottom <= contentHeight;
+            var everyLineFits = heights.All(h => h <= contentHeight);
+            var expectSaved = everyLineFits && firstFits && lastFits && singleFits;
 
             using var doc = NewDoc(300, page);
             if (lead > 0) doc.Add(new Paragraph(Lines(lead, 900), Courier10));
