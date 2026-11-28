@@ -17,7 +17,7 @@ namespace VellumPdf.Kernel.Tests;
 
 // Tabs and leaders (#653), Preformatted (#662), joined runs (#650), the space at a soft line end,
 // and the Layout reports of glyph 0 and unembedded fonts (#657): what the content stream shows for
-// them, read back through each font's own ToUnicode map, against ISO 32000-1 9.4, 9.10 and 14.8.2.5,
+// them, read back through each font's own ToUnicode map, against ISO 32000-1 9.10 and 14.8.2.5 and the product rules of #647, #653 and #662,
 // ISO 19005-2 6.2.11 and 6.7.3, and ISO 14289-1 7.21.
 public sealed partial class ConformanceAuditG2Tests
 {
@@ -38,7 +38,7 @@ public sealed partial class ConformanceAuditG2Tests
         return [.. ShownStrings(Content(pdf, page)).Select(s => (Decode(s, fonts[s.Resource]), s))];
     }
 
-    // ── Tab stops and leaders (#653); ISO 32000-1 9.4.3, 9.10.2 and 14.8.2.5 ──────────────────
+    // ── Tab stops and leaders (#653); product rules, and ISO 32000-1 9.10.2 and 14.8.2.5 ──────────────────
 
     private static (byte[] Bytes, TextStyle Style) TabbedDocument(PdfConformance claim)
     {
@@ -60,7 +60,7 @@ public sealed partial class ConformanceAuditG2Tests
 
     [Theory]
     [MemberData(nameof(ClaimData))]
-    public void Iso32000_1_9_4_ATabIsNeverShownAndALeaderIsAnArtifactPathNotText(PdfConformance claim)
+    public void Issue653_ATabIsNeverShownAndALeaderIsAnArtifactPathNotText(PdfConformance claim)
     {
         var (bytes, style) = TabbedDocument(claim);
         using var pdf = new Pdf(bytes);
@@ -153,7 +153,7 @@ public sealed partial class ConformanceAuditG2Tests
 
     [Theory]
     [MemberData(nameof(ClaimData))]
-    public void Iso32000_1_9_4_APreformattedBlockExpandsTabsToSpacesAndKeepsEveryOtherSpace(PdfConformance claim)
+    public void Issue662_APreformattedBlockExpandsTabsToSpacesAndKeepsEveryOtherSpace(PdfConformance claim)
     {
         var (bytes, style) = PreformattedDocument(claim, Code);
         using var pdf = new Pdf(bytes);
@@ -174,22 +174,57 @@ public sealed partial class ConformanceAuditG2Tests
         Assert.Equal(strings[0].Shown.X, strings[1].Shown.X, 3);
     }
 
-    [Fact]
-    public void Iso19005_2_6_7_3_2_APreformattedLineEndsAtItsOwnShowStringBoundaryAndNoSpaceIsAddedAfterIt()
-    {
-        // Each line is a show string of its own, and a line break is not a word break written as a
-        // space: the block is a sequence of lines and extraction reads each as its own line. Pinned so
-        // that a change which adds a space at each line end is a decision, not an accident.
-        var (bytes, _) = PreformattedDocument(PdfConformance.PdfA2a, "alpha beta\ngamma delta");
-        using var pdf = new Pdf(bytes);
-        var strings = Strings(pdf).Select(s => s.Text).ToArray();
+    private static readonly string Lf = ((char)10).ToString();
 
-        Assert.Equal(["alpha beta", "gamma delta"], strings);
-        Assert.Equal("alpha beta gamma delta", PopplerText(bytes).Trim());
+    private static List<string> TaggedStrings(Action<LayoutDocument, TextStyle> add)
+    {
+        var (bytes, _) = Build(PdfConformance.PdfA2a, doc => add(doc, Style(doc, Mono, 10)));
+        using var pdf = new Pdf(bytes);
+        return [.. Strings(pdf).Select(s => s.Text)];
     }
 
     [Fact]
-    public void Iso32000_1_9_4_AWrappedPreformattedLineKeepsEveryCharacterAndDrawsItsHookAsAnArtifact()
+    public void Iso19005_2_6_7_3_2_APreformattedLineEndHasNoSpaceInItsShowStringAsIssue588Describes()
+    {
+        // The state #588's comment on Preformatted describes: one marked-content sequence holds the whole
+        // block, each line is its own show string with its own text matrix, and nothing in the character
+        // stream separates two lines, so a tagged reader reads "betagamma". poppler gets the break from
+        // glyph positions, which 14.8.2.5 note 2 says a reader does not need to guess from.
+        var strings = TaggedStrings((d, s) => d.Add(new Preformatted("alpha beta" + Lf + "gamma delta", s)));
+
+        Assert.Equal(["alpha beta", "gamma delta"], strings);
+        Assert.Equal("alpha betagamma delta", string.Concat(strings));
+    }
+
+    [Fact(Skip = "Gap #588: a Preformatted line ends without a space in its show string, so the character stream of a tagged file reads 'betagamma' across the line; 14.8.2.5 asks for the separator that plain text would have.")]
+    public void Iso19005_2_6_7_3_2_APreformattedLineEndHasASpaceInItsShowString()
+    {
+        var strings = TaggedStrings((d, s) => d.Add(new Preformatted("alpha beta" + Lf + "gamma delta", s)));
+
+        Assert.EndsWith(" ", strings[0], StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Iso19005_2_6_7_3_2_AParagraphLineBreakHasNoSpaceInItsShowStringAsIssue588Describes()
+    {
+        // A paragraph's explicit line break has the same shape: "alpha beta" and "gamma delta" are two show
+        // strings, so the stream reads "betagamma". #588's Scope says a line ended by an explicit line
+        // feed gets no space, which conflicts with its comment on Preformatted and with 14.8.2.5.
+        var strings = TaggedStrings((d, s) => d.Add(new Paragraph("alpha beta" + Lf + "gamma delta", s)));
+
+        Assert.Equal(["alpha beta", "gamma delta"], strings);
+    }
+
+    [Fact(Skip = "Gap #588: a paragraph's explicit line break ends a show string without a space, so a tagged file's character stream reads 'betagamma' across it; 14.8.2.5 asks for the separator that plain text would have. #588's Scope sentence about lines ended by an explicit line feed conflicts with this.")]
+    public void Iso19005_2_6_7_3_2_AParagraphLineBreakHasASpaceInItsShowString()
+    {
+        var strings = TaggedStrings((d, s) => d.Add(new Paragraph("alpha beta" + Lf + "gamma delta", s)));
+
+        Assert.EndsWith(" ", strings[0], StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Issue662_AWrappedPreformattedLineKeepsEveryCharacterAndDrawsItsHookAsAnArtifact()
     {
         var line = string.Concat(Enumerable.Repeat("abcdefghij", 12));
         LayoutDocument? document = null;

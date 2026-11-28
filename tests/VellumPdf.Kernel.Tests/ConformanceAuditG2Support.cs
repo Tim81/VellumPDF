@@ -169,9 +169,7 @@ internal static class ConformanceAuditG2Support
     internal sealed record ToUnicodeMap(
         Dictionary<int, List<string>> Entries,
         List<(int Low, int High, int Bytes)> CodeSpace,
-        List<(int Declared, int Actual, string Kind)> Blocks,
-        bool HasCarriageReturn,
-        bool EndsWithLineFeed)
+        List<(int Declared, int Actual, string Kind)> Blocks)
     {
         /// <summary>The one string a code maps to; throws when the CMap maps it twice.</summary>
         internal string Single(int code) => Assert.Single(Entries[code]);
@@ -247,8 +245,7 @@ internal static class ConformanceAuditG2Support
             blocks.Add((int.Parse(m.Groups[1].Value, CultureInfo.InvariantCulture), count, "bfrange"));
         }
 
-        return new ToUnicodeMap(
-            entries, codeSpace, blocks, Array.IndexOf(bytes, (byte)'\r') >= 0, bytes.Length > 0 && bytes[^1] == (byte)'\n');
+        return new ToUnicodeMap(entries, codeSpace, blocks);
     }
 
     // ── Content streams ─────────────────────────────────────────────────────────────────────
@@ -436,7 +433,6 @@ internal static class ConformanceAuditG2Support
         return (os2[8] << 8) | os2[9];
     }
 
-    internal static bool IsCff(byte[] fontBytes) => SfntFont.Parse(fontBytes).HasTable(new Tag("CFF "));
 
     /// <summary>
     /// A code point to glyph lookup read from the font's own cmap table, without the library's
@@ -497,9 +493,17 @@ internal static class ConformanceAuditG2Support
         };
     }
 
-    internal static int CmapEntries(byte[] fontBytes, int codePoint)
+    /// <summary>The decoded bytes of stream object <paramref name="number"/> as Latin-1 text, or empty when it is not a stream.</summary>
+    internal static string DecodedObject(Pdf pdf, int number)
     {
-        using var doc = new PdfDocument();
-        return doc.UseTrueTypeFont(fontBytes).GetGlyphId(codePoint);
+        try
+        {
+            var stream = pdf.Reader.ResolveStream(number);
+            return stream is null ? "" : Encoding.Latin1.GetString(pdf.Reader.GetDecodedStreamData(stream)!);
+        }
+        catch (Exception)
+        {
+            return "";
+        }
     }
 }
