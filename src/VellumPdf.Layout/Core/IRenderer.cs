@@ -43,12 +43,14 @@ public interface IRenderer
     /// renderer that returned it.</para>
     /// <para><b>A word wider than its line is cut at the glyph unless the document turned on
     /// <see cref="VellumPdf.Layout.Document.BreakLongWordsAtPlaces"/>.</b> The built-in renderers
-    /// read the setting of the document whose save is laying out, so a built-in renderer that your
-    /// renderer lays out inside that save cuts after a place when the setting is on. A built-in
-    /// renderer that you lay out outside a save reads nothing and cuts at the glyph. The setting
-    /// can make the save refuse what it saved without it; its documentation lists the refusals.
-    /// Where this renderer's layout holds text, a line that ends earlier takes more lines, and the
-    /// 50,000 limit and the page height are met sooner.</para>
+    /// read the setting of the save that is laying out, so a built-in renderer that your renderer
+    /// lays out during that save cuts after a place when the setting is on, also on a task or a
+    /// thread your renderer starts from it. A built-in renderer that is laid out when no save is
+    /// laying out, or on work queued with the execution context suppressed, reads off and cuts at
+    /// the glyph. A built-in renderer that two documents with different values lay out wraps again
+    /// for each. The setting can make the save refuse what it saved without it; its documentation
+    /// lists the refusals. Where this renderer's layout holds text, a line that ends earlier takes
+    /// more lines, and the 50,000 limit and the page height are met sooner.</para>
     /// <para><b>A renderer that fits a smaller area but not a larger one is not supported.</b> At
     /// the top of a page the document offers the larger of the content area's height and the
     /// height from the top of the content area to its bottom, which can differ by one rounding

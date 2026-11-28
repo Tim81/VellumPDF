@@ -74,15 +74,17 @@ internal static class LongWordBreaks
     // tier test alike.
     private static bool IsPlaceCharacter(int value) => value is '/' or '\\' or '-';
 
-    // True while a document that has BreakLongWordsAtPlaces set lays itself out, on the thread that
-    // does it. Every wrap reads it, so a built-in renderer that a renderer of the caller's lays out
-    // inside that layout reads the document's setting, and one laid out anywhere else reads false
-    // and cuts at the glyph. Removed in 3.0 with the setting (#750).
-    [ThreadStatic]
-    private static bool s_enabled;
+    // The setting of the save that is laying out, read by every wrap. An AsyncLocal and not a
+    // ThreadStatic, as ListLayoutRun is: a renderer of a caller's that lays a built-in renderer out
+    // through Task.Run or on a new thread during the save reads the document's setting there too. It
+    // flows with the execution context, so work queued with the context suppressed
+    // (ThreadPool.UnsafeQueueUserWorkItem, ExecutionContext.SuppressFlow) reads false. A layout
+    // started inside another one sets its own value and restores the outer one when it ends.
+    // Removed in 3.0 with the setting (#750).
+    private static readonly AsyncLocal<bool> s_enabled = new();
 
-    /// <summary>Whether a word wider than its line is cut after a place on this thread now.</summary>
-    internal static bool Enabled => s_enabled;
+    /// <summary>Whether a word wider than its line is cut after a place in this flow now.</summary>
+    internal static bool Enabled => s_enabled.Value;
 
     /// <summary>
     /// Sets <see cref="Enabled"/> to <paramref name="on"/> until the returned scope is disposed,
@@ -96,11 +98,11 @@ internal static class LongWordBreaks
 
         internal PlaceCutScope(bool on)
         {
-            _previous = s_enabled;
-            s_enabled = on;
+            _previous = s_enabled.Value;
+            s_enabled.Value = on;
         }
 
-        public void Dispose() => s_enabled = _previous;
+        public void Dispose() => s_enabled.Value = _previous;
     }
 
     /// <summary>

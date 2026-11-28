@@ -10,21 +10,25 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 - **`Document.BreakLongWordsAtPlaces` cuts a web address or a path after a slash or hyphen
   (#594).** Off by default, a word wider than its line is cut at the character that does not fit, as
-  before, and every document saves to the same bytes. With it set, such a word is cut after the last
-  `/`, `\` or `-` that leaves the line no wider than its width, so `https://example.org/a/b/c` ends a
-  line at a segment and a Windows path at a folder. It applies to every wrap the document performs:
-  paragraphs, headings, list items, the paragraphs of a `NoteBlock`, table cells given as a string or
-  as runs, and a built-in renderer that a renderer of yours lays out during the save. A word with no
-  such place that fits is cut at the character, and a word that fits is never cut. No hyphen or
+  2.3 does. With it set, such a word is cut after the last `/`, `\` or `-` that leaves the line no
+  wider than its width, so `https://example.org/a/b/c` ends a line at a segment and a Windows path
+  at a folder. It applies to every wrap a save performs: paragraphs, headings, list items, the
+  paragraphs of a `NoteBlock`, table cells given as a string or as runs, and a built-in renderer
+  that a renderer of yours lays out during the save, also on a task or thread it starts. A word with
+  no such place that fits is cut at the character, and a word that fits is never cut. No hyphen or
   other glyph is added at the cut. Following UAX #14, a `-` before a digit and a `/` or `\` before a
   digit that follows a digit (`1/2`) are cut at only when no other such place fits. `?`, `&`, `=`,
   `.`, `_` and `#` are not places. A link on the word gets one rectangle per piece.
+  - **A program that never sets it saves to the same bytes as before, with the same verdicts.** A
+    built-in renderer that two documents with different values lay out wraps again for each, so the
+    document that leaves it off is not changed by one that turns it on.
   - **Turning it on can make a save fail that succeeded.** A cut after a place ends a line earlier,
     so a text takes the same lines or more. A single element that then needs more than 50,000 page
     continuations is refused, as is a table whose repeated header rows or row-span group no longer
-    fit a page, and any other element that becomes too tall for a page. The throws come from the
-    save, as for any other text that long. A later major version cuts after a place by default and
-    removes the setting (#750).
+    fit a page, and any other element that becomes too tall for a page. The throws are
+    `InvalidOperationException` from `Save`, `SaveAsync` and the `Sign` methods, not from the
+    setter. A value set after a save is never used. A later major version cuts after a place by
+    default and removes the setting (#750).
   - Text extraction returns the pieces as written, with the extractor's line separator between
     them. Reading a cut address back as one token needs marked content the library does not write
     yet (#588).

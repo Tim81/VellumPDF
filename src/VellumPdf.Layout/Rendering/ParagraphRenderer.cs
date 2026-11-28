@@ -26,6 +26,11 @@ public sealed partial class ParagraphRenderer : IRenderer, IPageBreakSource, IKe
 
     // Computed during Layout:
     private List<LineFragment[]>? _lines;
+
+    // The setting the lines were wrapped under (LongWordBreaks.Enabled). A renderer that a caller
+    // reuses in a document with the other setting wraps again, so the lines, the line height taken
+    // from them and the placement they made always belong to the setting of the save that reads them.
+    private bool _wrappedAtPlaces;
     private List<LineEnd>? _lineEnds;  // one per entry of _lines
 
     /// <summary>
@@ -211,6 +216,7 @@ public sealed partial class ParagraphRenderer : IRenderer, IPageBreakSource, IKe
         var overflow = new ParagraphRenderer(_para, _endLine)
         {
             _lines = _lines,
+            _wrappedAtPlaces = _wrappedAtPlaces,
             _lineEnds = _lineEnds,
             _lineHeight = _lineHeight,
             _lineHeightTaken = true,
@@ -224,6 +230,7 @@ public sealed partial class ParagraphRenderer : IRenderer, IPageBreakSource, IKe
         var split = new ParagraphRenderer(_para, _startLine)
         {
             _lines = _lines,
+            _wrappedAtPlaces = _wrappedAtPlaces,
             _lineEnds = _lineEnds,
             _endLine = _endLine,
             _lineHeight = _lineHeight,
@@ -262,10 +269,11 @@ public sealed partial class ParagraphRenderer : IRenderer, IPageBreakSource, IKe
     {
         if (_lines is not null && _lineEnds is not null)
         {
-            if (_reads is null || _reads.IsCurrent()) return;
+            if (_wrappedAtPlaces == LongWordBreaks.Enabled && (_reads is null || _reads.IsCurrent())) return;
 
-            // A label this wrap read has changed, so the wrap, the line height taken from it and
-            // the placement it made are all of the earlier text.
+            // A label this wrap read has changed, or the save that reads it cuts long words the other
+            // way, so the wrap, the line height taken from it and the placement it made are all of
+            // the earlier text.
             _lineHeightTaken = false;
             ClearPlacement();
         }
@@ -277,6 +285,7 @@ public sealed partial class ParagraphRenderer : IRenderer, IPageBreakSource, IKe
         _reads = null;
         var runs = PageReferences.Effective(_para.Runs, ref _reads);
         (_lines, _lineEnds) = WordWrap(runs, width, out var nullStyleRuns, stops);
+        _wrappedAtPlaces = LongWordBreaks.Enabled;
         _nullStyleRuns = nullStyleRuns;
         WrapCalls++;
     }

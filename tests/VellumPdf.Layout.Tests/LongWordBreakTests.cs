@@ -19,9 +19,10 @@ namespace VellumPdf.Layout.Tests;
 /// the last solidus, reverse solidus or hyphen-minus that fits, and at the glyph only when it has
 /// none (#594). The fixtures use Courier at 10 pt, where every glyph is 6 pt wide, and a 60 pt line,
 /// so a line holds ten characters and the expected cut is an exact index. Every wrap of the library
-/// is tested: the paragraph, the heading, the list item, the paragraphs of a note block, a table cell
-/// given as a string, and one given as runs. A test that calls a wrap directly turns the setting on
-/// for the call; a test that saves a document sets the property.
+/// is tested here: the paragraph, the heading, the list item, a table cell given as a string, and
+/// one given as runs. The note block, the tab-stop wrap and the row-span refusal are in
+/// <see cref="LongWordSettingTests"/>. A test that calls a wrap directly turns the setting on for
+/// the call; a test that saves a document sets the property.
 /// </summary>
 public sealed class LongWordBreakTests
 {

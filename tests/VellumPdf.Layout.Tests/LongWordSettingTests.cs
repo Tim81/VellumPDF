@@ -7,6 +7,7 @@ using VellumPdf.Layout.Core;
 using VellumPdf.Layout.Elements;
 using VellumPdf.Layout.Elements.Table;
 using VellumPdf.Layout.Rendering;
+using VellumPdf.Layout.Rendering.Table;
 using VellumPdf.TestSupport;
 
 namespace VellumPdf.Layout.Tests;
@@ -222,6 +223,64 @@ public sealed class LongWordSettingTests
             + "but a page leaves 12.0pt under the 56.0pt of repeated header rows, so the row cannot be split "
             + "between pages.",
             ex.Message);
+    }
+
+    [Fact]
+    public void ATabbedParagraphCutsAfterThePlaceWhenOn_andAtTheGlyphWhenOff()
+    {
+        // A paragraph with tab stops wraps through its own routine, which cuts a word the same way.
+        static string[] Lines(bool on)
+        {
+            using var doc = new Document { BreakLongWordsAtPlaces = on, PageSize = new PdfRectangle(0, 0, 100, 300), Margins = new EdgeInsets(20) };
+            doc.Add(new Paragraph(Path + "	x", Courier()) { TabStops = [new TabStop(40)] });
+            using var ms = new MemoryStream();
+            doc.Save(ms);
+            return [.. ContentStreamReadback.TextPlacements(PdfTestUtil.DecompressAllFlatStreams(ms.ToArray()))
+                .Where(p => p.Text.Length > 0).Select(p => p.Text)];
+        }
+
+        Assert.Contains("aa/bb/", Lines(on: true));
+        Assert.DoesNotContain("aa/bb/", Lines(on: false));
+        Assert.Contains("aa/bb/cccc", Lines(on: false));
+    }
+
+    [Fact]
+    public void ACellOfRunsHoldingACharacterOutsideTheBasicPlane_isCutAtTheOffsetsOfItsCharacters()
+    {
+        // The cut is found over characters and mapped back to offsets in the text, and a character
+        // outside the basic plane takes two UTF-16 units, so counting units one by one misplaces the
+        // lines that follow it. The string wrap and the run wrap have to agree.
+        using var on = LongWordBreaks.PlaceCuts(true);
+        var style = Courier();
+        var text = "aa/😀😀/bbbbbbbbbbbbbbb";
+        var byString = TableRenderer.WordWrapLines(text, style, 60, honourBreaks: true);
+        var byRuns = new Cell([new TextRun(text, style)]).RunText!.Lines(60, honourBreaks: true);
+
+        Assert.Equal(byString, byRuns);
+        Assert.Equal(string.Concat(byString), text);
+        Assert.True(byString.Count > 1);
+    }
+
+    [Fact]
+    public void WithTheSettingOn_aRowSpanGroupThatNoLongerFitsIsRefusedAsTooTall_andSavesWithItOff()
+    {
+        static Document Build(bool on)
+        {
+            var doc = new Document { BreakLongWordsAtPlaces = on, PageSize = new PdfRectangle(0, 0, 112, 120), Margins = new EdgeInsets(20) };
+            var table = new TableElement { DefaultCellStyle = Courier() }.SetColumnWidths(72);
+            table.AddRow().AddCell(new Cell(string.Concat(Enumerable.Repeat("aaaaa/", 10))) { RowSpan = 2 });
+            table.AddRow();
+            doc.Add(table);
+            return doc;
+        }
+
+        using var off = Build(on: false);
+        SaveTo(off);
+
+        using var on = Build(on: true);
+        var ex = Assert.Throws<InvalidOperationException>(() => SaveTo(on));
+
+        Assert.StartsWith("An element is too tall to fit on a single page and cannot be rendered.", ex.Message, StringComparison.Ordinal);
     }
 
     [Fact]

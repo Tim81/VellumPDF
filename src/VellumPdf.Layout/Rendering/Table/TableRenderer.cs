@@ -86,6 +86,12 @@ public sealed class TableRenderer : IRenderer, IPageBreakSource, IKeepSource, IP
     // document reports an anchor only for a renderer it placed. Removed in 3.0 (#688).
     private TableRenderer? _laidOutBy;
 
+    // The setting the last Layout call ran under (LongWordBreaks.Enabled), and what Draw wraps the
+    // cell text under, so the lines drawn are the lines the heights were measured from whichever
+    // flow draws them. The decision key holds it too, so a table that a caller reuses in a document
+    // with the other setting decides again.
+    private bool _atPlaces;
+
     // What the decision reports to the document: an upper bound on the continuations of the
     // placement in either layout, over the grid that keeps the breaks and the grid that reads every
     // cell unbroken, which is the twin's. Where the decision leaves no cell its breaks the two are
@@ -111,7 +117,7 @@ public sealed class TableRenderer : IRenderer, IPageBreakSource, IKeepSource, IP
     // that leaves out. The boxes' x is left out of the key: the decision never reads it, and
     // mirrored margins move it on every other page. A table that holds a page reference adds the
     // epoch of the labels, so the grid resolved for one label is not reused for the next.
-    private (double Width, double Top0, double Bottom0, double Top1, double Bottom1, long Labels)? _decidedFor;
+    private (double Width, double Top0, double Bottom0, double Top1, double Bottom1, long Labels, bool AtPlaces)? _decidedFor;
 
     // Whether a cell of the table is a run cell that holds a page reference, found once: the rows
     // are not changed once the table is laid out.
@@ -299,6 +305,7 @@ public sealed class TableRenderer : IRenderer, IPageBreakSource, IKeepSource, IP
         // laid out as it was before breaks were honoured, by its twin. Removed in 3.0 (#688).
         var mode = context.ModeFor(this);
         _laidOutBy = null;
+        _atPlaces = LongWordBreaks.Enabled;
         if (mode == ContinuationMode.Twin && !_readsUnbrokenForTheLimit)
         {
             _laidOutBy = (TableRenderer)((IContinuationTwin)this).Twin();
@@ -340,8 +347,8 @@ public sealed class TableRenderer : IRenderer, IPageBreakSource, IKeepSource, IP
             // A decision made for this width and these boxes by the renderer that handed the table
             // over stands: the cells it read unbroken are the cells this layout reads unbroken.
             var key = fresh is { Length: 2 }
-                ? (area.Width, fresh[0].Y, fresh[0].Bottom, fresh[1].Y, fresh[1].Bottom, LabelsEpoch())
-                : ((double, double, double, double, double, long)?)null;
+                ? (area.Width, fresh[0].Y, fresh[0].Bottom, fresh[1].Y, fresh[1].Bottom, LabelsEpoch(), LongWordBreaks.Enabled)
+                : ((double, double, double, double, double, long, bool)?)null;
             var decided = key is not null && _decidedFor is { } was && was.Equals(key.Value);
             if (!decided)
             {
@@ -577,6 +584,7 @@ public sealed class TableRenderer : IRenderer, IPageBreakSource, IKeepSource, IP
         next._placedAsTwin = _placedAsTwin;
         next._reportBound = _reportBound;
         next._decidedFor = _decidedFor;
+        next._atPlaces = _atPlaces;
         return next;
     }
 
@@ -1717,6 +1725,8 @@ public sealed class TableRenderer : IRenderer, IPageBreakSource, IKeepSource, IP
             twin.Draw(ctx);
             return;
         }
+
+        using var drawAtPlaces = LongWordBreaks.PlaceCuts(_atPlaces);
 
         // Layout already deflated context.Area by _table.Margins and stored the result in
         // _occupied; deflating again here took the table's own margin out of the box twice. The
