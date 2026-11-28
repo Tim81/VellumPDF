@@ -47,11 +47,10 @@ namespace VellumPdf.Layout.Elements;
 /// tallest line any paragraph of the block holds, or the border and padding leave the paragraphs no
 /// width. A refusal of this kind comes after the layout has started, so the document cannot be
 /// saved again.</para>
-/// <para><b>A long word.</b> A word wider than the line is cut after the last <c>/</c>, <c>\</c> or
-/// <c>-</c> that leaves the line no wider than its width, as in a paragraph the document lays
-/// out. The block is new, so it keeps no earlier layout and has no twin for the limit of page
-/// continuations: a block whose lines pass that limit is refused, the lines a cut after a place
-/// takes included, and the limit decision is not asked.</para>
+/// <para><b>A word wider than its line.</b> It is cut at the character that does not fit, and after
+/// the last <c>/</c>, <c>\</c> or <c>-</c> that fits when the document sets
+/// <see cref="VellumPdf.Layout.Document.BreakLongWordsAtPlaces"/>. A block near the limit of page
+/// continuations is refused where its lines pass it, with the setting on as with more text.</para>
 /// <para><b>Tagging.</b> In a tagged document the block is one <c>Div</c> structure element that
 /// holds the structure elements of its paragraphs, also when it spans pages, under every
 /// <see cref="Document.Conformance"/>. The background and the border are drawn as an artifact, so

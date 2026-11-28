@@ -445,6 +445,7 @@ public sealed class DocumentRenderer
         // layout that a renderer of a caller's starts from inside this one gets a run of its own.
         // Removed in 3.0 (#688).
         var run = ListLayoutRun.Begin(_pdf, out var outerRun);
+        using var placeCuts = LongWordBreaks.PlaceCuts(BreakLongWordsAtPlaces);
         try
         {
             RunLayoutWith(run);
@@ -828,6 +829,13 @@ public sealed class DocumentRenderer
     /// </summary>
     internal bool MirrorMargins { get; set; }
 
+    /// <summary>
+    /// Whether a word wider than its line is cut after a place while this renderer lays out. Set by
+    /// <see cref="Document"/> from <see cref="Document.BreakLongWordsAtPlaces"/>; a renderer built
+    /// directly cuts at the character, as before 2.4.
+    /// </summary>
+    internal bool BreakLongWordsAtPlaces { get; set; }
+
     // Parity is the physical position in the kernel document and page 1 is recto; a page label
     // never enters it, because labels may restart. One rule for the recto break, the content
     // area's x and the bands: the recto break and the content area ask IsRecto, which numbers the
@@ -904,8 +912,7 @@ public sealed class DocumentRenderer
     // What a line holds, for each kind that wraps text, read from the renderer:
     //  - A paragraph, and a heading, which wraps through one: no step rewrites the text. A hard
     //    break ends a line and is a character, and a word wider than the line is cut at one scalar
-    //    at least per line, wherever the cut falls (LongWordBreaks puts it after the first scalar
-    //    of the line at the earliest), so the lines are at most the characters plus one. A tab stop only
+    //    at least per line, so the lines are at most the characters plus one. A tab stop only
     //    places text; a line is committed only before a word or a break, which are characters.
     //  - A list: each entry is its text's lines in a paragraph of that kind, and a marker that
     //    wraps moves the entry whole, so an entry adds at most max(1, its characters).

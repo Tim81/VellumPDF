@@ -15,11 +15,13 @@ using VellumPdf.TestSupport;
 namespace VellumPdf.Layout.Tests;
 
 /// <summary>
-/// A word wider than its line is cut after the last solidus, reverse solidus or hyphen-minus that
-/// fits, and at the glyph only when it has none (#594). The fixtures use Courier at 10 pt, where
-/// every glyph is 6 pt wide, and a 60 pt line, so a line holds ten characters and the expected
-/// cut is an exact index. Every wrap of the library is tested: the paragraph, the heading, the
-/// list item, a table cell given as a string, and one given as runs.
+/// With <see cref="Document.BreakLongWordsAtPlaces"/> set, a word wider than its line is cut after
+/// the last solidus, reverse solidus or hyphen-minus that fits, and at the glyph only when it has
+/// none (#594). The fixtures use Courier at 10 pt, where every glyph is 6 pt wide, and a 60 pt line,
+/// so a line holds ten characters and the expected cut is an exact index. Every wrap of the library
+/// is tested: the paragraph, the heading, the list item, the paragraphs of a note block, a table cell
+/// given as a string, and one given as runs. A test that calls a wrap directly turns the setting on
+/// for the call; a test that saves a document sets the property.
 /// </summary>
 public sealed class LongWordBreakTests
 {
@@ -28,8 +30,25 @@ public sealed class LongWordBreakTests
     private static TextStyle Courier(string? uri = null) =>
         new() { Font = Standard14.Courier, FontSize = 10, LinkUri = uri };
 
+    // The wraps below are static and read the setting from the thread, which a document sets while it
+    // lays out. A direct call sets it for its own duration.
+    private static LongWordBreaks.PlaceCutScope On() => LongWordBreaks.PlaceCuts(true);
+
+    private static (List<LineFragment[]> Lines, List<LineEnd> Ends) Wrap(
+        IReadOnlyList<TextRun> runs, double width, out int nullStyleRuns)
+    {
+        using var on = On();
+        return ParagraphRenderer.WordWrap(runs, width, out nullStyleRuns);
+    }
+
+    private static List<string> Lines(string text, TextStyle style, double width, bool honourBreaks)
+    {
+        using var on = On();
+        return Lines(text, style, width, honourBreaks);
+    }
+
     private static string[] Paragraph(string text, double width = Line) =>
-        [.. ParagraphRenderer.WordWrap([new TextRun(text, Courier())], width, out _).Lines
+        [.. Wrap([new TextRun(text, Courier())], width, out _).Lines
             .Select(l => string.Concat(l.Select(f => f.Text)))];
 
     // ── The break point ──────────────────────────────────────────────────────
@@ -182,7 +201,7 @@ public sealed class LongWordBreakTests
     {
         var a = Courier();
         var b = Courier();
-        var (lines, ends) = ParagraphRenderer.WordWrap(
+        var (lines, ends) = Wrap(
             [new TextRun("aaaa/bb", a), new TextRun("bbbbbbbbbbb", b)], Line, out _);
 
         Assert.Equal(3, lines.Count);
@@ -200,7 +219,7 @@ public sealed class LongWordBreakTests
     [Fact]
     public void ALineEndsWhereTheCutIs_andTheWordThatFollowsStartsAFreshLine()
     {
-        var (_, ends) = ParagraphRenderer.WordWrap(
+        var (_, ends) = Wrap(
             [new TextRun("aaaa/bbbbbbbbbbbb next", Courier())], Line, out _);
 
         Assert.Equal([LineEnd.Forced, LineEnd.Forced, LineEnd.Soft, LineEnd.Last], ends);
@@ -212,6 +231,7 @@ public sealed class LongWordBreakTests
 
     private static Document Page() => new()
     {
+        BreakLongWordsAtPlaces = true,
         PageSize = new PdfRectangle(0, 0, 100, 300),
         Margins = new EdgeInsets(20),
     };
@@ -219,6 +239,7 @@ public sealed class LongWordBreakTests
     // A page whose content area is as wide as the 72 pt column: the 6 pt padding leaves a 60 pt line.
     private static Document TablePage() => new()
     {
+        BreakLongWordsAtPlaces = true,
         PageSize = new PdfRectangle(0, 0, 112, 300),
         Margins = new EdgeInsets(20),
     };
@@ -255,7 +276,7 @@ public sealed class LongWordBreakTests
     [Fact]
     public void AListItemIsCutAtThePlace()
     {
-        using var doc = new Document { PageSize = new PdfRectangle(0, 0, 120, 300), Margins = new EdgeInsets(20) };
+        using var doc = new Document { BreakLongWordsAtPlaces = true, PageSize = new PdfRectangle(0, 0, 120, 300), Margins = new EdgeInsets(20) };
         doc.Add(new ListElement { DefaultStyle = Courier(), Indent = 20 }.Add(Path));
 
         var shown = Shown(Save(doc));
@@ -315,13 +336,14 @@ public sealed class LongWordBreakTests
         var style = Courier();
 
         Assert.Equal(expected, Paragraph(word));
-        Assert.Equal(expected, TableRenderer.WordWrapLines(word, style, Line, honourBreaks: true));
+        Assert.Equal(expected, Lines(word, style, Line, honourBreaks: true));
         Assert.Equal(expected, new Cell([new TextRun(word, style)]).RunText!.Lines(Line, honourBreaks: true));
     }
 
     [Fact]
     public void ACellStringAndACellOfRunsAgreeOnLinesAndOnTheWidthsTheCountHoldsOver()
     {
+        using var on = On();
         var style = Courier();
         string[] words =
         [
@@ -333,7 +355,7 @@ public sealed class LongWordBreakTests
             var cell = new Cell([new TextRun(text, style)]);
             for (var width = 1.0; width < 130; width += 0.7)
             {
-                var expected = TableRenderer.WordWrapLines(text, style, width, honourBreaks: true);
+                var expected = Lines(text, style, width, honourBreaks: true);
                 Assert.Equal(expected, cell.RunText!.Lines(width, honourBreaks: true));
 
                 var stringCount = TableRenderer.CountLines(text, style, width, true, out var from, out var below);
@@ -344,9 +366,9 @@ public sealed class LongWordBreakTests
                 // The interval is where the lines do not change.
                 Assert.True(from <= width && width < below, $"{text} at {width}: [{from}, {below})");
                 if (double.IsFinite(from))
-                    Assert.Equal(expected, TableRenderer.WordWrapLines(text, style, from, honourBreaks: true));
+                    Assert.Equal(expected, Lines(text, style, from, honourBreaks: true));
                 if (double.IsFinite(below))
-                    Assert.Equal(expected, TableRenderer.WordWrapLines(text, style, Math.BitDecrement(below), true));
+                    Assert.Equal(expected, Lines(text, style, Math.BitDecrement(below), true));
             }
         }
     }
@@ -354,6 +376,7 @@ public sealed class LongWordBreakTests
     [Fact]
     public void TheWidthsACountHoldsOverAreSoundForACutWord()
     {
+        using var on = On();
         // A cached count answers every width inside its interval, so a width inside it must wrap
         // into the same lines as the width it was found at, whichever comparison narrowed it.
         var style = Courier();
@@ -377,8 +400,8 @@ public sealed class LongWordBreakTests
                     if (a.From <= b.Width && b.Width < a.Below)
                     {
                         Assert.True(
-                            TableRenderer.WordWrapLines(text, style, a.Width, true)
-                                .SequenceEqual(TableRenderer.WordWrapLines(text, style, b.Width, true)),
+                            Lines(text, style, a.Width, true)
+                                .SequenceEqual(Lines(text, style, b.Width, true)),
                             $"{text}: width {b.Width} is inside [{a.From}, {a.Below}) found at {a.Width}");
                     }
                 }
@@ -439,7 +462,7 @@ public sealed class LongWordBreakTests
         {
             for (var width = 0.5; width < 130; width += 0.5)
             {
-                var (lines, _) = ParagraphRenderer.WordWrap([new TextRun(text, Courier())], width, out _);
+                var (lines, _) = Wrap([new TextRun(text, Courier())], width, out _);
 
                 Assert.True(lines.Count <= text.Length, $"{text} at {width}: {lines.Count} lines");
                 Assert.All(lines, l => Assert.NotEmpty(string.Concat(l.Select(f => f.Text))));
@@ -478,7 +501,7 @@ public sealed class LongWordBreakTests
     [Fact]
     public void PdftotextReturnsTheCharactersAsWrittenAcrossTheCutInAnEmbeddedFont()
     {
-        using var doc = new Document { PageSize = new PdfRectangle(0, 0, 200, 300), Margins = new EdgeInsets(20) };
+        using var doc = new Document { BreakLongWordsAtPlaces = true, PageSize = new PdfRectangle(0, 0, 200, 300), Margins = new EdgeInsets(20) };
         var style = new TextStyle { FontRef = doc.UseTrueTypeFont(FontReportSupport.DejaVuBytes), FontSize = 11 };
         const string url = "https://example.org/aaa/bbbb/cc/dddddddd/eeeeeeeeee/ffffffffff";
         doc.Add(new Paragraph(url, style));
@@ -503,6 +526,7 @@ public sealed class LongWordBreakTests
     public void PdfA2u_wrappedAddressesAndPaths_passVeraPdf()
     {
         using var doc = FontReportSupport.NewDocument(PdfConformance.PdfA2u);
+        doc.BreakLongWordsAtPlaces = true;
         var font = doc.UseTrueTypeFont(FontReportSupport.DejaVuBytes);
         var body = new TextStyle { FontRef = font, FontSize = 11 };
         var link = new TextStyle { FontRef = font, FontSize = 11, LinkUri = "https://example.org/a" };

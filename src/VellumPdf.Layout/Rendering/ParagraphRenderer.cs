@@ -159,25 +159,7 @@ public sealed partial class ParagraphRenderer : IRenderer, IPageBreakSource, IKe
         if (area.Width <= 0)
             return LayoutResult.Nothing();
 
-        // The wrap the layout reads is the current one, or the twin's when the document did not
-        // address this renderer or chose the twin (ParagraphRenderer.Twin.cs).
-        var twinWrap = WantsTwinWrap(context);
-        if (_lines is null)
-        {
-            // A paragraph cuts after a place only when the document, or a built-in parent that it
-            // addressed, lays it out. Under any other context, and when a caller built it with a
-            // start line, it wraps as main does, at the glyph, and the limit decision is not asked.
-            _asMain = _startLine != 0;
-            _cutsAtPlaces = !twinWrap && !_asMain
-                && (context.CutAtPlaces || context.Session is { } placeSession && ReferenceEquals(placeSession.Called, this));
-        }
-
-        Activate(area.Width, twinWrap);
-        if (!twinWrap
-            && context.Session is { Probing: false, IsView: false, Mode: ContinuationMode.Undecided } session
-            && ReferenceEquals(session.Called, this)
-            && TwinBound() is { } bound)
-            session.Report(this, bound);
+        EnsureWrapped(area.Width);
 
         // The line height is a property of the wrap, so it is taken once per wrap: every later
         // Layout on this renderer, and every piece a split hands on, reads the same _lines.
@@ -234,11 +216,6 @@ public sealed partial class ParagraphRenderer : IRenderer, IPageBreakSource, IKe
             _lineHeightTaken = true,
             _nullStyleRuns = _nullStyleRuns,
             _tabStopsBeyond = _tabStopsBeyond,
-            _activeIsTwin = _activeIsTwin,
-            _twinApplies = _twinApplies,
-            _asMain = _asMain,
-            _cutsAtPlaces = _cutsAtPlaces,
-            _joinedAcrossRuns = _joinedAcrossRuns,
             StructType = StructType,
             ParentStructElem = ParentStructElem,
             ElementLanguage = ElementLanguage,
@@ -254,11 +231,6 @@ public sealed partial class ParagraphRenderer : IRenderer, IPageBreakSource, IKe
             _occupied = _occupied,
             _nullStyleRuns = _nullStyleRuns,
             _tabStopsBeyond = _tabStopsBeyond,
-            _activeIsTwin = _activeIsTwin,
-            _twinApplies = _twinApplies,
-            _asMain = _asMain,
-            _cutsAtPlaces = _cutsAtPlaces,
-            _joinedAcrossRuns = _joinedAcrossRuns,
             MinLinesRelaxed = relaxed,
             StructType = StructType,
             ParentStructElem = ParentStructElem,
@@ -290,21 +262,12 @@ public sealed partial class ParagraphRenderer : IRenderer, IPageBreakSource, IKe
     {
         if (_lines is not null && _lineEnds is not null)
         {
-            if (_activeIsTwin || _reads is null || _reads.IsCurrent()) return;
+            if (_reads is null || _reads.IsCurrent()) return;
 
             // A label this wrap read has changed, so the wrap, the line height taken from it and
             // the placement it made are all of the earlier text.
             _lineHeightTaken = false;
             ClearPlacement();
-        }
-
-        if (_activeIsTwin)
-        {
-            (_lines, _lineEnds) = WordWrapAsBefore(_para.Runs, width);
-            _nullStyleRuns = 0;
-            _tabStopsBeyond = 0;
-            WrapCalls++;
-            return;
         }
 
         // The document checks this before any layout for its own paragraphs; a renderer of
@@ -313,9 +276,7 @@ public sealed partial class ParagraphRenderer : IRenderer, IPageBreakSource, IKe
         var stops = StopsWithin(_para, width, out _tabStopsBeyond);
         _reads = null;
         var runs = PageReferences.Effective(_para.Runs, ref _reads);
-        using var glyphCuts = LongWordBreaks.CutAtGlyphs(!_cutsAtPlaces);
-        (_lines, _lineEnds) = WordWrapJoined(runs, width, out var nullStyleRuns, stops, out var joined);
-        _joinedAcrossRuns = joined;
+        (_lines, _lineEnds) = WordWrap(runs, width, out var nullStyleRuns, stops);
         _nullStyleRuns = nullStyleRuns;
         WrapCalls++;
     }
@@ -331,13 +292,7 @@ public sealed partial class ParagraphRenderer : IRenderer, IPageBreakSource, IKe
         var width = boxWidth - _para.Margins.Left - _para.Margins.Right;
         if (width <= 0) return 0;
         EnsureWrapped(width);
-
-        // A list bounds its units with this, and the bound has to hold for the twin's wrap too. Where
-        // the twin can take more lines, a text is at most as many lines as it has characters, in either.
-        var count = _lines.Count;
-        if (TwinWrapApplies() && WrapsCanDiffer())
-            count = (int)Math.Min(int.MaxValue, Math.Max(count, TextLength()));
-        return count;
+        return _lines.Count;
     }
 
     // Line height = max EffectiveLeading across every fragment in every line. _lineHeight is
@@ -960,10 +915,9 @@ public sealed partial class ParagraphRenderer : IRenderer, IPageBreakSource, IKe
     // white space alone yields no word token, so the style of a word token is one that draws text.
     // A tab token, made only when there are tab stops, carries its run's style and draws no text.
     private static List<(string Text, TextStyle? Style, TokenKind Kind)> Tokenise(
-        IReadOnlyList<TextRun> runs, bool tabbed, out int nullStyleRuns, out bool joinedAcrossRuns)
+        IReadOnlyList<TextRun> runs, bool tabbed, out int nullStyleRuns)
     {
         nullStyleRuns = 0;
-        joinedAcrossRuns = false;
         // Flatten all runs into a sequence of word pieces and line breaks. Pieces of one word that
         // share a style instance are joined here, before anything is measured, so that two runs
         // sharing an instance measure and draw as the single run holding their text would. A piece
@@ -1018,9 +972,6 @@ public sealed partial class ParagraphRenderer : IRenderer, IPageBreakSource, IKe
                         if (run.Style is null)
                             throw new ArgumentNullException("Style", "A paragraph run with text has a null style.");
 
-                        // A word still open here continues from an earlier run, whichever branch
-                        // takes the piece: 2.3.3 read each run's words on their own.
-                        if (openWord) joinedAcrossRuns = true;
                         if (openWord && ReferenceEquals(tokens[^1].Style, run.Style))
                             tokens[^1] = (tokens[^1].Text + segment, run.Style, tokens[^1].Kind);
                         else
@@ -1060,7 +1011,7 @@ public sealed partial class ParagraphRenderer : IRenderer, IPageBreakSource, IKe
             if (run.IsReference && run.Style is { } style && refused(style)) return true;
         }
 
-        foreach (var token in Tokenise(runs, tabbed: false, out _, out _))
+        foreach (var token in Tokenise(runs, tabbed: false, out _))
         {
             if (token.Kind is TokenKind.WordStart or TokenKind.WordContinue && refused(token.Style!)) return true;
         }
@@ -1093,20 +1044,13 @@ public sealed partial class ParagraphRenderer : IRenderer, IPageBreakSource, IKe
     /// </returns>
     internal static (List<LineFragment[]> Lines, List<LineEnd> Ends) WordWrap(
         IReadOnlyList<TextRun> runs, double maxWidth, out int nullStyleRuns,
-        IReadOnlyList<TabStop>? stops = null) =>
-        WordWrapJoined(runs, maxWidth, out nullStyleRuns, stops, out _);
-
-    // The wrap, and whether the tokeniser joined a word across a run boundary, which 2.3.3 never
-    // did.
-    internal static (List<LineFragment[]> Lines, List<LineEnd> Ends) WordWrapJoined(
-        IReadOnlyList<TextRun> runs, double maxWidth, out int nullStyleRuns,
-        IReadOnlyList<TabStop>? stops, out bool joinedAcrossRuns)
+        IReadOnlyList<TabStop>? stops = null)
     {
         var tabbed = stops is not null;
         var lines = new List<LineFragment[]>();
         var ends = new List<LineEnd>();
 
-        var tokens = Tokenise(runs, tabbed, out nullStyleRuns, out joinedAcrossRuns);
+        var tokens = Tokenise(runs, tabbed, out nullStyleRuns);
 
         if (tokens.Count == 0)
         {
@@ -1263,7 +1207,77 @@ public sealed partial class ParagraphRenderer : IRenderer, IPageBreakSource, IKe
     }
 
     /// <summary>
-    /// Cuts a single word wider than maxWidth. The word is the pieces <paramref name="first"/> up
+    /// Hard-breaks a single word wider than maxWidth at character granularity, or after a place
+    /// when the document set <see cref="VellumPdf.Layout.Document.BreakLongWordsAtPlaces"/>
+    /// (<see cref="HardBreakWordAtPlaces"/>). The word is the
+    /// pieces <paramref name="first"/> up to <paramref name="end"/> of <paramref name="tokens"/>;
+    /// each rune is measured in its piece's style and a line holds one fragment for each style
+    /// change. Every line but the last is recorded as ending inside the word. Returns the index
+    /// of the last line, whose end the caller settles.
+    /// </summary>
+    private static int HardBreakWord(
+        List<(string Text, TextStyle? Style, TokenKind Kind)> tokens,
+        int first,
+        int end,
+        double maxWidth,
+        List<LineFragment[]> lines,
+        List<LineEnd> ends)
+    {
+        if (LongWordBreaks.Enabled) return HardBreakWordAtPlaces(tokens, first, end, maxWidth, lines, ends);
+
+        var lineFragments = new List<LineFragment>();
+        var fragment = new System.Text.StringBuilder();
+        var fragmentW = 0.0;
+        var lineW = 0.0;
+        TextStyle? fragmentStyle = null;
+
+        void CloseFragment()
+        {
+            if (fragment.Length == 0)
+                return;
+            lineFragments.Add(new LineFragment(fragment.ToString(), fragmentStyle!, fragmentW));
+            fragment.Clear();
+            fragmentW = 0.0;
+        }
+
+        for (var k = first; k < end; k++)
+        {
+            var style = tokens[k].Style!;
+
+            // A piece in another style starts a fragment of its own.
+            CloseFragment();
+            fragmentStyle = style;
+
+            foreach (var rune in tokens[k].Text.EnumerateRunes())
+            {
+                var ch = rune.ToString();
+                var charW = style.FontRef.MeasureString(ch, style.FontSize);
+                if ((fragment.Length > 0 || lineFragments.Count > 0) && lineW + charW > maxWidth)
+                {
+                    CloseFragment();
+                    lines.Add([.. lineFragments]);
+                    ends.Add(LineEnd.Forced);
+                    lineFragments.Clear();
+                    lineW = 0.0;
+                }
+                fragment.Append(ch);
+                fragmentW += charW;
+                lineW += charW;
+            }
+        }
+
+        CloseFragment();
+        if (lineFragments.Count > 0)
+        {
+            lines.Add([.. lineFragments]);
+            ends.Add(LineEnd.Last);
+        }
+        return lines.Count - 1;
+    }
+
+    /// <summary>
+    /// Cuts a single word wider than maxWidth, for a document that set
+    /// <see cref="VellumPdf.Layout.Document.BreakLongWordsAtPlaces"/>. The word is the pieces <paramref name="first"/> up
     /// to <paramref name="end"/> of <paramref name="tokens"/>; each character is measured in its
     /// piece's style and a line holds one fragment for each style change. A line ends after the
     /// last solidus, reverse solidus or hyphen-minus that leaves it no wider than the line
@@ -1271,7 +1285,7 @@ public sealed partial class ParagraphRenderer : IRenderer, IPageBreakSource, IKe
     /// none; no glyph is added at the cut. Every line but the last is recorded as ending inside
     /// the word. Returns the index of the last line, whose end the caller settles.
     /// </summary>
-    private static int HardBreakWord(
+    private static int HardBreakWordAtPlaces(
         List<(string Text, TextStyle? Style, TokenKind Kind)> tokens,
         int first,
         int end,

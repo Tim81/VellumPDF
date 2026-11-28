@@ -220,3 +220,5 @@ static VellumPdf.Layout.Elements.LayoutImage.FromFile(string! path, VellumPdf.Im
 static VellumPdf.Layout.Elements.LayoutImage.FromStream(System.IO.Stream! stream) -> VellumPdf.Layout.Elements.LayoutImage!
 static VellumPdf.Layout.Elements.LayoutImage.FromStream(System.IO.Stream! stream, VellumPdf.Images.ImageLoadOptions! options) -> VellumPdf.Layout.Elements.LayoutImage!
 static VellumPdf.Layout.Elements.LayoutImage.FromStream(System.IO.Stream! stream, VellumPdf.Images.GifLoadOptions! options) -> VellumPdf.Layout.Elements.LayoutImage!
+VellumPdf.Layout.Document.BreakLongWordsAtPlaces.get -> bool
+VellumPdf.Layout.Document.BreakLongWordsAtPlaces.set -> void

@@ -82,15 +82,6 @@ public sealed class LayoutContext
     /// </summary>
     internal ContinuationSession? Session { get; init; }
 
-    // Removed in 3.0 (#688). True on the context a built-in renderer that lays paragraphs out by
-    // itself, a note block, gives them: the cut after a solidus or hyphen applies to them although no
-    // document session addresses them. A note block is new API, so it has no 2.3.3 behaviour to keep.
-    internal bool CutAtPlaces { get; init; }
-
-    // Removed in 3.0 (#688). True on the context a list laid out for the continuation limit gives
-    // its entries, so that a paragraph in one wraps as 2.3.3 did and the list's verdict is 2.3.3's.
-    internal bool WrapAsBefore { get; init; }
-
     // 2.x compatibility device, removed in 3.0 (#688): 3.0 lays a built-in renderer out one way
     // under every context, so there is no twin to select.
     /// <summary>
@@ -160,28 +151,6 @@ public sealed class LayoutContext
     internal static LayoutContext Addressed(LayoutBox area, IRenderer child, ContinuationMode mode) =>
         new(area) { Session = mode == ContinuationMode.Twin ? null : ContinuationSession.ViewFor(child, mode, null) };
 
-    // Removed in 3.0 (#688). Whether the document called this renderer as the twin because of the
-    // continuation limit: the one it chose, which TwinChosen records, or one it is probing. A
-    // renderer the document placed as its twin because the first piece reported nothing is not one;
-    // that is no decision of the limit's.
-    internal bool IsLimitTwin(IRenderer renderer) =>
-        Session is { Mode: ContinuationMode.Twin } session
-        && ReferenceEquals(session.Called, renderer)
-        && (session.TwinChosen || session.Probing);
-
-    // Removed in 3.0 (#688). The same context with WrapAsBefore set or cleared.
-    internal LayoutContext WithWrapAsBefore(bool on) =>
-        on == WrapAsBefore
-            ? this
-            : new(Area, ContentTop)
-            {
-                FreshPageArea = FreshPageArea,
-                AtPageTop = AtPageTop,
-                HonourLineCounts = HonourLineCounts,
-                Session = Session,
-                WrapAsBefore = on,
-            };
-
     /// <summary>A minimum Y position, carried for callers that set one.</summary>
     /// <remarks>
     /// Nothing in this package acts on it, and the document passes <b>0</b> on every call. Use
@@ -215,6 +184,5 @@ public sealed class LayoutContext
     /// (#679), and a <see cref="VellumPdf.Layout.Rendering.ListRenderer"/> narrows no entry's
     /// gutter and moves no entry to the next page (#476, #685); see <see cref="IRenderer.Layout"/>.
     /// </remarks>
-    public LayoutContext WithArea(LayoutBox area) =>
-        new(area, ContentTop) { FreshPageArea = FreshPageArea, WrapAsBefore = WrapAsBefore };
+    public LayoutContext WithArea(LayoutBox area) => new(area, ContentTop) { FreshPageArea = FreshPageArea };
 }

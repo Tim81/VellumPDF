@@ -517,6 +517,41 @@ public sealed class Document : IDisposable
     public bool MirrorMargins { get; set; }
 
     /// <summary>
+    /// When true, a word wider than its line is cut after the last solidus (<c>/</c>), reverse
+    /// solidus (<c>\</c>) or hyphen-minus (<c>-</c>) that leaves the line no wider than its width,
+    /// so a web address or a path ends a line at a segment. Off by default, which cuts such a word
+    /// at the character that does not fit, as every version before 2.4 did.
+    /// </summary>
+    /// <remarks>
+    /// <b>Setting this can make a save fail that succeeded without it.</b> A cut after a place ends
+    /// a line earlier than a cut at the character, so a text takes the same lines or more, and the
+    /// pages after it can move. A document that turns it on can therefore be refused by the same
+    /// checks as one with more text: <see cref="Save(System.IO.Stream)"/> throws
+    /// <see cref="InvalidOperationException"/> when a single element needs more than 50,000 page
+    /// continuations ("A single element needed more than 50000 page continuations, ..."), when a
+    /// table's repeated header rows, or a group of rows joined by <see cref="Cell.RowSpan"/>, no
+    /// longer fit a page, and when any other element becomes too tall for a page ("An element is too
+    /// tall to fit on a single page and cannot be rendered. ..."). Each throw comes from the save,
+    /// not from this setter.
+    /// <para>The cut applies to every wrap the document performs: a paragraph, a heading, a list
+    /// item, the paragraphs of a <see cref="NoteBlock"/>, and a table cell given as a string or as
+    /// runs, including a built-in renderer that a renderer of yours lays out while the document is
+    /// laid out. A renderer you lay out yourself, outside a save, reads nothing and cuts at the
+    /// character. No hyphen or other glyph is added at the cut, so extracted text has the
+    /// extractor's line separator between the pieces, and a link on the word gets one rectangle per
+    /// piece. A word that fits its line is never cut, and a word with no such place that fits is cut
+    /// at the character. <c>?</c>, <c>&amp;</c>, <c>=</c>, <c>.</c>, <c>_</c> and <c>#</c> are not
+    /// places. A <c>-</c> before a digit, and a solidus before a digit that follows a digit, are
+    /// used only when no other place fits (UAX #14, LB25).</para>
+    /// <para>The value is read when a save lays the document out, as for
+    /// <see cref="MirrorMargins"/>. A renderer keeps the wrap it first made, so a renderer of yours
+    /// that two documents with different values lay out keeps the first one's.</para>
+    /// <para><b>Do not rely on the default.</b> A later major version cuts after a place by default
+    /// and removes this setting, or keeps it only to turn the cut off (#750).</para>
+    /// </remarks>
+    public bool BreakLongWordsAtPlaces { get; set; }
+
+    /// <summary>
     /// Optional header band drawn at the top of every page.
     /// Set via <see cref="SetHeader"/> for a fluent API.
     /// Supports {page} and {pages} tokens, and {chapter} when
@@ -1585,6 +1620,7 @@ public sealed class Document : IDisposable
             Header = Header,
             Footer = Footer,
             MirrorMargins = MirrorMargins,
+            BreakLongWordsAtPlaces = BreakLongWordsAtPlaces,
             DocumentPageLabel = PageLabel,
         };
         foreach (var r in _content) renderer.Add(r);

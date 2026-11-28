@@ -257,7 +257,7 @@ public sealed partial class ParagraphRenderer
         }
 
         // A word at the start of a line. A word wider than the line is cut as the plain wrap cuts
-        // it, at a place after a solidus or hyphen where one fits and at a character otherwise.
+        // it: at a character, or after a place when the document asked for that.
         void StartLine(int first, int end, double wordW)
         {
             if (wordW > maxWidth)

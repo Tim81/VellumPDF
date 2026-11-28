@@ -93,11 +93,6 @@ internal sealed class ContinuationSession
     /// <summary>True for a layout-only placement that measures one mode.</summary>
     internal bool Probing { get; }
 
-    /// <summary>
-    /// True for the view a built-in parent hands a child, whose reports are never read.
-    /// </summary>
-    internal bool IsView => _view;
-
     /// <summary>Set by a probe whose loop reached the continuation limit.</summary>
     internal bool LimitHit { get; set; }
 

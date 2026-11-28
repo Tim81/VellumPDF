@@ -11,7 +11,7 @@ namespace VellumPdf.Layout.Rendering;
 /// <see cref="ParagraphRenderer"/> and additionally registers a document
 /// outline entry at the exact position where the heading lands.
 /// </summary>
-internal sealed class HeadingRenderer : IRenderer, IPlacementSource, IPageBreakSource, IKeepSource, ISpaceAfterSource, IContinuationTwin
+internal sealed class HeadingRenderer : IRenderer, IPlacementSource, IPageBreakSource, IKeepSource, ISpaceAfterSource
 {
     private readonly Heading _heading;
     private readonly ParagraphRenderer _inner;
@@ -64,32 +64,9 @@ internal sealed class HeadingRenderer : IRenderer, IPlacementSource, IPageBreakS
         _occupied = occupied;
     }
 
-    // The heading laid out the way 2.3.3 laid it out, from the same start: its paragraph is the
-    // paragraph's twin. Removed in 3.0 (#688).
-    private HeadingRenderer? _twin;
-
-    IRenderer IContinuationTwin.Twin() =>
-        _twin ??= new HeadingRenderer(_heading, (ParagraphRenderer)((IContinuationTwin)_inner).Twin(), default);
-
     public LayoutResult Layout(LayoutContext context)
     {
-        // The paragraph is this heading's child: it lays out in the heading's mode, and the
-        // heading reports for it, so a paragraph's own report is never read. The twin the document
-        // chose or is probing hands its paragraph a context that says the wrap is 2.3.3's; under any
-        // other context the paragraph wraps as the document wraps what it lays out. Removed in 3.0
-        // (#688).
-        var mode = context.ModeFor(this);
-        if (mode == ContinuationMode.Undecided && context.Session is { Probing: false, IsView: false } session
-            && ReferenceEquals(session.Called, this))
-        {
-            if (context.Area.Deflate(_heading.Margins).Width > 0 && _inner.TwinBound() is { } bound)
-                session.Report(this, bound);
-        }
-
-        var innerContext = mode == ContinuationMode.Twin
-            ? context.WithWrapAsBefore(context.IsLimitTwin(this))
-            : context.Address(this, _inner, context.Area, context.AtPageTop, context.HonourLineCounts);
-        var result = _inner.Layout(innerContext);
+        var result = _inner.Layout(context);
         if (result.OccupiedArea.HasValue)
             _occupied = result.OccupiedArea.Value;
 

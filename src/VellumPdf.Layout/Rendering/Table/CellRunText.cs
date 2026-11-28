@@ -299,12 +299,52 @@ internal sealed class CellRunText
     }
 
     /// <summary>
-    /// Breaks a word wider than <paramref name="maxWidth"/>: after the last solidus, reverse
-    /// solidus or hyphen-minus that leaves the line no wider than the width
-    /// (<see cref="LongWordBreaks"/>), and at the character that does not fit when the word has
-    /// none.
+    /// Breaks a word wider than <paramref name="maxWidth"/> at its characters, or after a place when the
+    /// document set <see cref="VellumPdf.Layout.Document.BreakLongWordsAtPlaces"/>.
     /// </summary>
     private void HardBreakWord(
+        string d, int ws, int we, double maxWidth, List<(int, int)> lines, ref double from, ref double below)
+    {
+        if (LongWordBreaks.Enabled)
+        {
+            HardBreakWordAtPlaces(d, ws, we, maxWidth, lines, ref from, ref below);
+            return;
+        }
+
+        var fragmentStart = ws;
+        var fragmentW = 0.0;
+        var at = ws;
+        foreach (var rune in d.AsSpan(ws, we - ws).EnumerateRunes())
+        {
+            var n = rune.Utf16SequenceLength;
+            var charW = MeasureRange(d, at, at + n);
+            if (at > fragmentStart)
+            {
+                var grown = fragmentW + charW;
+                if (grown > maxWidth)
+                {
+                    below = Math.Min(below, grown);
+                    lines.Add((fragmentStart, at));
+                    fragmentStart = at;
+                    fragmentW = 0.0;
+                }
+                else
+                {
+                    from = Math.Max(from, grown);
+                }
+            }
+            fragmentW += charW;
+            at += n;
+        }
+        if (at > fragmentStart) lines.Add((fragmentStart, at));
+    }
+
+    /// <summary>
+    /// Breaks a word wider than <paramref name="maxWidth"/> after the last solidus, reverse solidus
+    /// or hyphen-minus that leaves the line no wider than the width (<see cref="LongWordBreaks"/>),
+    /// and at the character that does not fit when the word has none.
+    /// </summary>
+    private void HardBreakWordAtPlaces(
         string d, int ws, int we, double maxWidth, List<(int, int)> lines, ref double from, ref double below)
     {
         using var word = new LongWordBreaks.Word(we - ws);

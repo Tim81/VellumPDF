@@ -297,12 +297,6 @@ public sealed class TableRenderer : IRenderer, IPageBreakSource, IKeepSource, IP
         // document called, in a placement it has not decided for the twin. Under any other context
         // (a caller's renderer that forwards here, WithArea, the public constructor) the table is
         // laid out as it was before breaks were honoured, by its twin. Removed in 3.0 (#688).
-        // A word wider than its column is cut after a solidus or hyphen (#594) only in the table the
-        // document laid out itself, which its limit decision can probe. A table laid out under a
-        // context that does not address it goes to the twin below, and the twin, whether the decision
-        // chose it, is measuring it or a renderer of the caller's forwards to it, cuts at the glyph,
-        // as main does. Removed in 3.0 (#688).
-        using var cutAtGlyphs = LongWordBreaks.CutAtGlyphs(_readsUnbrokenForTheLimit);
         var mode = context.ModeFor(this);
         _laidOutBy = null;
         if (mode == ContinuationMode.Twin && !_readsUnbrokenForTheLimit)
@@ -779,15 +773,45 @@ public sealed class TableRenderer : IRenderer, IPageBreakSource, IKeepSource, IP
     }
 
     /// <summary>
-    /// The number of lines <see cref="HardBreakWord"/> adds for a word. A line is cut where the
-    /// next character no longer fits, or at the place the cut moves back to, so each such comparison
-    /// narrows the widths the count holds over, like the ones in <see cref="CountLine"/>.
+    /// The number of lines <see cref="HardBreakWord"/> adds for a word. A fragment is cut where
+    /// the next character no longer fits, so each such comparison narrows the widths the count
+    /// holds over, like the ones in <see cref="CountLine"/>.
     /// </summary>
     private static int CountHardBreakFragments(
         string word, TextStyle style, double maxWidth, ref double from, ref double below)
     {
-        using var measured = MeasureRunes(word, style);
-        return measured.Lines(maxWidth, ref from, ref below, null);
+        if (LongWordBreaks.Enabled)
+        {
+            using var measured = MeasureRunes(word, style);
+            return measured.Lines(maxWidth, ref from, ref below, null);
+        }
+
+        var fragments = 0;
+        var open = false;
+        var fragmentW = 0.0;
+        foreach (var rune in word.EnumerateRunes())
+        {
+            var charW = style.FontRef.MeasureString(RuneString(rune), style.FontSize);
+            if (open)
+            {
+                var grown = fragmentW + charW;
+                if (grown > maxWidth)
+                {
+                    below = Math.Min(below, grown);
+                    fragments++;
+                    fragmentW = 0.0;
+                    open = false;
+                }
+                else
+                {
+                    from = Math.Max(from, grown);
+                }
+            }
+            open = true;
+            fragmentW += charW;
+        }
+        if (open) fragments++;
+        return fragments;
     }
 
     // The text of a rune, taken from a table for the characters below U+0100 so that measuring a
@@ -1694,9 +1718,6 @@ public sealed class TableRenderer : IRenderer, IPageBreakSource, IKeepSource, IP
             return;
         }
 
-        // The lines are wrapped again here, in the mode the layout used. Removed in 3.0 (#688).
-        using var cutAtGlyphs = LongWordBreaks.CutAtGlyphs(_readsUnbrokenForTheLimit);
-
         // Layout already deflated context.Area by _table.Margins and stored the result in
         // _occupied; deflating again here took the table's own margin out of the box twice. The
         // vertical half was the one that lost content rather than merely shifting it: _occupied's
@@ -2387,11 +2408,43 @@ public sealed class TableRenderer : IRenderer, IPageBreakSource, IKeepSource, IP
     }
 
     /// <summary>
-    /// Cuts a word wider than <paramref name="maxWidth"/>: after the last solidus, reverse solidus
-    /// or hyphen-minus that leaves the line no wider than the width (<see cref="LongWordBreaks"/>),
-    /// and at the character that does not fit when the word has none. No glyph is added at the cut.
+    /// Hard-breaks a word wider than <paramref name="maxWidth"/> at character granularity, or after
+    /// a place when the document set <see cref="VellumPdf.Layout.Document.BreakLongWordsAtPlaces"/>.
     /// </summary>
     private static void HardBreakWord(string word, TextStyle style, double maxWidth, List<string> lines)
+    {
+        if (LongWordBreaks.Enabled)
+        {
+            HardBreakWordAtPlaces(word, style, maxWidth, lines);
+            return;
+        }
+
+        var fragment = new System.Text.StringBuilder();
+        var fragmentW = 0.0;
+
+        foreach (var rune in word.EnumerateRunes())
+        {
+            var ch = rune.ToString();
+            var charW = style.FontRef.MeasureString(ch, style.FontSize);
+            if (fragment.Length > 0 && fragmentW + charW > maxWidth)
+            {
+                lines.Add(fragment.ToString());
+                fragment.Clear();
+                fragmentW = 0.0;
+            }
+            fragment.Append(ch);
+            fragmentW += charW;
+        }
+        if (fragment.Length > 0)
+            lines.Add(fragment.ToString());
+    }
+
+    /// <summary>
+    /// Cuts a word wider than <paramref name="maxWidth"/> after the last solidus, reverse solidus or
+    /// hyphen-minus that leaves the line no wider than the width (<see cref="LongWordBreaks"/>), and
+    /// at the character that does not fit when the word has none. No glyph is added at the cut.
+    /// </summary>
+    private static void HardBreakWordAtPlaces(string word, TextStyle style, double maxWidth, List<string> lines)
     {
         using var measured = MeasureRunes(word, style);
         var from = double.NegativeInfinity;

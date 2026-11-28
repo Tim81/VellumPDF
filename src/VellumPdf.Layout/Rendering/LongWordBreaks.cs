@@ -8,17 +8,17 @@ using System.Text;
 namespace VellumPdf.Layout.Rendering;
 
 /// <summary>
-/// Where a word wider than its line is cut. One decision for every wrap in the library: the
-/// paragraph, heading and list-item wrap, and the wrap of a table cell given as a string or as
-/// runs. The band of a header or footer does not wrap, so it does not call this.
+/// Where a word wider than its line is cut, when the document asks for it
+/// (<see cref="VellumPdf.Layout.Document.BreakLongWordsAtPlaces"/>). One decision for every wrap in
+/// the library: the paragraph, heading and list-item wrap, and the wrap of a table cell given as a
+/// string or as runs. The band of a header or footer does not wrap, so it does not call this.
 /// </summary>
 /// <remarks>
 /// A word wider than the line is cut after the last solidus, reverse solidus or hyphen-minus that
 /// leaves the line no wider than its width, so a web address or a path ends a line at a segment.
 /// No glyph is added at the cut. A word that fits is never cut, and a word with no such place that
-/// fits is cut at the character that does not fit, as every wider word was before. Text that the
-/// document does not lay out itself, and the 2.3.3 wrap the limit decision chooses, cut at the
-/// character always; <see cref="VellumPdf.Layout.Core.IRenderer.Layout"/> lists them.
+/// fits is cut at the character that does not fit, as every wider word was before. With the setting
+/// off, which is the default, none of this runs and every word is cut at the character.
 /// <para>
 /// The places come from UAX #14 (revision 55). Its default rules allow a break after a solidus and
 /// after a hyphen-minus (LB31) unless an earlier rule forbids it. The specification advises a
@@ -74,33 +74,33 @@ internal static class LongWordBreaks
     // tier test alike.
     private static bool IsPlaceCharacter(int value) => value is '/' or '\\' or '-';
 
-    // True while a table's twin lays out or draws: a word is then cut at the glyph, as it was
-    // before places were used. Removed in 3.0 (#688) with the twin.
+    // True while a document that has BreakLongWordsAtPlaces set lays itself out, on the thread that
+    // does it. Every wrap reads it, so a built-in renderer that a renderer of the caller's lays out
+    // inside that layout reads the document's setting, and one laid out anywhere else reads false
+    // and cuts at the glyph. Removed in 3.0 with the setting (#750).
     [ThreadStatic]
-    private static bool s_glyphOnly;
+    private static bool s_enabled;
+
+    /// <summary>Whether a word wider than its line is cut after a place on this thread now.</summary>
+    internal static bool Enabled => s_enabled;
 
     /// <summary>
-    /// Makes every cut on this thread a cut at the glyph until the returned scope is disposed, as
-    /// the table's twin lays out and draws, which keeps the verdict of the continuation limit.
+    /// Sets <see cref="Enabled"/> to <paramref name="on"/> until the returned scope is disposed,
+    /// which restores the value before it.
     /// </summary>
-    internal static GlyphOnlyScope CutAtGlyphs(bool on) => new(on);
+    internal static PlaceCutScope PlaceCuts(bool on) => new(on);
 
-    internal readonly struct GlyphOnlyScope : IDisposable
+    internal readonly struct PlaceCutScope : IDisposable
     {
         private readonly bool _previous;
-        private readonly bool _on;
 
-        internal GlyphOnlyScope(bool on)
+        internal PlaceCutScope(bool on)
         {
-            _on = on;
-            _previous = s_glyphOnly;
-            if (on) s_glyphOnly = true;
+            _previous = s_enabled;
+            s_enabled = on;
         }
 
-        public void Dispose()
-        {
-            if (_on) s_glyphOnly = _previous;
-        }
+        public void Dispose() => s_enabled = _previous;
     }
 
     /// <summary>
@@ -160,7 +160,7 @@ internal static class LongWordBreaks
         {
             if (Count == 0) return 0;
 
-            var tiers = s_glyphOnly ? default : Analyse();
+            var tiers = Analyse();
             var lines = 1;
             var start = 0;
             starts?.Add(0);

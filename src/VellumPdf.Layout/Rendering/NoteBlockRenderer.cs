@@ -212,10 +212,7 @@ internal sealed class NoteBlockRenderer : IRenderer, IPageBreakSource, IKeepSour
             }
 
             var childArea = new LayoutBox(left, area.Y + used, width, Room(area.Height, used, reserve));
-            // The paragraphs of a note block are text the document lays out itself, so they cut a
-            // long word after a solidus or hyphen. The block is new API: it has no 2.3.3 layout and no
-            // twin, and reports nothing to the limit decision.
-            var answer = renderer.Layout(new LayoutContext(childArea) { CutAtPlaces = true });
+            var answer = renderer.Layout(new LayoutContext(childArea));
 
             if (answer.Status == LayoutResult.Outcome.Full)
             {
