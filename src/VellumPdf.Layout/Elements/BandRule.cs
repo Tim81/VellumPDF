@@ -20,8 +20,8 @@ public enum BandRulePosition
 /// width.
 /// </summary>
 /// <remarks>
-/// <b>A width that is not a finite number of at least zero, and a colour channel outside 0 to 1,
-/// are refused when the rule is built.</b> The constructor throws
+/// <b>A width that is not a finite number of at least zero, a colour channel outside 0 to 1 and a
+/// position the enumeration does not name are refused when the rule is built.</b> The constructor throws
 /// <see cref="ArgumentOutOfRangeException"/>. A width of zero draws the thinnest line the device
 /// renders.
 /// <para>On a zoned band the line lies inside the band: with <see cref="BandRulePosition.Above"/> it

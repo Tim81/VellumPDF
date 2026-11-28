@@ -24,7 +24,7 @@ namespace VellumPdf.Layout.Elements;
 /// <para><b>Do not pass</b> a run in <see cref="VellumPdf.Fonts.Standard14.Symbol"/> or
 /// <see cref="VellumPdf.Fonts.Standard14.ZapfDingbats"/>. Every glyph of those faces measures zero, so
 /// the band can neither cut such a run nor keep the next run of the zone off it: the runs are drawn at
-/// one x. The zone itself stays at its place in the content box. 3.0 measures them.</para>
+/// one x. The zone itself stays at its place in the content box. The cause is #470.</para>
 /// <para>A zone holds text runs or one image, never both. A band that wants a logo beside a page
 /// number puts them in two zones.</para>
 /// <para>Each run is resolved as a <see cref="RunningBand.Template"/> is: <c>{page}</c> and
@@ -111,8 +111,8 @@ public sealed class BandZone
 
     /// <summary>Creates an image zone.</summary>
     /// <param name="image">
-    /// The image. It is drawn as tall as the band and as wide as its proportions give, as
-    /// decoration.
+    /// The image. It is drawn as tall as the band less the width and clearance of a
+    /// <see cref="RunningBand.Rule"/> and as wide as its proportions give, as decoration.
     /// </param>
     /// <returns>A zone that draws the image.</returns>
     /// <remarks>

@@ -502,14 +502,6 @@ public sealed class TrueTypeFontEmbedder
         .Set(new Core.PdfName("Ordering"), new Core.PdfLiteralString(Encoding.ASCII.GetBytes("Identity")))
         .Set(new Core.PdfName("Supplement"), new Core.PdfInteger(0));
 
-    // The head table's own box (OpenType head: xMin, yMin, xMax, yMax in font units, which that
-    // chapter says contains every glyph), scaled to 1000 units per em and rounded outward. ISO
-    // 32000-2 Table 120 asks for the smallest rectangle enclosing the glyphs, so each edge moves
-    // away from the glyphs, never into them: rounding to nearest would pull DejaVu's xMax (1793.46)
-    // inside the outline. The scaling is v * 1000.0 / unitsPerEm, not v * (1000.0 / unitsPerEm), so
-    // a value that scales to a whole number does so exactly. Nothing here casts a double to an
-    // integer: a unitsPerEm of 0 gives NaN or infinity, which PdfReal refuses, and
-    // BuildFontDescriptor has already refused that font at /Ascent, before this runs.
     /// <summary>
     /// How far the font's own bounding box reaches above and below the baseline, as fractions of the
     /// em: <c>head.yMax</c> and the negated <c>head.yMin</c>. A font whose <c>head.unitsPerEm</c> is 0
@@ -520,6 +512,14 @@ public sealed class TrueTypeFontEmbedder
             ? (1, 0.25)
             : ((double)_head.YMax / _head.UnitsPerEm, -(double)_head.YMin / _head.UnitsPerEm);
 
+    // The head table's own box (OpenType head: xMin, yMin, xMax, yMax in font units, which that
+    // chapter says contains every glyph), scaled to 1000 units per em and rounded outward. ISO
+    // 32000-2 Table 120 asks for the smallest rectangle enclosing the glyphs, so each edge moves
+    // away from the glyphs, never into them: rounding to nearest would pull DejaVu's xMax (1793.46)
+    // inside the outline. The scaling is v * 1000.0 / unitsPerEm, not v * (1000.0 / unitsPerEm), so
+    // a value that scales to a whole number does so exactly. Nothing here casts a double to an
+    // integer: a unitsPerEm of 0 gives NaN or infinity, which PdfReal refuses, and
+    // BuildFontDescriptor has already refused that font at /Ascent, before this runs.
     private Core.PdfArray BuildFontBBox()
     {
         double Edge(double v) => v * 1000.0 / _head.UnitsPerEm;

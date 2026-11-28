@@ -16,8 +16,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   band's template gets, so a band that holds `{pages}` makes the passes a string band makes. The
   zones stand at the content box's left edge, centre and right edge, and all the text sits on one
   baseline: the largest ascent and descent of the band's fonts, taken from their bounding boxes,
-  make a text box that is centred in the band. A logo is as tall as the band, is drawn as an
-  artifact in a tagged document, and has no alternative text. `Rule` takes a `BandRule` along the
+  make a text box that is centred in what the rule leaves of the band. A logo is as tall as the
+  band less the rule, is drawn as an artifact in a tagged document, and has no alternative text. `Rule` takes a `BandRule` along the
   band's top or bottom edge, inside the band, across the content width, on every page that has the
   band (a blank page a recto break inserts has neither band nor rule); it also works on a string
   band. The rule keeps 1 point clear of the text box and the logos, the logo is shortened by the
@@ -26,9 +26,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   even pages, counted by physical page, so the first page of a decimal body that follows three
   roman pages swaps. Zones that would overlap are cut and not overprinted: a logo is kept whole,
   then the right zone, the left and the centre take what is left with `ZoneGap` points (6 by
-  default) to their neighbours. A zone is cut as one text at the last literal space that fits, in any run, and
-  a page number, page count or chapter title is drawn whole or not at all, so a zone that cannot
-  show a number leaves it out. The cut is reported through `Document.BandTruncations` and the
+  default) to their neighbours. A zone is cut as one text at the last literal space that fits, in
+  any run (not a space at its start, and only the first of a run of spaces), and a page number,
+  page count or chapter title is drawn whole or not at all, so a zone that cannot show a number
+  leaves it out. The cut is reported through `Document.BandTruncations` and the
   `BandTruncated` diagnostic as a string band's cut is. The save refuses logos that cannot stand
   side by side or would be written with no area, and a height below the text box plus the rule,
   with an `InvalidOperationException` naming the band. What the zone alone decides is refused when

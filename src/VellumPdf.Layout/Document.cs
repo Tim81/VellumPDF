@@ -548,7 +548,9 @@ public sealed class Document : IDisposable
     /// Raised from <see cref="Save(System.IO.Stream)"/> and the other save overloads, before any
     /// layout, when a zoned band's logos do not fit side by side, a logo is wider than the content box
     /// or would be written with no area, or its height is below its text box plus its rule's width and
-    /// clearance; the message names the header or the footer. See <see cref="RunningBand"/>.
+    /// clearance; the message names the header or the footer. It is raised where the band is drawn when
+    /// the runs of a zoned band together resolve to more than <see cref="int.MaxValue"/> characters on
+    /// a page. See <see cref="RunningBand"/>.
     /// It is raised too when the band's height, or its style's size or leading, is refused; see
     /// <see cref="RunningBand.Height"/>, <see cref="TextStyle.FontSize"/> and
     /// <see cref="TextStyle.Leading"/>. It is also raised when a template that repeats

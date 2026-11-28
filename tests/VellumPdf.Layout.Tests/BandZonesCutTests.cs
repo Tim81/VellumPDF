@@ -409,4 +409,150 @@ public sealed class BandZonesCutTests
         above.Header = new RunningBand(logo, BandZone.Empty, BandZone.Empty) { Height = 20, Rule = new BandRule(BandRulePosition.Above, 2) };
         Assert.Contains("17 0 0 17 20 260 cm", PageContents(Save(above))[0], StringComparison.Ordinal);
     }
+
+    // ── Review r735-2 ────────────────────────────────────────────────────────
+
+    [Fact]
+    public void ZonesThatTogetherResolveToMoreThanIntMaxValue_areRefused_namingTheBand()
+    {
+        // Each run is 800,000,000 characters, under the limit a run is checked against, and three of
+        // them add up to 2,400,000,000.
+        using var doc = new Document { PageSize = new PdfRectangle(0, 0, 400, 400), Margins = new EdgeInsets(20) };
+        doc.Add(new Heading("Short", Courier10) { Level = 0, BookmarkTitle = new string('x', 20_000) });
+        var run = string.Concat(Enumerable.Repeat("{chapter}", 40_000));
+        doc.Header = new RunningBand(Runs(run), Runs(run), Runs(run)) { ChapterToken = true };
+
+        var ex = Assert.Throws<InvalidOperationException>(() => Save(doc));
+        Assert.Contains("header band", ex.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void TwoZonesOfTheSameSize_stillSave_andReportTheirCharacters()
+    {
+        using var doc = new Document { PageSize = new PdfRectangle(0, 0, 400, 400), Margins = new EdgeInsets(20) };
+        doc.Add(new Heading("Short", Courier10) { Level = 0, BookmarkTitle = new string('x', 20_000) });
+        var run = string.Concat(Enumerable.Repeat("{chapter}", 40_000));
+        doc.Header = new RunningBand(Runs(run), Runs(run), BandZone.Empty) { ChapterToken = true };
+
+        Save(doc);
+
+        Assert.Equal(1_600_000_000, Assert.Single(doc.BandTruncations).ResolvedCharacters);
+    }
+
+    [Theory]
+    [InlineData(Standard14.Helvetica, 11.5)]
+    [InlineData(Standard14.TimesRoman, 11)]
+    [InlineData(Standard14.Courier, 10.5)]
+    public void AHeightAboveTheFontSize_butBelowTheTextBox_isRefused(Standard14 face, double height) =>
+        Assert.Throws<ArgumentOutOfRangeException>(() =>
+            new RunningBand(new BandZone("x", new TextStyle { Font = face, FontSize = 10 }), BandZone.Empty, BandZone.Empty) { Height = height });
+
+    [Fact]
+    public void ADefaultHeight_isTheSameOnEveryRead_whateverTheNumberOfRuns()
+    {
+        var zone = new BandZone(Enumerable.Range(0, 2000).Select(i => new TextRun("ab ", Courier10)));
+        var band = new RunningBand(zone, BandZone.Empty, BandZone.Empty) { Rule = new BandRule(BandRulePosition.Below, 1) };
+
+        Assert.Equal(16, band.EffectiveHeight);
+        Assert.Equal(16, band.EffectiveHeight);
+    }
+
+    // The two exclusions of the cut, and the characters the report counts.
+    [Fact]
+    public void ASpaceAtTheStartOfAZone_isNotACutPoint()
+    {
+        using var doc = Pages(NewPage(), 1);
+        doc.Header = new RunningBand(Runs("   " + new string('w', 50)), BandZone.Empty, BandZone.Empty);
+
+        // 260 pt holds 43 characters: the three spaces and 40 w. A cut at the first space would draw nothing.
+        Assert.Equal([(20.0, "   " + new string('w', 40))], Header(PageContents(Save(doc))[0]));
+        var warning = Assert.Single(doc.BandTruncations);
+        Assert.Equal((43, 53), (warning.DrawnCharacters, warning.ResolvedCharacters));
+    }
+
+    [Fact]
+    public void InARunOfSpaces_onlyTheFirstIsACutPoint()
+    {
+        using var doc = Pages(NewPage(), 1);
+        doc.Header = new RunningBand(Runs("ab  " + new string('w', 50)), BandZone.Empty, BandZone.Empty);
+
+        // A cut at the second space would draw "ab " and charge the zone for a space with no ink.
+        Assert.Equal([(20.0, "ab")], Header(PageContents(Save(doc))[0]));
+        var warning = Assert.Single(doc.BandTruncations);
+        Assert.Equal((2, 54), (warning.DrawnCharacters, warning.ResolvedCharacters));
+    }
+
+    [Fact]
+    public void ACut_neverFallsBetweenTheHalvesOfASurrogatePair()
+    {
+        // 100 pairs, 200 UTF-16 units, in a face that gives each unit 6 pt: 43 units fit, an odd number.
+        using var doc = Pages(NewPage(), 1);
+        doc.Header = new RunningBand(Runs(string.Concat(Enumerable.Repeat("\U0001D400", 100))), BandZone.Empty, BandZone.Empty);
+
+        Save(doc);
+
+        var warning = Assert.Single(doc.BandTruncations);
+        Assert.Equal(200, warning.ResolvedCharacters);
+        Assert.True(warning.DrawnCharacters is > 0 && warning.DrawnCharacters % 2 == 0, $"drew {warning.DrawnCharacters}");
+    }
+
+    [Theory]
+    [InlineData(5e-6)]
+    [InlineData(7e-6)]
+    [InlineData(1e-5)]
+    public void AFontSizeFromFiveMicroPoints_isAccepted(double size) =>
+        Assert.NotNull(new BandZone("x", new TextStyle { Font = Standard14.Courier, FontSize = size }));
+
+    // The 14 FontBBox rows of Adobe's Core 14 AFM files, in thousandths of an em, as published in the
+    // AFM files of the Apache PDFBox project's font resources (read 2026-11-27). The text box of a
+    // 10 pt run is (high - low) / 100 points, and a zoned band refuses a height below it.
+    [Theory]
+    [InlineData(Standard14.Helvetica, -225, 931)]
+    [InlineData(Standard14.HelveticaBold, -228, 962)]
+    [InlineData(Standard14.HelveticaOblique, -225, 931)]
+    [InlineData(Standard14.HelveticaBoldOblique, -228, 962)]
+    [InlineData(Standard14.TimesRoman, -218, 898)]
+    [InlineData(Standard14.TimesBold, -218, 935)]
+    [InlineData(Standard14.TimesItalic, -217, 883)]
+    [InlineData(Standard14.TimesBoldItalic, -218, 921)]
+    [InlineData(Standard14.Courier, -250, 805)]
+    [InlineData(Standard14.CourierBold, -250, 801)]
+    [InlineData(Standard14.CourierOblique, -250, 805)]
+    [InlineData(Standard14.CourierBoldOblique, -250, 801)]
+    [InlineData(Standard14.Symbol, -293, 1010)]
+    [InlineData(Standard14.ZapfDingbats, -143, 820)]
+    public void TheTextBoxOfEachStandard14Face_isItsAfmFontBBox(Standard14 face, int low, int high)
+    {
+        var zone = new BandZone("x", new TextStyle { Font = face, FontSize = 10 });
+        var box = (high - low) / 100.0;
+
+        Assert.Throws<ArgumentOutOfRangeException>(() => new RunningBand(zone, BandZone.Empty, BandZone.Empty) { Height = box - 0.001 });
+        Assert.Equal(box + 0.001, new RunningBand(zone, BandZone.Empty, BandZone.Empty) { Height = box + 0.001 }.EffectiveHeight);
+    }
+
+    [Fact]
+    public void TheTextBoxOfAnEmbeddedFont_isItsHeadBox()
+    {
+        // The head table: unitsPerEm at 18, yMin at 38 and yMax at 42 from its start.
+        var file = File.ReadAllBytes(DejaVuPath);
+        short Short(int at) => (short)((file[at] << 8) | file[at + 1]);
+        var tables = (file[4] << 8) | file[5];
+        var head = -1;
+        for (var t = 0; t < tables; t++)
+        {
+            var record = 12 + 16 * t;
+            if (System.Text.Encoding.ASCII.GetString(file, record, 4) == "head")
+                head = (file[record + 8] << 24) | (file[record + 9] << 16) | (file[record + 10] << 8) | file[record + 11];
+        }
+
+        Assert.True(head > 0);
+        var upem = (ushort)Short(head + 18);
+        var box = (Short(head + 42) - Short(head + 38)) * 10.0 / upem;
+
+        using var doc = new Document();
+        var zone = new BandZone("x", new TextStyle { FontRef = doc.LoadTrueTypeFont(DejaVuPath), FontSize = 10 });
+
+        Assert.Throws<ArgumentOutOfRangeException>(() => new RunningBand(zone, BandZone.Empty, BandZone.Empty) { Height = box - 0.001 });
+        Assert.Equal(box + 0.001, new RunningBand(zone, BandZone.Empty, BandZone.Empty) { Height = box + 0.001 }.EffectiveHeight);
+    }
 }

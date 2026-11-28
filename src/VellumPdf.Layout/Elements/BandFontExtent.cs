@@ -8,8 +8,9 @@ namespace VellumPdf.Layout.Elements;
 
 /// <summary>
 /// How far a font's own bounding box reaches above and below the baseline, which is what a zoned
-/// band keeps its rule and its logo clear of. A font's box encloses every glyph it holds, so text
-/// drawn in it stays inside the box whichever characters it shows.
+/// band keeps its rule and its logo clear of. An embedded font's <c>head</c> box encloses every glyph
+/// the font holds, so text drawn in that font stays inside it. A Standard 14 face is not embedded: its
+/// box is Adobe's, and a viewer that substitutes a font of its own can draw glyphs past it.
 /// </summary>
 internal static class BandFontExtent
 {

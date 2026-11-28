@@ -37,9 +37,12 @@ namespace VellumPdf.Layout.Elements;
 /// what a <see cref="Rule"/> leaves of the band. A rule occupies <see cref="BandRule.Width"/> points
 /// at its edge and keeps a clearance of 1 point from the text box and the logos. The band's height
 /// must be at least the box height plus the rule's width and clearance, so the rule never touches
-/// text drawn in the fonts' boxes. A logo is as tall as the band less the rule's width and clearance.
-/// Where the box is the largest the fonts' boxes make it, the glyphs of ordinary text are smaller, so
-/// the visible gap to a rule is usually larger.</para>
+/// text drawn inside the font's own bounding box: an embedded font's <c>head</c> box, or Adobe's AFM
+/// <c>FontBBox</c> for a Standard 14 face. A Standard 14 face is not embedded, so a viewer that draws
+/// it in a font of its own can draw glyphs past that box, and nothing here bounds them. Embed a font
+/// where the rule must stay clear. A logo is as tall as the band less the rule's width and
+/// clearance. The box is the largest the font's box makes it, so the glyphs of ordinary text are
+/// smaller and the visible gap to a rule is usually larger.</para>
 /// <para><b>Zones that would overlap are decided by priority and cut, not overprinted.</b> A logo is
 /// never cut. A text zone takes the room the zones before it in this order left it, with a gap of
 /// <see cref="ZoneGap"/> points to the next drawn zone: first every logo, then the right zone, then
@@ -47,7 +50,8 @@ namespace VellumPdf.Layout.Elements;
 /// sides on even pages (see <see cref="MirrorZones"/>) does not change which zone is cut. The centre
 /// zone stays centred, so it gets twice the room of the nearer neighbour.</para>
 /// <para><b>A zone is cut as one text.</b> The cut falls at the last literal space of the zone that
-/// fits, in any run, and a boundary between two runs counts only when a space stands there.
+/// fits, in any run, and a boundary between two runs counts only when a space stands there. A space at
+/// the very start of the zone is not a cut point, and in a run of spaces only the first one is.
 /// A resolved token (the page number, the page count or the chapter title) is never cut inside: it is
 /// drawn whole or not at all, and spaces inside a chapter title are not cut points. A zone with no
 /// space before the overflow is cut after the last whole token or literal character that fits, which
@@ -58,7 +62,9 @@ namespace VellumPdf.Layout.Elements;
 /// <b>The save refuses these before it draws:</b> logos that cannot stand side by side with the
 /// gap between them, a logo wider than the content box or that would be written with no area, and a
 /// height below the text box plus the rule's width and clearance. Each throws
-/// <see cref="InvalidOperationException"/> naming the band.</para>
+/// <see cref="InvalidOperationException"/> naming the band. Runs that together resolve to more than
+/// <see cref="int.MaxValue"/> characters on one page, which a template repeating <c>{chapter}</c> can
+/// reach, are refused where the band is drawn with the same exception.</para>
 /// </remarks>
 public sealed class RunningBand
 {
@@ -255,7 +261,8 @@ public sealed class RunningBand
     /// </remarks>
     /// <exception cref="ArgumentOutOfRangeException">
     /// Raised from this property on a zoned band when the value is not a finite number above zero or
-    /// is below the largest font size of its runs. A string band refuses nothing here.
+    /// is below the band's text box (the largest ascent plus the largest descent of its runs). A string
+    /// band refuses nothing here.
     /// </exception>
     /// <exception cref="ArgumentException">
     /// Raised from a save rather than from this property, when a finite height is large enough on
@@ -509,9 +516,13 @@ public sealed class RunningBand
     /// <summary>What the rule takes from the band on its side: its width and the clearance, or zero.</summary>
     internal double RuleClearance => Rule is { } rule ? rule.Width + RuleGap : 0;
 
+    // The runs are immutable, so the largest leading is read once; EffectiveHeight is read for every
+    // element placed, and a band of many runs would otherwise be scanned each time.
+    private double? _leadingHeight;
+
     private double ZonedDefaultHeight =>
         Math.Max(
-            AllRuns().Select(r => r.Style.EffectiveLeading).DefaultIfEmpty(TextStyle.Default.EffectiveLeading).Max() + 4,
+            _leadingHeight ??= AllRuns().Select(r => r.Style.EffectiveLeading).DefaultIfEmpty(TextStyle.Default.EffectiveLeading).Max() + 4,
             TextHeight + RuleClearance);
 
     /// <summary>The height a logo is drawn at: the band less the rule and its clearance.</summary>

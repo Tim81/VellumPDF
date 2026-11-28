@@ -46,9 +46,10 @@ public sealed partial class DocumentRenderer
             _pageSize.Width - (mirrored ? _margins.Left : _margins.Right));
     }
 
-    // A rule lies inside the band: its centre is half its width from the band's edge, so the band's
-    // reserved height still holds everything the band draws. The state is saved because a stroke
-    // colour and a line width otherwise stay set for what the page draws next.
+    // A rule lies inside the band: its centre is half its width from the band's edge, so a zoned band's
+    // reserved height holds it. A string band's height is not checked against its rule, which can be
+    // wider than the band. The state is saved because a stroke colour and a line width otherwise stay
+    // set for what the page draws next.
     private void DrawBandRule(
         DrawContext ctx, PdfCanvas canvas, BandRule rule, int pageNumber, double bandY, double bandHeight,
         bool ownMarkedContent)
@@ -85,9 +86,21 @@ public sealed partial class DocumentRenderer
 
         var label = LabelFor(band, pageNumber);
         var chapter = ChapterOnPage;
+        long pageLength = 0;
         foreach (var zoneTexts in cache.Texts)
             foreach (var text in zoneTexts)
+            {
                 text.Reset(pageNumber, totalPages, label, chapter);
+                pageLength += text.Length;
+            }
+
+        // Each run is under int.MaxValue, which Reset checks, and the report counts the runs of all
+        // three zones together as an int.
+        if (pageLength > int.MaxValue)
+            throw new InvalidOperationException(
+                $"The {kind.ToString().ToLowerInvariant()} band's text is too long: its zones resolve to " +
+                $"{pageLength.ToString(System.Globalization.CultureInfo.InvariantCulture)} characters on page " +
+                $"{pageNumber.ToString(System.Globalization.CultureInfo.InvariantCulture)}, and no report could count them.");
 
         var zones = new[] { band.Left!, band.Center!, band.Right! };
         var (leftX, rightX) = BandEdges(pageNumber);
@@ -232,7 +245,8 @@ public sealed partial class DocumentRenderer
     /// </summary>
     /// <remarks>
     /// The cut falls before the last space that is literal text, in any run, counting only the first
-    /// space of a run of spaces, as <see cref="FitToWidth"/> cuts a string band. A boundary between two
+    /// space of a run of spaces and no space at the very start, as <see cref="FitToWidth"/> cuts a
+    /// string band. A boundary between two
     /// runs is a cut only where a space stands. A token's value is never cut: spaces inside it are not
     /// cut points, and a cut that cannot use a space backs off to the start of the token. When no
     /// space qualifies, the cut falls at the last position that fits and is not inside a token, so a
