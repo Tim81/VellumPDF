@@ -503,8 +503,8 @@ public sealed class BandZonesCutTests
     public void AFontSizeFromFiveMicroPoints_isAccepted(double size) =>
         Assert.NotNull(new BandZone("x", new TextStyle { Font = Standard14.Courier, FontSize = size }));
 
-    // The 14 FontBBox rows of Adobe's Core 14 AFM files, in thousandths of an em, as published in the
-    // AFM files of the Apache PDFBox project's font resources (read 2026-11-27). The text box of a
+    // The 14 FontBBox rows of the Adobe Core-14 AFM files (public domain), in thousandths of an em,
+    // read 2026-11-27, the same source as the widths in Standard14Metrics. The text box of a
     // 10 pt run is (high - low) / 100 points, and a zoned band refuses a height below it.
     [Theory]
     [InlineData(Standard14.Helvetica, -225, 931)]
