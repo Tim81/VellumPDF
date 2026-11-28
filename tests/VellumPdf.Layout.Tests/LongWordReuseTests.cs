@@ -325,19 +325,17 @@ public sealed class LongWordReuseTests
     }
 
     [Fact]
-    public void AListEntryThatMovesToTheNextPage_isLaidOutThere_withTheSettingOn()
+    public void AListWhoseGutterTheDocumentClamps_isLaidOutThatWayWithTheSettingOn()
     {
-        // The second entry does not fit the room below the first, so the document's own layout moves
-        // it whole to the next page. Words that fit their line are never cut, so the setting makes
-        // no difference to the text and the two documents have to save the same bytes. If the child
-        // context of that try lost the value, the list would fall back to the layout that does not
-        // move entries, and the bytes would differ.
+        // The indent leaves the text 40 pt, narrower than the 72 pt word, so the document's own
+        // layout widens the text and the word stays on one line, where the layout a list falls back
+        // to cuts it. A word with no place is cut the same way whatever the setting says, so the two
+        // documents have to save the same bytes. If the child context the list makes lost the value,
+        // each entry would refuse it and the list would fall back to that other layout.
         static byte[] Save(bool on)
         {
             using var doc = NewDocument(on, 100, 80, 10);
-            doc.Add(new ListElement { DefaultStyle = Courier(), Indent = 20 }
-                .Add("one")
-                .Add("two words on three lines of a narrow text area for the entry"));
+            doc.Add(new ListElement { DefaultStyle = Courier(), Indent = 40 }.Add("aaaaaaaaaaaa"));
             using var ms = new MemoryStream();
             doc.Save(ms);
             return ms.ToArray();
