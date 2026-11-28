@@ -445,7 +445,6 @@ public sealed partial class DocumentRenderer
         // layout that a renderer of a caller's starts from inside this one gets a run of its own.
         // Removed in 3.0 (#688).
         var run = ListLayoutRun.Begin(_pdf, out var outerRun);
-        using var placeCuts = LongWordBreaks.PlaceCuts(BreakLongWordsAtPlaces);
         try
         {
             RunLayoutWith(run);
@@ -1219,6 +1218,7 @@ public sealed partial class DocumentRenderer
             FreshPageArea = fresh,
             AtPageTop = retry || atTop,
             HonourLineCounts = lineCounts,
+            BreakLongWordsAtPlaces = BreakLongWordsAtPlaces,
             Session = session,
         });
     }

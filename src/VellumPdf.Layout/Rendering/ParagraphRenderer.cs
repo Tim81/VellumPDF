@@ -27,10 +27,31 @@ public sealed partial class ParagraphRenderer : IRenderer, IPageBreakSource, IKe
     // Computed during Layout:
     private List<LineFragment[]>? _lines;
 
-    // The setting the lines were wrapped under (LongWordBreaks.Enabled). A renderer that a caller
-    // reuses in a document with the other setting wraps again, so the lines, the line height taken
-    // from them and the placement they made always belong to the setting of the save that reads them.
-    private bool _wrappedAtPlaces;
+    // The value of LayoutContext.BreakLongWordsAtPlaces this renderer wrapped under, fixed by the
+    // first Layout that wraps text and carried by every piece. A later Layout with the other value
+    // is refused, so the lines, the line height taken from them and the start line of every piece
+    // always belong to one wrap, and Draw and the line counts read the value they were made with.
+    private bool _atPlaces;
+    private bool _bound;
+
+    /// <summary>The value this renderer is bound to; false until the first Layout that wraps.</summary>
+    internal bool AtPlaces => _atPlaces;
+
+    // Fixes the value on first use and refuses the other afterwards.
+    internal void Bind(bool value)
+    {
+        if (!_bound)
+        {
+            (_atPlaces, _bound) = (value, true);
+        }
+        else if (_atPlaces != value)
+        {
+            throw new InvalidOperationException(
+                "A paragraph renderer, or a piece it was split into, was first laid out with LayoutContext.BreakLongWordsAtPlaces set to "
+                + (_atPlaces ? "true" : "false") + " and is now laid out with it set to " + (value ? "true" : "false")
+                + ". Its lines and the start lines of its pieces belong to the first value. Lay a new renderer out for the other value.");
+        }
+    }
     private List<LineEnd>? _lineEnds;  // one per entry of _lines
 
     /// <summary>
@@ -164,6 +185,7 @@ public sealed partial class ParagraphRenderer : IRenderer, IPageBreakSource, IKe
         if (area.Width <= 0)
             return LayoutResult.Nothing();
 
+        Bind(context.BreakLongWordsAtPlaces);
         EnsureWrapped(area.Width);
 
         // The line height is a property of the wrap, so it is taken once per wrap: every later
@@ -216,7 +238,8 @@ public sealed partial class ParagraphRenderer : IRenderer, IPageBreakSource, IKe
         var overflow = new ParagraphRenderer(_para, _endLine)
         {
             _lines = _lines,
-            _wrappedAtPlaces = _wrappedAtPlaces,
+            _atPlaces = _atPlaces,
+            _bound = _bound,
             _lineEnds = _lineEnds,
             _lineHeight = _lineHeight,
             _lineHeightTaken = true,
@@ -230,7 +253,8 @@ public sealed partial class ParagraphRenderer : IRenderer, IPageBreakSource, IKe
         var split = new ParagraphRenderer(_para, _startLine)
         {
             _lines = _lines,
-            _wrappedAtPlaces = _wrappedAtPlaces,
+            _atPlaces = _atPlaces,
+            _bound = _bound,
             _lineEnds = _lineEnds,
             _endLine = _endLine,
             _lineHeight = _lineHeight,
@@ -269,11 +293,10 @@ public sealed partial class ParagraphRenderer : IRenderer, IPageBreakSource, IKe
     {
         if (_lines is not null && _lineEnds is not null)
         {
-            if (_wrappedAtPlaces == LongWordBreaks.Enabled && (_reads is null || _reads.IsCurrent())) return;
+            if (_reads is null || _reads.IsCurrent()) return;
 
-            // A label this wrap read has changed, or the save that reads it cuts long words the other
-            // way, so the wrap, the line height taken from it and the placement it made are all of
-            // the earlier text.
+            // A label this wrap read has changed, so the wrap, the line height taken from it and
+            // the placement it made are all of the earlier text.
             _lineHeightTaken = false;
             ClearPlacement();
         }
@@ -284,8 +307,7 @@ public sealed partial class ParagraphRenderer : IRenderer, IPageBreakSource, IKe
         var stops = StopsWithin(_para, width, out _tabStopsBeyond);
         _reads = null;
         var runs = PageReferences.Effective(_para.Runs, ref _reads);
-        (_lines, _lineEnds) = WordWrap(runs, width, out var nullStyleRuns, stops);
-        _wrappedAtPlaces = LongWordBreaks.Enabled;
+        (_lines, _lineEnds) = WordWrapWith(runs, width, out var nullStyleRuns, stops, _atPlaces);
         _nullStyleRuns = nullStyleRuns;
         WrapCalls++;
     }
@@ -300,6 +322,7 @@ public sealed partial class ParagraphRenderer : IRenderer, IPageBreakSource, IKe
         // The subtraction Deflate makes, so the width is the one Layout would wrap at.
         var width = boxWidth - _para.Margins.Left - _para.Margins.Right;
         if (width <= 0) return 0;
+        if (!_bound) Bind(false);
         EnsureWrapped(width);
         return _lines.Count;
     }
@@ -1053,7 +1076,13 @@ public sealed partial class ParagraphRenderer : IRenderer, IPageBreakSource, IKe
     /// </returns>
     internal static (List<LineFragment[]> Lines, List<LineEnd> Ends) WordWrap(
         IReadOnlyList<TextRun> runs, double maxWidth, out int nullStyleRuns,
-        IReadOnlyList<TabStop>? stops = null)
+        IReadOnlyList<TabStop>? stops = null) =>
+        WordWrapWith(runs, maxWidth, out nullStyleRuns, stops, atPlaces: false);
+
+    // The wrap, cutting a word wider than the line after a place when atPlaces is set.
+    internal static (List<LineFragment[]> Lines, List<LineEnd> Ends) WordWrapWith(
+        IReadOnlyList<TextRun> runs, double maxWidth, out int nullStyleRuns,
+        IReadOnlyList<TabStop>? stops, bool atPlaces)
     {
         var tabbed = stops is not null;
         var lines = new List<LineFragment[]>();
@@ -1069,7 +1098,7 @@ public sealed partial class ParagraphRenderer : IRenderer, IPageBreakSource, IKe
         }
 
         if (tabbed)
-            return WrapWithTabs(tokens, maxWidth, stops!, lines, ends);
+            return WrapWithTabs(tokens, maxWidth, stops!, lines, ends, atPlaces);
 
         // Greedy wrap
         var lineFrags = new List<(string Word, TextStyle Style, double Width)>();
@@ -1136,7 +1165,7 @@ public sealed partial class ParagraphRenderer : IRenderer, IPageBreakSource, IKe
                 if (wordW > maxWidth)
                 {
                     // Hard-break oversized word
-                    unresolved = HardBreakWord(tokens, ti, tj, maxWidth, lines, ends);
+                    unresolved = HardBreakWord(tokens, ti, tj, maxWidth, lines, ends, atPlaces);
                     lineWidth = 0.0;
                 }
                 else
@@ -1184,7 +1213,7 @@ public sealed partial class ParagraphRenderer : IRenderer, IPageBreakSource, IKe
 
                     if (wordW > maxWidth)
                     {
-                        unresolved = HardBreakWord(tokens, ti, tj, maxWidth, lines, ends);
+                        unresolved = HardBreakWord(tokens, ti, tj, maxWidth, lines, ends, atPlaces);
                         lineWidth = 0.0;
                     }
                     else
@@ -1230,9 +1259,10 @@ public sealed partial class ParagraphRenderer : IRenderer, IPageBreakSource, IKe
         int end,
         double maxWidth,
         List<LineFragment[]> lines,
-        List<LineEnd> ends)
+        List<LineEnd> ends,
+        bool atPlaces)
     {
-        if (LongWordBreaks.Enabled) return HardBreakWordAtPlaces(tokens, first, end, maxWidth, lines, ends);
+        if (atPlaces) return HardBreakWordAtPlaces(tokens, first, end, maxWidth, lines, ends);
 
         var lineFragments = new List<LineFragment>();
         var fragment = new System.Text.StringBuilder();

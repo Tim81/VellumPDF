@@ -1,6 +1,7 @@
 // Copyright © Timothy van der Ham (@Tim81)
 // SPDX-License-Identifier: Apache-2.0
 
+using System.Collections.Concurrent;
 using VellumPdf.Document;
 using VellumPdf.Fonts;
 using VellumPdf.Layout.Core;
@@ -13,15 +14,17 @@ using VellumPdf.TestSupport;
 namespace VellumPdf.Layout.Tests;
 
 /// <summary>
-/// <see cref="Document.BreakLongWordsAtPlaces"/> and the renderers a caller holds (#594). A built-in
-/// renderer that two documents with different values lay out follows the document that lays it out,
-/// so the document that leaves the setting off gets main's bytes and main's verdict whichever
-/// renderers it shares with one that turns it on. A built-in renderer that a renderer of yours
-/// lays out on a task or a thread during the save reads the document's setting there.
+/// <see cref="LayoutContext.BreakLongWordsAtPlaces"/> (#594). The value travels on the context, a
+/// built-in renderer keeps the one it first wrapped text with, and a later layout with the other
+/// value throws. Nothing else carries it: no thread, task or save leaves a value behind for a
+/// later layout to read.
 /// </summary>
 public sealed class LongWordReuseTests
 {
     private const string Path = "aa/bb/cccccccccc";
+
+    private static readonly string[] AtTheGlyph = ["aa/bb/cccc", "cccccc"];
+    private static readonly string[] AtThePlace = ["aa/bb/", "cccccccccc"];
 
     private static TextStyle Courier() => new() { Font = Standard14.Courier, FontSize = 10 };
 
@@ -45,22 +48,51 @@ public sealed class LongWordReuseTests
         [.. ContentStreamReadback.TextPlacements(PdfTestUtil.DecompressAllFlatStreams(pdf))
             .Where(p => p.Text.Length > 0).Select(p => p.Text)];
 
-    // A caller's renderer that lays a built-in one out inline, on a task or on a new thread.
+    private static ParagraphRenderer Paragraph() => new(new Paragraph(Path, Courier()));
+
+    // A table of one cell holding one 60-character word: 6 lines cut at the glyph, 10 after a solidus.
+    private static TableRenderer Table()
+    {
+        var table = new TableElement { DefaultCellStyle = Courier() }.SetColumnWidths(72);
+        table.AddRow().AddCell(string.Concat(Enumerable.Repeat("aaaaa/", 10)));
+        return new TableRenderer(table);
+    }
+
+    private static byte[] SaveWith(IRenderer renderer, bool on, bool table = false)
+    {
+        using var doc = table ? NewDocument(on, 92, 180, 10) : NewDocument(on);
+        doc.Add(renderer);
+        return Save(doc);
+    }
+
+    // ── The value reaches a renderer of yours' child through a derived context ──
+
     public enum Flow
     {
         Inline,
         Task,
         Thread,
+        ParallelFor,
+        SuppressFlow,
     }
 
-    private sealed class Forward(IRenderer inner, Flow flow) : IRenderer
+    // How the child's context is made: derived from the one the caller was given, as a renderer that
+    // passes the value on does, or built fresh, as one that does not.
+    public enum Derive
+    {
+        WithArea,
+        Fresh,
+    }
+
+    private sealed class Forward(IRenderer inner, Flow flow, Derive derive = Derive.WithArea) : IRenderer
     {
         public LayoutResult Layout(LayoutContext context)
         {
+            var child = derive == Derive.WithArea ? context.WithArea(context.Area) : new LayoutContext(context.Area);
             switch (flow)
             {
                 case Flow.Task:
-                    return Task.Run(() => inner.Layout(context)).GetAwaiter().GetResult();
+                    return Task.Run(() => inner.Layout(child)).GetAwaiter().GetResult();
                 case Flow.Thread:
                     LayoutResult? result = null;
                     Exception? failure = null;
@@ -68,7 +100,7 @@ public sealed class LongWordReuseTests
                     {
                         try
                         {
-                            result = inner.Layout(context);
+                            result = inner.Layout(child);
                         }
                         catch (Exception ex)
                         {
@@ -79,71 +111,315 @@ public sealed class LongWordReuseTests
                     thread.Join();
                     if (failure is not null) throw failure;
                     return result!;
+                case Flow.ParallelFor:
+                    LayoutResult? parallel = null;
+                    Parallel.For(0, 1, _ => parallel = inner.Layout(child));
+                    return parallel!;
+                case Flow.SuppressFlow:
+                    LayoutResult? suppressed = null;
+                    Exception? suppressedFailure = null;
+                    using (ExecutionContext.SuppressFlow())
+                    {
+                        var worker = new Thread(() =>
+                        {
+                            try
+                            {
+                                suppressed = inner.Layout(child);
+                            }
+                            catch (Exception ex)
+                            {
+                                suppressedFailure = ex;
+                            }
+                        });
+                        worker.Start();
+                        worker.Join();
+                    }
+
+                    if (suppressedFailure is not null) throw suppressedFailure;
+                    return suppressed!;
                 default:
-                    return inner.Layout(context);
+                    return inner.Layout(child);
             }
         }
 
         public void Draw(DrawContext context) => inner.Draw(context);
     }
 
-    private static ParagraphRenderer Paragraph() => new(new Paragraph(Path, Courier()));
-
-    private static TableRenderer Table(double column = 72)
+    [Theory]
+    [InlineData(Flow.Inline)]
+    [InlineData(Flow.Task)]
+    [InlineData(Flow.Thread)]
+    [InlineData(Flow.ParallelFor)]
+    [InlineData(Flow.SuppressFlow)]
+    public void AParagraphLaidOutThroughADerivedContext_readsTheDocumentsValueOnAnyFlow(Flow flow)
     {
-        var table = new TableElement { DefaultCellStyle = Courier() }.SetColumnWidths(column);
-        table.AddRow().AddCell(string.Concat(Enumerable.Repeat("aaaaa/", 10)));
-        return new TableRenderer(table);
-    }
+        var on = SaveWith(new Forward(Paragraph(), flow), on: true);
+        Assert.Equal(AtThePlace, Placements(on));
 
-    private static byte[] SaveWith(IRenderer renderer, bool on, double width = 100, double height = 300, double margin = 20)
-    {
-        using var doc = NewDocument(on, width, height, margin);
-        doc.Add(renderer);
-        return Save(doc);
+        var off = SaveWith(new Forward(Paragraph(), flow), on: false);
+        Assert.Equal(AtTheGlyph, Placements(off));
     }
 
     [Theory]
-    [InlineData(true, false)]
-    [InlineData(false, true)]
-    public void AParagraphRendererReusedAcrossDocuments_followsTheDocumentThatLaysItOut(bool first, bool second)
+    [InlineData(Flow.Inline)]
+    [InlineData(Flow.Task)]
+    [InlineData(Flow.Thread)]
+    [InlineData(Flow.ParallelFor)]
+    [InlineData(Flow.SuppressFlow)]
+    public void ATableLaidOutThroughADerivedContext_isMeasuredAndDrawnWithTheDocumentsValueOnAnyFlow(Flow flow)
     {
-        var shared = Paragraph();
-        var one = SaveWith(shared, first);
-        var two = SaveWith(shared, second);
+        var onInline = SaveWith(new Forward(Table(), Flow.Inline), on: true, table: true);
 
-        // Each document is what a renderer made for it alone gives, byte for byte.
-        Assert.Equal(SaveWith(Paragraph(), first), one);
-        Assert.Equal(SaveWith(Paragraph(), second), two);
-        Assert.NotEqual(one, two);
+        Assert.Equal(onInline, SaveWith(new Forward(Table(), flow), on: true, table: true));
+        Assert.Equal(10, Placements(onInline).Length);
+        Assert.Equal(6, Placements(SaveWith(new Forward(Table(), flow), on: false, table: true)).Length);
     }
 
     [Theory]
-    [InlineData(true, false)]
-    [InlineData(false, true)]
-    public void ATableRendererReusedAcrossDocuments_followsTheDocumentThatLaysItOut(bool first, bool second)
+    [InlineData(Flow.Inline)]
+    [InlineData(Flow.Task)]
+    [InlineData(Flow.Thread)]
+    public void AParagraphLaidOutThroughAFreshContext_readsFalse_whateverTheDocumentSays(Flow flow)
     {
-        var shared = Table();
-        var one = SaveWith(shared, first, 92, 180, 10);
-        var two = SaveWith(shared, second, 92, 180, 10);
+        var fresh = SaveWith(new Forward(Paragraph(), flow, Derive.Fresh), on: true);
 
-        Assert.Equal(SaveWith(Table(), first, 92, 180, 10), one);
-        Assert.Equal(SaveWith(Table(), second, 92, 180, 10), two);
-        Assert.NotEqual(one, two);
+        Assert.Equal(AtTheGlyph, Placements(fresh));
+        Assert.Equal(SaveWith(new Forward(Paragraph(), flow, Derive.Fresh), on: false), fresh);
     }
 
     [Fact]
-    public void ATableRendererReusedInAnOnDocument_drawsEveryLineInsideItsCell()
+    public void ATableLaidOutThroughAFreshContext_readsFalse_whateverTheDocumentSays()
     {
-        // The cell of the off document is 6 lines tall and the on document wraps into 10, so a draw
-        // under the other document's setting puts four lines below the cell's bottom edge. The
-        // rectangle's height is the figure a drawn line has to sit within.
-        var shared = Table();
-        SaveWith(shared, on: false, 92, 180, 10);
-        var pdf = SaveWith(shared, on: true, 92, 180, 10);
+        var fresh = SaveWith(new Forward(Table(), Flow.Inline, Derive.Fresh), on: true, table: true);
 
-        Assert.Equal(SaveWith(Table(), on: true, 92, 180, 10), pdf);
-        Assert.Equal(10, Placements(pdf).Length);
+        Assert.Equal(6, Placements(fresh).Length);
+        Assert.Equal(SaveWith(new Forward(Table(), Flow.Inline, Derive.Fresh), on: false, table: true), fresh);
+    }
+
+    // ── A renderer keeps the value it first wrapped with ─────────────────────
+
+    private const string ParagraphRefusal =
+        "A paragraph renderer, or a piece it was split into, was first laid out with LayoutContext.BreakLongWordsAtPlaces set to {0} "
+        + "and is now laid out with it set to {1}. Its lines and the start lines of its pieces belong to the first value. "
+        + "Lay a new renderer out for the other value.";
+
+    private const string TableRefusal =
+        "A table renderer, or a piece it was split into, was first laid out with LayoutContext.BreakLongWordsAtPlaces set to {0} "
+        + "and is now laid out with it set to {1}. Its measured heights and the lines of a row it cut belong to the first value. "
+        + "Lay a new renderer out for the other value.";
+
+    [Theory]
+    [InlineData(true, false)]
+    [InlineData(false, true)]
+    public void AParagraphRendererLaidOutInADocumentWithTheOtherValue_isRefused(bool first, bool second)
+    {
+        var shared = Paragraph();
+        SaveWith(shared, first);
+
+        var ex = Assert.Throws<InvalidOperationException>(() => SaveWith(shared, second));
+
+        Assert.Equal(string.Format(ParagraphRefusal, first ? "true" : "false", second ? "true" : "false"), ex.Message);
+    }
+
+    [Theory]
+    [InlineData(true, false)]
+    [InlineData(false, true)]
+    public void ATableRendererLaidOutInADocumentWithTheOtherValue_isRefused(bool first, bool second)
+    {
+        var shared = Table();
+        SaveWith(shared, first, table: true);
+
+        var ex = Assert.Throws<InvalidOperationException>(() => SaveWith(shared, second, table: true));
+
+        Assert.Equal(string.Format(TableRefusal, first ? "true" : "false", second ? "true" : "false"), ex.Message);
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void ARendererLaidOutAgainWithTheSameValue_savesAsAFreshOneDoes(bool value)
+    {
+        var shared = Paragraph();
+        SaveWith(shared, value);
+
+        Assert.Equal(SaveWith(Paragraph(), value), SaveWith(shared, value));
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void APieceOfAParagraphIsBoundToTheValueItWasCutUnder(bool cutUnder)
+    {
+        // The caller lays the paragraph out in a box of one line, outside any save, and keeps the
+        // overflow, which starts at line 1 of the wrap it was cut from. Laid out in a document with
+        // the other value it would start at line 1 of another wrap and draw some characters twice or
+        // not at all, so it is refused. In a document with the same value it draws the rest.
+        var first = Paragraph().Layout(new LayoutContext(new LayoutBox(0, 0, 60, 12)) { BreakLongWordsAtPlaces = cutUnder });
+        var piece = first.OverflowRenderer!;
+
+        var ex = Assert.Throws<InvalidOperationException>(() => SaveWith(piece, !cutUnder));
+        Assert.Equal(string.Format(ParagraphRefusal, cutUnder ? "true" : "false", cutUnder ? "false" : "true"), ex.Message);
+
+        Assert.Equal(cutUnder ? ["cccccccccc"] : ["cccccc"], Placements(SaveWith(piece, cutUnder)));
+    }
+
+    // A renderer of the caller's that forwards to a built-in one and keeps the first overflow piece it
+    // returns, as one that places pieces itself does.
+    private sealed class KeepOverflow(IRenderer inner) : IRenderer
+    {
+        internal IRenderer? Piece { get; private set; }
+
+        public LayoutResult Layout(LayoutContext context)
+        {
+            var result = inner.Layout(context);
+            if (Piece is null && result.Status == LayoutResult.Outcome.Partial) Piece = result.OverflowRenderer;
+            return result;
+        }
+
+        public void Draw(DrawContext context) => inner.Draw(context);
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void APieceOfATableThatResumesACutRowIsBoundToTheValueItWasCutUnder(bool cutUnder)
+    {
+        var table = new TableElement { DefaultCellStyle = Courier() }.SetColumnWidths(72);
+        var word = string.Concat(Enumerable.Repeat("aaaaa/", 10));
+        table.AddRow().AddCell(string.Join(' ', Enumerable.Repeat(word, 4)));
+        var keep = new KeepOverflow(new TableRenderer(table));
+        SaveWith(keep, cutUnder, table: true);
+        var piece = keep.Piece;
+        Assert.NotNull(piece);
+
+        var ex = Assert.Throws<InvalidOperationException>(() => SaveWith(piece, !cutUnder, table: true));
+        Assert.Equal(string.Format(TableRefusal, cutUnder ? "true" : "false", cutUnder ? "false" : "true"), ex.Message);
+    }
+
+    // ── Nothing outlives a save ──────────────────────────────────────────────
+
+    // A renderer of a caller's that keeps one worker thread for the program and sends every layout to
+    // it, with the context it was given.
+    private sealed class Worker : IRenderer
+    {
+        private static readonly BlockingCollection<(IRenderer Inner, LayoutContext Context, TaskCompletionSource<LayoutResult> Done)> s_jobs = [];
+        private static readonly Thread s_thread = Start();
+
+        private readonly IRenderer _inner;
+
+        internal Worker(IRenderer inner) => _inner = inner;
+
+        private static Thread Start()
+        {
+            var thread = new Thread(() =>
+            {
+                foreach (var (inner, context, done) in s_jobs.GetConsumingEnumerable())
+                {
+                    try
+                    {
+                        done.SetResult(inner.Layout(context));
+                    }
+                    catch (Exception ex)
+                    {
+                        done.SetException(ex);
+                    }
+                }
+            })
+            { IsBackground = true };
+            thread.Start();
+            return thread;
+        }
+
+        public LayoutResult Layout(LayoutContext context)
+        {
+            _ = s_thread;
+            var done = new TaskCompletionSource<LayoutResult>();
+            s_jobs.Add((_inner, context.WithArea(context.Area), done));
+            return done.Task.GetAwaiter().GetResult();
+        }
+
+        public void Draw(DrawContext context) => _inner.Draw(context);
+    }
+
+    [Fact]
+    public void AWorkerThatAnOnSaveStarted_readsTheLaterOffDocumentsValue()
+    {
+        Assert.Equal(AtThePlace, Placements(SaveWith(new Worker(Paragraph()), on: true)));
+
+        var later = SaveWith(new Worker(Paragraph()), on: false);
+
+        Assert.Equal(AtTheGlyph, Placements(later));
+        Assert.Equal(SaveWith(new Forward(Paragraph(), Flow.Inline), on: false), later);
+    }
+
+    [Fact]
+    public async Task WorkThatOutlivesTheSave_readsTheContextItWasGiven_andNothingTheSaveLeft()
+    {
+        // A renderer of the caller's starts two tasks during an on save. They lay a url paragraph out
+        // after the save has returned: under a context the task builds itself it reads false (6
+        // lines), and under the one it captured it reads that context's value (10 lines).
+        var gate = new ManualResetEventSlim();
+        Task<LayoutResult>? late = null;
+        Task<LayoutResult>? captured = null;
+        var area = new LayoutBox(0, 0, 60, 300);
+        static ParagraphRenderer Url() => new(new Paragraph(string.Concat(Enumerable.Repeat("aaaaa/", 10)), Courier()));
+
+        var starter = new Starter(context =>
+        {
+            late = Task.Run(() =>
+            {
+                gate.Wait();
+                return Url().Layout(new LayoutContext(area));
+            });
+            captured = Task.Run(() =>
+            {
+                gate.Wait();
+                return Url().Layout(context.WithArea(area));
+            });
+        });
+
+        SaveWith(starter, on: true);
+        gate.Set();
+
+        Assert.Equal(6, (await late!).OccupiedArea!.Value.Height / 12);
+        Assert.Equal(10, (await captured!).OccupiedArea!.Value.Height / 12);
+    }
+
+    private sealed class Starter(Action<LayoutContext> start) : IRenderer
+    {
+        private bool _started;
+
+        public LayoutResult Layout(LayoutContext context)
+        {
+            if (!_started)
+            {
+                _started = true;
+                start(context);
+            }
+
+            return LayoutResult.Full(new LayoutBox(context.Area.X, context.Area.Y, 0, 0));
+        }
+
+        public void Draw(DrawContext context)
+        {
+        }
+    }
+
+    // ── The multi-page table and the limit ───────────────────────────────────
+
+    [Fact]
+    public void ATableThatSplitsOverPages_drawsEveryLineOfEveryPieceAfterThePlace()
+    {
+        using var doc = NewDocument(on: true, 92, 180, 10);
+        var table = new TableElement { DefaultCellStyle = Courier() }.SetColumnWidths(72);
+        for (var i = 0; i < 3; i++)
+            table.AddRow().AddCell(string.Concat(Enumerable.Repeat("aaaaa/", 10)));
+        doc.Add(table);
+
+        var lines = Placements(Save(doc));
+
+        Assert.Equal(30, lines.Length);
+        Assert.All(lines, l => Assert.Equal("aaaaa/", l));
     }
 
     // A url of 60 characters is 6 lines cut at the glyph and 10 after a solidus, and a page holds one
@@ -155,51 +431,20 @@ public sealed class LongWordReuseTests
     }
 
     [Fact]
-    public void ARendererThatAnOnDocumentRefusedAtTheLimit_savesInAnOffDocumentAsAFreshOneDoes()
+    public void ADocumentThatLeavesTheSettingOff_savesWhatAFreshOneDoes_afterAnOnDocumentWasRefused()
     {
-        var shared = ManyAddresses();
-        using (var on = NewDocument(true, 80, 37))
+        using (var on = NewDocument(true, 80, 37, 10))
         {
-            on.Margins = new EdgeInsets(10);
-            on.Add(shared);
+            on.Add(ManyAddresses());
             Assert.Throws<InvalidOperationException>(() => Save(on));
         }
 
-        using var off = NewDocument(false, 80, 37);
-        off.Margins = new EdgeInsets(10);
-        off.Add(shared);
-        var reused = Save(off);
+        using var off = NewDocument(false, 80, 37, 10);
+        off.Add(ManyAddresses());
+        var afterwards = Save(off);
 
-        using var fresh = NewDocument(false, 80, 37);
-        fresh.Margins = new EdgeInsets(10);
+        using var fresh = NewDocument(false, 80, 37, 10);
         fresh.Add(ManyAddresses());
-        Assert.Equal(Save(fresh), reused);
-    }
-
-    [Theory]
-    [InlineData(Flow.Task)]
-    [InlineData(Flow.Thread)]
-    public void AParagraphLaidOutOnAnotherFlowDuringTheSave_readsTheDocumentsSetting(Flow flow)
-    {
-        var inline = SaveWith(new Forward(Paragraph(), Flow.Inline), on: true);
-
-        Assert.Equal(inline, SaveWith(new Forward(Paragraph(), flow), on: true));
-        Assert.Equal(["aa/bb/", "cccccccccc"], Placements(inline));
-
-        var offInline = SaveWith(new Forward(Paragraph(), Flow.Inline), on: false);
-        Assert.Equal(offInline, SaveWith(new Forward(Paragraph(), flow), on: false));
-        Assert.Equal(["aa/bb/cccc", "cccccc"], Placements(offInline));
-    }
-
-    [Theory]
-    [InlineData(Flow.Task)]
-    [InlineData(Flow.Thread)]
-    public void ATableLaidOutOnAnotherFlowDuringTheSave_isMeasuredAndDrawnAsTheSameFlowDoes(Flow flow)
-    {
-        var inline = SaveWith(new Forward(Table(), Flow.Inline), on: true, 92, 180, 10);
-
-        Assert.Equal(inline, SaveWith(new Forward(Table(), flow), on: true, 92, 180, 10));
-        Assert.Equal(SaveWith(new Forward(Table(), Flow.Inline), on: false, 92, 180, 10),
-            SaveWith(new Forward(Table(), flow), on: false, 92, 180, 10));
+        Assert.Equal(Save(fresh), afterwards);
     }
 }

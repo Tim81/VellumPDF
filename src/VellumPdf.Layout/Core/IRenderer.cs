@@ -41,16 +41,17 @@ public interface IRenderer
     /// <see cref="LayoutResult.Outcome.Nothing"/>, counts as one. An overflow that never gets
     /// smaller reaches the limit; the save then throws. Make each overflow hold less than the
     /// renderer that returned it.</para>
-    /// <para><b>A word wider than its line is cut at the glyph unless the document turned on
-    /// <see cref="VellumPdf.Layout.Document.BreakLongWordsAtPlaces"/>.</b> The built-in renderers
-    /// read the setting of the save that is laying out, so a built-in renderer that your renderer
-    /// lays out during that save cuts after a place when the setting is on, also on a task or a
-    /// thread your renderer starts from it. A built-in renderer that is laid out when no save is
-    /// laying out, or on work queued with the execution context suppressed, reads off and cuts at
-    /// the glyph. A built-in renderer that two documents with different values lay out wraps again
-    /// for each. The setting can make the save refuse what it saved without it; its documentation
-    /// lists the refusals. Where this renderer's layout holds text, a line that ends earlier takes
-    /// more lines, and the 50,000 limit and the page height are met sooner.</para>
+    /// <para><b>A word wider than its line is cut at the glyph unless the context says
+    /// otherwise.</b> The document sets <see cref="LayoutContext.BreakLongWordsAtPlaces"/> on every
+    /// context from <see cref="VellumPdf.Layout.Document.BreakLongWordsAtPlaces"/>. A renderer of
+    /// yours that lays a built-in renderer out passes the value on by deriving the child's context
+    /// from its own with <see cref="LayoutContext.WithArea"/>, on any thread or task; a context it
+    /// builds with <c>new LayoutContext(area)</c> has the value false. A built-in renderer keeps the
+    /// value it first wrapped text with and refuses the other, as
+    /// <see cref="LayoutContext.BreakLongWordsAtPlaces"/> says. The setting can make the save
+    /// refuse what it saved without it; the documentation of the document's property lists the
+    /// refusals. Where this renderer's layout holds text, a line that ends earlier takes more
+    /// lines, and the 50,000 limit and the page height are met sooner.</para>
     /// <para><b>A renderer that fits a smaller area but not a larger one is not supported.</b> At
     /// the top of a page the document offers the larger of the content area's height and the
     /// height from the top of the content area to its bottom, which can differ by one rounding

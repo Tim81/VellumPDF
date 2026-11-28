@@ -137,11 +137,10 @@ public sealed class LongWordSettingTests
     }
 
     [Fact]
-    public void AWrapOutsideASave_readsNothingAndCutsAtTheGlyph()
+    public void TheStaticWraps_takeNoValueAndCutAtTheGlyph()
     {
-        // The setting is read from the layout a document performs, not from the document itself. A
-        // wrap made when no save is laying out, which is what a renderer that a caller lays out on
-        // its own does, cuts at the glyph although a document elsewhere has the setting on.
+        // The static wraps take no context, so no value reaches them: they cut at the glyph as main
+        // does, whatever a document elsewhere says.
         using var doc = new Document { BreakLongWordsAtPlaces = true };
 
         var (lines, _) = ParagraphRenderer.WordWrap([new TextRun(Path, Courier())], 60, out _);
@@ -232,7 +231,7 @@ public sealed class LongWordSettingTests
         static string[] Lines(bool on)
         {
             using var doc = new Document { BreakLongWordsAtPlaces = on, PageSize = new PdfRectangle(0, 0, 100, 300), Margins = new EdgeInsets(20) };
-            doc.Add(new Paragraph(Path + "	x", Courier()) { TabStops = [new TabStop(40)] });
+            doc.Add(new Paragraph(Path + "\tx", Courier()) { TabStops = [new TabStop(40)] });
             using var ms = new MemoryStream();
             doc.Save(ms);
             return [.. ContentStreamReadback.TextPlacements(PdfTestUtil.DecompressAllFlatStreams(ms.ToArray()))
@@ -250,11 +249,10 @@ public sealed class LongWordSettingTests
         // The cut is found over characters and mapped back to offsets in the text, and a character
         // outside the basic plane takes two UTF-16 units, so counting units one by one misplaces the
         // lines that follow it. The string wrap and the run wrap have to agree.
-        using var on = LongWordBreaks.PlaceCuts(true);
         var style = Courier();
         var text = "aa/😀😀/bbbbbbbbbbbbbbb";
-        var byString = TableRenderer.WordWrapLines(text, style, 60, honourBreaks: true);
-        var byRuns = new Cell([new TextRun(text, style)]).RunText!.Lines(60, honourBreaks: true);
+        var byString = TableRenderer.WordWrapLines(text, style, 60, honourBreaks: true, atPlaces: true);
+        var byRuns = new Cell([new TextRun(text, style)]).RunText!.Lines(60, honourBreaks: true, atPlaces: true);
 
         Assert.Equal(byString, byRuns);
         Assert.Equal(string.Concat(byString), text);
@@ -284,11 +282,8 @@ public sealed class LongWordSettingTests
     }
 
     [Fact]
-    public void ASaveWithTheSettingOn_leavesNothingBehindForTheWrapsAfterIt()
+    public void TwoSavesInARow_eachReadItsOwnDocumentsValue()
     {
-        // The save sets the setting on its own thread while it lays out and restores it, also when
-        // the layout throws, so a later save of a document that has it off, and a wrap outside any
-        // save, cut at the glyph.
         using (var on = Build(Path_.Paragraph, on: true)) Assert.Equal(AtThePlace, Shown(on));
 
         using (var off = Build(Path_.Paragraph, on: false)) Assert.Equal(AtTheGlyph, Shown(off));
@@ -296,8 +291,8 @@ public sealed class LongWordSettingTests
         using var refused = ManyAddresses(on: true, 6000);
         Assert.Throws<InvalidOperationException>(() => SaveTo(refused));
 
-        var (lines, _) = ParagraphRenderer.WordWrap([new TextRun(Path, Courier())], 60, out _);
-        Assert.Equal(AtTheGlyph, lines.Select(l => string.Concat(l.Select(f => f.Text))));
+        using var after = Build(Path_.Paragraph, on: false);
+        Assert.Equal(AtTheGlyph, Shown(after));
     }
 
     // A renderer of a caller's that lays out a built-in one inside the document's layout.

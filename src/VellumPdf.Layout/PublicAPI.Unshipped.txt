@@ -247,3 +247,5 @@ VellumPdf.Layout.Elements.RunningBand.ZoneGap.get -> double
 VellumPdf.Layout.Elements.RunningBand.ZoneGap.init -> void
 static VellumPdf.Layout.Elements.BandZone.Empty.get -> VellumPdf.Layout.Elements.BandZone!
 static VellumPdf.Layout.Elements.BandZone.Logo(VellumPdf.Layout.Elements.LayoutImage! image) -> VellumPdf.Layout.Elements.BandZone!
+VellumPdf.Layout.Core.LayoutContext.BreakLongWordsAtPlaces.get -> bool
+VellumPdf.Layout.Core.LayoutContext.BreakLongWordsAtPlaces.init -> void

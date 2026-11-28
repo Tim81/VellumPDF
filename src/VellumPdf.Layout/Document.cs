@@ -530,31 +530,27 @@ public sealed class Document : IDisposable
     /// ("A single element needed more than 50000 page continuations, ..."), a table's repeated
     /// header rows, or a group of rows joined by <see cref="Cell.RowSpan"/>, no longer fit a page,
     /// or any other element becomes too tall for a page ("An element is too tall to fit on a single
-    /// page and cannot be rendered. ..."). Each throw comes from the save, not from this setter.
+    /// page and cannot be rendered. ..."). A renderer that two documents with different values lay
+    /// out is refused as <see cref="LayoutContext.BreakLongWordsAtPlaces"/> says. Each throw comes
+    /// from the save, not from this setter.
     /// <para>The cut applies to every wrap the document performs: a paragraph, a heading, a list
     /// item, the paragraphs of a <see cref="NoteBlock"/>, and a table cell given as a string or as
-    /// runs. It also applies to a built-in renderer that a renderer of yours lays out during the
-    /// save, on the thread the save runs on and on a task or a thread that your renderer starts
-    /// from it. No hyphen or other glyph is added at the cut, so extracted text has the extractor's
-    /// line separator between the pieces, and a link on the word gets one rectangle per piece. A
-    /// word that fits its line is never cut, and a word with no such place that fits is cut at the
-    /// character. <c>?</c>, <c>&amp;</c>, <c>=</c>, <c>.</c>, <c>_</c> and <c>#</c> are not places.
-    /// A <c>-</c> before a digit, and a solidus before a digit that follows a digit, are used only
-    /// when no other place fits (UAX #14, LB25).</para>
+    /// runs. The document puts the value on every <see cref="LayoutContext"/> it hands to a
+    /// renderer, and a built-in renderer reads it there; <see cref="LayoutContext.BreakLongWordsAtPlaces"/>
+    /// says how a renderer of yours passes it on and what a renderer keeps. No hyphen or other glyph
+    /// is added at the cut, so extracted text has the extractor's line separator between the
+    /// pieces, and a link on the word gets one rectangle per piece. A word that fits its line is
+    /// never cut, and a word with no such place that fits is cut at the character. <c>?</c>,
+    /// <c>&amp;</c>, <c>=</c>, <c>.</c>, <c>_</c> and <c>#</c> are not places. A <c>-</c> before a
+    /// digit, and a solidus before a digit that follows a digit, are used only when no other place
+    /// fits (UAX #14, LB25).</para>
     /// <para><b>The value is read when a save lays the document out, and nothing else reads it.</b>
     /// A value set after the document has saved is stored and never used, because a document saves
     /// once. A refused save that failed before layout started leaves the document usable, and a
-    /// value set before the retry is the one used. A built-in renderer that is laid out when no save
-    /// is laying out, such as one your code calls itself, reads off and cuts at the character,
-    /// whatever any document says. So does one laid out on work that was queued with the execution
-    /// context suppressed (<c>ThreadPool.UnsafeQueueUserWorkItem</c>,
-    /// <c>ExecutionContext.SuppressFlow</c>). A save that your renderer starts from inside another
-    /// save's layout uses its own document's value, and the outer save goes on with its own.</para>
-    /// <para>A built-in renderer that two documents with different values lay out wraps again for
-    /// each, so a document that leaves this off gets the same wrap as before this setting existed
-    /// whichever renderers it shares with a document that turns it on.</para>
-    /// <para><b>Do not rely on the default.</b> A later major version cuts after a place by default
-    /// and removes this setting, or keeps it only to turn the cut off (#750).</para>
+    /// value set before the retry is the one used. A renderer of yours that lays a built-in
+    /// renderer out with a context it builds itself, not one derived from the context it was given,
+    /// passes false, so the built-in renderer cuts at the glyph.</para>
+    /// <para><b>Do not rely on the default.</b> Issue #750 tracks making the cut the default.</para>
     /// </remarks>
     /// <exception cref="InvalidOperationException">
     /// Raised from <see cref="Save(System.IO.Stream)"/>, <see cref="Save(string)"/>,
@@ -563,8 +559,9 @@ public sealed class Document : IDisposable
     /// <c>Sign</c> and <c>SignAsync</c> extension methods of <c>VellumPdf.Signing</c> for this
     /// document, not from this setter, when the cut makes a single element need more than 50,000
     /// page continuations, makes a table's repeated header rows or a row-span group not fit a
-    /// page, or makes any other element too tall for a page. The document is not usable for
-    /// another save once the layout has started.
+    /// page, makes any other element too tall for a page, or lays a renderer out that an earlier
+    /// layout bound to the other value. The document is not usable for another save once the
+    /// layout has started.
     /// </exception>
     public bool BreakLongWordsAtPlaces { get; set; }
 

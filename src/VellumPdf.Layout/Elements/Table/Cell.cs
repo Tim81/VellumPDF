@@ -29,7 +29,7 @@ public sealed class Cell
     /// Spaces are the only break points between words, and a word wider than the cell is broken
     /// between characters. With <see cref="VellumPdf.Layout.Document.BreakLongWordsAtPlaces"/> set it is broken after
     /// the last <c>/</c>, <c>\</c> or <c>-</c> that leaves the line no wider than the cell text area,
-    /// and between characters when it has none, as a <see cref="Elements.Paragraph"/> breaks one. No
+    /// and between characters when none fits, as a <see cref="Elements.Paragraph"/> breaks one. No
     /// hyphen or other glyph is added at the break.
     /// <para><b>A carriage return and line feed pair, a lone carriage return and a lone line feed
     /// each end a line.</b> An empty line between two of them is a blank line one leading tall, and

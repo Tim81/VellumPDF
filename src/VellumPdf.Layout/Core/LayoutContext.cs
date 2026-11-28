@@ -32,6 +32,40 @@ public sealed class LayoutContext
     public LayoutBox Area { get; }
 
     /// <summary>
+    /// Whether a word wider than its line is cut after the last solidus, reverse solidus or
+    /// hyphen-minus that fits, in the text of the renderer this context is handed to and of every
+    /// renderer it lays out. False unless the document sets
+    /// <see cref="VellumPdf.Layout.Document.BreakLongWordsAtPlaces"/> or you set this.
+    /// </summary>
+    /// <remarks>
+    /// <b>A renderer keeps the value it first wrapped text with, and refuses the other.</b> A
+    /// built-in renderer fixes the value at its first <see cref="IRenderer.Layout"/> that wraps
+    /// text, and so does every piece it splits into. A later <c>Layout</c> of that renderer or of
+    /// one of its pieces with a context whose value differs throws
+    /// <see cref="InvalidOperationException"/> naming this property, from that call and so from
+    /// the save, because the lines it wrapped and the line numbers its pieces start at belong to
+    /// one wrap. Draw, the line counts and every later wrap use the value it was fixed to, whatever
+    /// the context says. The throw is reachable only when some context has the value true, which
+    /// only a program that sets this property or
+    /// <see cref="VellumPdf.Layout.Document.BreakLongWordsAtPlaces"/> can make.
+    /// <para><b>A renderer of yours that lays a built-in renderer out must pass the value on.</b>
+    /// <see cref="WithArea"/> copies it, on whatever thread it runs. A context made with
+    /// <c>new LayoutContext(area)</c> has it false, so the built-in renderer cuts at the glyph
+    /// under it. <b>Do not</b> lay one renderer out under contexts with different values, and do
+    /// not give a piece that one save returned to a document or context with the other value.</para>
+    /// <para>A wrap that takes no context cuts at the glyph. The value is read when a renderer
+    /// first wraps text and never after, so changing a document's setting once a save has begun
+    /// changes nothing.</para>
+    /// </remarks>
+    /// <exception cref="InvalidOperationException">
+    /// Raised from <see cref="IRenderer.Layout"/> of a built-in renderer, and so from
+    /// <see cref="VellumPdf.Layout.Document.Save(System.IO.Stream)"/>, the other save overloads and
+    /// the signing saves of <c>VellumPdf.Signing</c>, when the renderer or a piece it split into was
+    /// first laid out with the other value.
+    /// </exception>
+    public bool BreakLongWordsAtPlaces { get; init; }
+
+    /// <summary>
     /// The content area of the page a <see cref="LayoutResult.Outcome.Nothing"/> answer is retried
     /// on, which is what the document offers that retry. Null on a context built through the
     /// public constructor.
@@ -137,6 +171,7 @@ public sealed class LayoutContext
             FreshPageArea = FreshPageArea,
             AtPageTop = atTop,
             HonourLineCounts = lineCounts,
+            BreakLongWordsAtPlaces = BreakLongWordsAtPlaces,
             Session = ModeFor(parent) == ContinuationMode.Twin ? null : ContinuationSession.ViewFor(child, ModeFor(parent), Session),
         };
 
@@ -148,8 +183,12 @@ public sealed class LayoutContext
     /// laid out <see cref="ContinuationMode.Undecided"/> and then kept is the new layout, and one
     /// that the document redid with the twin is the twin.
     /// </summary>
-    internal static LayoutContext Addressed(LayoutBox area, IRenderer child, ContinuationMode mode) =>
-        new(area) { Session = mode == ContinuationMode.Twin ? null : ContinuationSession.ViewFor(child, mode, null) };
+    internal static LayoutContext Addressed(LayoutBox area, IRenderer child, ContinuationMode mode, bool breakLongWordsAtPlaces = false) =>
+        new(area)
+        {
+            BreakLongWordsAtPlaces = breakLongWordsAtPlaces,
+            Session = mode == ContinuationMode.Twin ? null : ContinuationSession.ViewFor(child, mode, null),
+        };
 
     /// <summary>A minimum Y position, carried for callers that set one.</summary>
     /// <remarks>
@@ -173,7 +212,9 @@ public sealed class LayoutContext
 
     /// <summary>Returns a copy of this context with the available area replaced.</summary>
     /// <remarks>
-    /// Nothing is refused. <see cref="ContentTop"/> is copied unchanged, and so is the content area
+    /// Nothing is refused. <see cref="BreakLongWordsAtPlaces"/> is copied, so a renderer of yours that
+    /// derives the context of a built-in renderer it lays out with this passes the value on, on any
+    /// thread. <see cref="ContentTop"/> is copied unchanged, and so is the content area
     /// a fresh page offers, which this package reads and which is null on a context built through
     /// the public constructor. The two flags the document sets for its own paragraphs, that the area
     /// is a page top and that a paragraph reads its line counts, are not copied: a smaller area is
@@ -184,5 +225,6 @@ public sealed class LayoutContext
     /// (#679), and a <see cref="VellumPdf.Layout.Rendering.ListRenderer"/> narrows no entry's
     /// gutter and moves no entry to the next page (#476, #685); see <see cref="IRenderer.Layout"/>.
     /// </remarks>
-    public LayoutContext WithArea(LayoutBox area) => new(area, ContentTop) { FreshPageArea = FreshPageArea };
+    public LayoutContext WithArea(LayoutBox area) =>
+        new(area, ContentTop) { FreshPageArea = FreshPageArea, BreakLongWordsAtPlaces = BreakLongWordsAtPlaces };
 }

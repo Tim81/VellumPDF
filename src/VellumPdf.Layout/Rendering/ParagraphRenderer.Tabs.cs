@@ -169,7 +169,8 @@ public sealed partial class ParagraphRenderer
         double maxWidth,
         IReadOnlyList<TabStop> stops,
         List<LineFragment[]> lines,
-        List<LineEnd> ends)
+        List<LineEnd> ends,
+        bool atPlaces)
     {
         // Each piece is measured once, in its own style. Measuring a piece in an embedded font
         // records its glyphs, and so does the space measured beside it, as the plain wrap does.
@@ -262,7 +263,7 @@ public sealed partial class ParagraphRenderer
         {
             if (wordW > maxWidth)
             {
-                unresolved = HardBreakWord(tokens, first, end, maxWidth, lines, ends);
+                unresolved = HardBreakWord(tokens, first, end, maxWidth, lines, ends, atPlaces);
                 pen = 0.0;
                 return;
             }

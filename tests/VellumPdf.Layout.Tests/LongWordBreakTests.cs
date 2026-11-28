@@ -33,19 +33,15 @@ public sealed class LongWordBreakTests
 
     // The wraps below are static and read the setting from the thread, which a document sets while it
     // lays out. A direct call sets it for its own duration.
-    private static LongWordBreaks.PlaceCutScope On() => LongWordBreaks.PlaceCuts(true);
-
     private static (List<LineFragment[]> Lines, List<LineEnd> Ends) Wrap(
         IReadOnlyList<TextRun> runs, double width, out int nullStyleRuns)
     {
-        using var on = On();
-        return ParagraphRenderer.WordWrap(runs, width, out nullStyleRuns);
+        return ParagraphRenderer.WordWrapWith(runs, width, out nullStyleRuns, null, atPlaces: true);
     }
 
     private static List<string> Lines(string text, TextStyle style, double width, bool honourBreaks)
     {
-        using var on = On();
-        return TableRenderer.WordWrapLines(text, style, width, honourBreaks);
+        return TableRenderer.WordWrapLines(text, style, width, honourBreaks, atPlaces: true);
     }
 
     private static string[] Paragraph(string text, double width = Line) =>
@@ -311,12 +307,11 @@ public sealed class LongWordBreakTests
     [Fact]
     public void ATableCellOfRunsInTwoStylesKeepsTheStylesOfItsPieces()
     {
-        using var on = On();
         var a = Courier();
         var b = Courier();
         var cell = new Cell([new TextRun("aaaa/bb", a), new TextRun("bbbbbbbbbbb", b)]);
 
-        var lines = cell.RunText!.Lines(Line, honourBreaks: true);
+        var lines = cell.RunText!.Lines(Line, honourBreaks: true, atPlaces: true);
 
         Assert.Equal(["aaaa/", "bbbbbbbbbb", "bbb"], lines);
         Assert.Equal(["bb", "bbbbbbbb"], lines.Fragments[1].Select(f => f.Text));
@@ -335,18 +330,16 @@ public sealed class LongWordBreakTests
     [InlineData("xx aa/bb/cc/d", new[] { "xx", "aa/bb/cc/d" })]
     public void ACellStringAndACellOfRunsWrapTheSameAsTheParagraph(string word, string[] expected)
     {
-        using var on = On();
         var style = Courier();
 
         Assert.Equal(expected, Paragraph(word));
         Assert.Equal(expected, Lines(word, style, Line, honourBreaks: true));
-        Assert.Equal(expected, new Cell([new TextRun(word, style)]).RunText!.Lines(Line, honourBreaks: true));
+        Assert.Equal(expected, new Cell([new TextRun(word, style)]).RunText!.Lines(Line, honourBreaks: true, atPlaces: true));
     }
 
     [Fact]
     public void ACellStringAndACellOfRunsAgreeOnLinesAndOnTheWidthsTheCountHoldsOver()
     {
-        using var on = On();
         var style = Courier();
         string[] words =
         [
@@ -359,10 +352,10 @@ public sealed class LongWordBreakTests
             for (var width = 1.0; width < 130; width += 0.7)
             {
                 var expected = Lines(text, style, width, honourBreaks: true);
-                Assert.Equal(expected, cell.RunText!.Lines(width, honourBreaks: true));
+                Assert.Equal(expected, cell.RunText!.Lines(width, honourBreaks: true, atPlaces: true));
 
-                var stringCount = TableRenderer.CountLines(text, style, width, true, out var from, out var below);
-                var runCount = cell.RunText.CountLines(width, true, out var runFrom, out var runBelow);
+                var stringCount = TableRenderer.CountLines(text, style, width, true, out var from, out var below, atPlaces: true);
+                var runCount = cell.RunText.CountLines(width, true, out var runFrom, out var runBelow, atPlaces: true);
                 Assert.Equal(expected.Count, stringCount);
                 Assert.Equal((stringCount, from, below), (runCount, runFrom, runBelow));
 
@@ -379,7 +372,6 @@ public sealed class LongWordBreakTests
     [Fact]
     public void TheWidthsACountHoldsOverAreSoundForACutWord()
     {
-        using var on = On();
         // A cached count answers every width inside its interval, so a width inside it must wrap
         // into the same lines as the width it was found at, whichever comparison narrowed it.
         var style = Courier();
@@ -393,7 +385,7 @@ public sealed class LongWordBreakTests
             var widths = Enumerable.Range(0, 200).Select(i => 3.1 + i * 0.6).ToArray();
             var found = widths.Select(w =>
             {
-                var count = TableRenderer.CountLines(text, style, w, true, out var from, out var below);
+                var count = TableRenderer.CountLines(text, style, w, true, out var from, out var below, atPlaces: true);
                 return (Width: w, Count: count, From: from, Below: below);
             }).ToArray();
             foreach (var a in found)

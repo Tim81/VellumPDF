@@ -74,37 +74,6 @@ internal static class LongWordBreaks
     // tier test alike.
     private static bool IsPlaceCharacter(int value) => value is '/' or '\\' or '-';
 
-    // The setting of the save that is laying out, read by every wrap. An AsyncLocal and not a
-    // ThreadStatic, as ListLayoutRun is: a renderer of a caller's that lays a built-in renderer out
-    // through Task.Run or on a new thread during the save reads the document's setting there too. It
-    // flows with the execution context, so work queued with the context suppressed
-    // (ThreadPool.UnsafeQueueUserWorkItem, ExecutionContext.SuppressFlow) reads false. A layout
-    // started inside another one sets its own value and restores the outer one when it ends.
-    // Removed in 3.0 with the setting (#750).
-    private static readonly AsyncLocal<bool> s_enabled = new();
-
-    /// <summary>Whether a word wider than its line is cut after a place in this flow now.</summary>
-    internal static bool Enabled => s_enabled.Value;
-
-    /// <summary>
-    /// Sets <see cref="Enabled"/> to <paramref name="on"/> until the returned scope is disposed,
-    /// which restores the value before it.
-    /// </summary>
-    internal static PlaceCutScope PlaceCuts(bool on) => new(on);
-
-    internal readonly struct PlaceCutScope : IDisposable
-    {
-        private readonly bool _previous;
-
-        internal PlaceCutScope(bool on)
-        {
-            _previous = s_enabled.Value;
-            s_enabled.Value = on;
-        }
-
-        public void Dispose() => s_enabled.Value = _previous;
-    }
-
     /// <summary>
     /// The characters of one word and the width of each, with the cut decision made from them. The
     /// buffers are rented, so a word of any length is measured and walked without a string or an

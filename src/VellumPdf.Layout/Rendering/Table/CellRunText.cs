@@ -120,25 +120,25 @@ internal sealed class CellRunText
     /// are the largest such width that fitted and the smallest that did not. This is the interval
     /// <c>TableRenderer.CountLines</c> finds for a string.
     /// </summary>
-    internal int CountLines(double maxWidth, bool honourBreaks, out double from, out double below)
+    internal int CountLines(double maxWidth, bool honourBreaks, out double from, out double below, bool atPlaces = false)
     {
         from = double.NegativeInfinity;
         below = double.PositiveInfinity;
         var d = Derived(honourBreaks);
-        return Wrap(d, HardLines(honourBreaks), maxWidth, ref from, ref below).Count;
+        return Wrap(d, HardLines(honourBreaks), maxWidth, ref from, ref below, atPlaces).Count;
     }
 
     /// <summary>The number of lines <see cref="Lines"/> returns, without building them.</summary>
-    internal int CountLines(double maxWidth, bool honourBreaks) =>
-        CountLines(maxWidth, honourBreaks, out _, out _);
+    internal int CountLines(double maxWidth, bool honourBreaks, bool atPlaces = false) =>
+        CountLines(maxWidth, honourBreaks, out _, out _, atPlaces);
 
     /// <summary>The lines the text is drawn in, each with its stretches.</summary>
-    internal CellRunLines Lines(double maxWidth, bool honourBreaks)
+    internal CellRunLines Lines(double maxWidth, bool honourBreaks, bool atPlaces = false)
     {
         var d = Derived(honourBreaks);
         var from = double.NegativeInfinity;
         var below = double.PositiveInfinity;
-        var ranges = Wrap(d, HardLines(honourBreaks), maxWidth, ref from, ref below);
+        var ranges = Wrap(d, HardLines(honourBreaks), maxWidth, ref from, ref below, atPlaces);
         var lines = new CellRunLines();
         foreach (var (start, end) in ranges)
             lines.AddLine(Fragments(d, start, end, removeControlSpaces: !honourBreaks));
@@ -214,20 +214,20 @@ internal sealed class CellRunText
     /// text, because the words it joins are the ones next to each other with their single space.
     /// </summary>
     private List<(int Start, int End)> Wrap(
-        string d, List<(int Start, int End)> hardLines, double maxWidth, ref double from, ref double below)
+        string d, List<(int Start, int End)> hardLines, double maxWidth, ref double from, ref double below, bool atPlaces)
     {
         var result = new List<(int, int)>();
         foreach (var (hs, he) in hardLines)
         {
             var before = result.Count;
-            WrapLine(d, hs, he, maxWidth, result, ref from, ref below);
+            WrapLine(d, hs, he, maxWidth, result, ref from, ref below, atPlaces);
             if (result.Count == before) result.Add((hs, hs));
         }
         return result;
     }
 
     private void WrapLine(
-        string d, int hs, int he, double maxWidth, List<(int, int)> result, ref double from, ref double below)
+        string d, int hs, int he, double maxWidth, List<(int, int)> result, ref double from, ref double below, bool atPlaces)
     {
         if (hs == he) { result.Add((hs, hs)); return; }
 
@@ -251,7 +251,7 @@ internal sealed class CellRunText
             var ww = MeasureRange(d, ws, we);
             if (!has)
             {
-                StartLine(d, ws, we, ww, maxWidth, result, ref has, ref ls, ref le, ref lineW, ref from, ref below);
+                StartLine(d, ws, we, ww, maxWidth, result, ref has, ref ls, ref le, ref lineW, ref from, ref below, atPlaces);
             }
             else
             {
@@ -269,7 +269,7 @@ internal sealed class CellRunText
                     result.Add((ls, le));
                     has = false;
                     lineW = 0.0;
-                    StartLine(d, ws, we, ww, maxWidth, result, ref has, ref ls, ref le, ref lineW, ref from, ref below);
+                    StartLine(d, ws, we, ww, maxWidth, result, ref has, ref ls, ref le, ref lineW, ref from, ref below, atPlaces);
                 }
             }
 
@@ -284,12 +284,12 @@ internal sealed class CellRunText
     /// </summary>
     private void StartLine(
         string d, int ws, int we, double ww, double maxWidth, List<(int, int)> result,
-        ref bool has, ref int ls, ref int le, ref double lineW, ref double from, ref double below)
+        ref bool has, ref int ls, ref int le, ref double lineW, ref double from, ref double below, bool atPlaces)
     {
         if (ww > maxWidth)
         {
             below = Math.Min(below, ww);
-            HardBreakWord(d, ws, we, maxWidth, result, ref from, ref below);
+            HardBreakWord(d, ws, we, maxWidth, result, ref from, ref below, atPlaces);
             return;
         }
 
@@ -303,9 +303,9 @@ internal sealed class CellRunText
     /// document set <see cref="VellumPdf.Layout.Document.BreakLongWordsAtPlaces"/>.
     /// </summary>
     private void HardBreakWord(
-        string d, int ws, int we, double maxWidth, List<(int, int)> lines, ref double from, ref double below)
+        string d, int ws, int we, double maxWidth, List<(int, int)> lines, ref double from, ref double below, bool atPlaces)
     {
-        if (LongWordBreaks.Enabled)
+        if (atPlaces)
         {
             HardBreakWordAtPlaces(d, ws, we, maxWidth, lines, ref from, ref below);
             return;
