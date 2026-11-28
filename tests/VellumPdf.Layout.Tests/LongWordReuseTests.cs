@@ -325,23 +325,24 @@ public sealed class LongWordReuseTests
     }
 
     [Fact]
-    public void AListWhoseGutterTheDocumentClamps_isLaidOutThatWayWithTheSettingOn()
+    public void AListWhoseIndentLeavesTheTextNoWidth_isLaidOutWithTheTextWithTheSettingOn()
     {
-        // The indent leaves the text 40 pt, narrower than the 72 pt word, so the document's own
-        // layout widens the text and the word stays on one line, where the layout a list falls back
-        // to cuts it. A word with no place is cut the same way whatever the setting says, so the two
-        // documents have to save the same bytes. If the child context the list makes lost the value,
-        // each entry would refuse it and the list would fall back to that other layout.
+        // The indent is wider than the 80 pt the list has, so the document's own layout gives the text
+        // a width and draws it, where the layout a list falls back to discards it. The word has no
+        // place, so the setting changes nothing about it and the two documents have to save the same
+        // bytes. If the child context the list makes lost the value, each entry would refuse it, the
+        // document would lay the list out with the fallback and the text would be missing.
         static byte[] Save(bool on)
         {
             using var doc = NewDocument(on, 100, 80, 10);
-            doc.Add(new ListElement { DefaultStyle = Courier(), Indent = 40 }.Add("aaaaaaaaaaaa"));
+            doc.Add(new ListElement { DefaultStyle = Courier(), Indent = 90 }.Add("aaaaaaaaaaaa"));
             using var ms = new MemoryStream();
             doc.Save(ms);
             return ms.ToArray();
         }
 
         Assert.Equal(Save(false), Save(true));
+        Assert.Contains("aaaaaaaaaaaa", Placements(Save(true)));
     }
 
     [Fact]
