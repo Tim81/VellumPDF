@@ -298,7 +298,7 @@ public sealed partial class ConformanceAuditG2Tests
         Assert.NotEqual((flags & 4) != 0, (flags & 32) != 0);
     }
 
-    [Fact(Skip = "Gap G2-01: the Nonsymbolic flag is written for every font, so a subset that shows characters outside the Adobe standard Latin set (here Greek, a snowman and an emoji) is not marked Symbolic, which 9.8.2 requires whenever the font holds such glyphs.")]
+    [Fact(Skip = "Gap #753: the Nonsymbolic flag is written for every font, so a subset that shows characters outside the Adobe standard Latin set (here Greek, a snowman and an emoji) is not marked Symbolic, which 9.8.2 requires whenever the font holds such glyphs.")]
     public void Iso32000_1_9_8_2_ASubsetWithGlyphsOutsideTheLatinSetIsMarkedSymbolic()
     {
         using var pdf = new Pdf(KernelFixture(Kind.DejaVuBmp, PdfConformance.None));
@@ -662,7 +662,7 @@ public sealed partial class ConformanceAuditG2Tests
         return Save(doc);
     }
 
-    [Theory(Skip = "Gap G2-02: U+FEFF has a glyph in DejaVu Sans and Source Sans 3, so the Kernel and a Layout paragraph draw it and ToUnicode maps its code to U+FEFF, which 6.2.11.7.2 and 14289-1 7.21.7 forbid (veraPDF 6.2.11.7.2-2 and 7.21.7-2 fail). Preformatted refuses it already.")]
+    [Theory(Skip = "Gap #752: U+FEFF has a glyph in DejaVu Sans and Source Sans 3, so the Kernel and a Layout paragraph draw it and ToUnicode maps its code to U+FEFF, which 6.2.11.7.2 and 14289-1 7.21.7 forbid (veraPDF 6.2.11.7.2-2 and 7.21.7-2 fail). Preformatted refuses it already.")]
     [InlineData(false)]
     [InlineData(true)]
     public void Iso19005_2_6_2_11_7_2_ACharacterThatToUnicodeCannotNameIsNotWrittenUnderALevelThatNeedsToUnicode(bool layout)
@@ -974,7 +974,7 @@ public sealed partial class ConformanceAuditG2Tests
     [Fact]
     public void Iso14289_1_7_21_4_1_AFontWhoseFsTypeRestrictsEmbeddingIsEmbeddedAnywayToday()
     {
-        // The state G2-03 describes: the permission is parsed (Os2Table.FsType) and not enforced, as
+        // The state #267 describes: the permission is parsed (Os2Table.FsType) and not enforced, as
         // the package READMEs say under "2.11 Font completeness" (#267).
         var font = RestrictedDejaVu();
         Assert.Equal(2, FsType(font) & 0xF);
@@ -1061,7 +1061,7 @@ public sealed partial class ConformanceAuditG2Tests
         return [.. EmbeddedFonts(pdf).Select(f => BaseFont(f.Type0))];
     }
 
-    [Fact(Skip = "Gap G2-03: the subset tag hashes the glyph ids alone, so two different fonts that show the same glyph ids share a tag. ISO 32000-1 9.6.4 says different subsets in one file have different tags; ISO 32000-2 9.9.2 narrows that to subsets of the same font.")]
+    [Fact(Skip = "Gap #754: the subset tag hashes the glyph ids alone, so two different fonts that show the same glyph ids share a tag. ISO 32000-1 9.6.4 says different subsets in one file have different tags; ISO 32000-2 9.9.2 narrows that to subsets of the same font.")]
     public void Iso32000_1_9_6_4_TwoSubsetsOfDifferentFontsHaveDifferentTags()
     {
         var names = TwoFaceNames();
