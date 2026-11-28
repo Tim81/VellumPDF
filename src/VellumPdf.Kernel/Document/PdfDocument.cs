@@ -142,6 +142,15 @@ public sealed class PdfDocument : IDisposable
     /// When non-<see cref="PdfConformance.None"/>:
     /// XMP pdfaid schema is included, /ID is written, and /MarkInfo /Marked true is set.
     /// PDF/A-2a additionally implies <see cref="Tagged"/> = true.
+    /// <para><b>A ToUnicode value of U+FEFF, U+FFFE or U+0000 is written as another character under
+    /// PDF/A-2u, PDF/A-2a and PDF/UA-1.</b> ISO 19005-2, 6.2.11.7.2, and ISO 14289-1, 7.21.7, allow
+    /// no such value, so a glyph that only U+FEFF reaches is named U+2060, the word joiner, and one
+    /// that only U+FFFE or U+0000 reaches is named U+FFFD. The save does not refuse the text and
+    /// the drawing is unchanged, but text extraction returns U+2060 or U+FFFD where the text held
+    /// the character. A glyph that another character of the same font also maps keeps that
+    /// character's entry. PDF/A-2b and no claim keep the font's own mapping, and a Kernel caller
+    /// gets no report. <b>Do not pass</b> U+FEFF, which is also a byte order mark, as text under
+    /// these claims; remove it first.</para>
     /// </summary>
     public PdfConformance Conformance { get; set; } = PdfConformance.None;
 
@@ -406,6 +415,9 @@ public sealed class PdfDocument : IDisposable
             }
         }
     }
+
+    /// <summary>The fonts this document embeds, in the order they were added.</summary>
+    internal IReadOnlyList<EmbeddedFontHandle> EmbeddedFontHandles => _embeddedFonts;
 
     /// <summary>
     /// Whether a page that draws <paramref name="handle"/> passes the check
@@ -1259,7 +1271,7 @@ public sealed class PdfDocument : IDisposable
             registry.SetValue(cidFontRef, emb.BuildCidFontDictionary(descriptorRef));
 
             // /DescendantFonts is written as an inline array inside the Type0 dict (PDF/A-compliant).
-            registry.SetValue(toUnicodeRef, emb.BuildToUnicodeCMap());
+            registry.SetValue(toUnicodeRef, emb.BuildToUnicodeCMap(Conformance));
             registry.SetValue(type0Ref, emb.BuildFontDictionary(cidFontRef, toUnicodeRef));
 
             // Register on each page that used this font
@@ -1735,7 +1747,7 @@ public sealed class PdfDocument : IDisposable
             registry.SetValue(fontFileRef, emb.BuildFontFileStream());
             registry.SetValue(descriptorRef, emb.BuildFontDescriptor(fontFileRef));
             registry.SetValue(cidFontRef, emb.BuildCidFontDictionary(descriptorRef));
-            registry.SetValue(toUnicodeRef, emb.BuildToUnicodeCMap());
+            registry.SetValue(toUnicodeRef, emb.BuildToUnicodeCMap(Conformance));
             registry.SetValue(type0Ref, emb.BuildFontDictionary(cidFontRef, toUnicodeRef));
             foreach (var page in _pages)
             {

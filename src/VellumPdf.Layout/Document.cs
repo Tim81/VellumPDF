@@ -125,6 +125,9 @@ public sealed class Document : IDisposable
     /// selects a Standard 14 font under a conformance claim),
     /// <see cref="LayoutDiagnosticCode.LinkNotWritten"/> (a link in the style of a table cell or a
     /// running band that a PDF/UA-1 claim left unwritten),
+    /// <see cref="LayoutDiagnosticCode.ToUnicodeValueSubstituted"/> (a character whose ToUnicode
+    /// value the claim forbids, written as another; a warning, which
+    /// <see cref="StrictDiagnostics"/> saves),
     /// <see cref="LayoutDiagnosticCode.BandTruncated"/> (mirroring <see cref="BandTruncations"/>),
     /// <see cref="LayoutDiagnosticCode.PreformattedLineWrapped"/> (a preformatted line split with a
     /// marker; a warning, which <see cref="StrictDiagnostics"/> saves),
@@ -296,6 +299,13 @@ public sealed class Document : IDisposable
     /// a Standard 14 font, or text the font cannot draw, to a PDF/A or PDF/UA document. A later
     /// major version refuses text the font cannot draw, and a Standard 14 font, under either
     /// claim.</para>
+    /// <para>Under PDF/A-2u, PDF/A-2a and PDF/UA-1 a glyph that only U+FEFF reaches is named U+2060
+    /// in the font's ToUnicode map, and one that only U+FFFE or U+0000 reaches is named U+FFFD,
+    /// because the clauses that need the map allow no other value. The text is drawn, and each such
+    /// character is listed as <see cref="LayoutDiagnosticCode.ToUnicodeValueSubstituted"/>, a
+    /// warning that <see cref="StrictDiagnostics"/> saves; text extraction returns the value
+    /// written. <b>Do not pass</b> U+FEFF, which is also a byte order mark, to such a
+    /// document.</para>
     /// </remarks>
     /// <exception cref="InvalidOperationException">
     /// Raised from <see cref="Save(System.IO.Stream)"/> and the other save overloads, when
@@ -1711,6 +1721,7 @@ public sealed class Document : IDisposable
         _bandTruncations.Clear();
         _bandTruncations.AddRange(renderer.BandTruncations);
 
+        renderer.ReportToUnicodeSubstitutions();
         _diagnostics = renderer.Diagnostics;
     }
 

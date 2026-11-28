@@ -3,6 +3,7 @@
 
 using System.Diagnostics;
 using VellumPdf.Canvas;
+using VellumPdf.Fonts;
 using VellumPdf.Layout.Core;
 using VellumPdf.Layout.Elements;
 using VellumPdf.Layout.Rendering.Table;
@@ -162,6 +163,34 @@ public sealed partial class DocumentRenderer
 
     /// <summary>Everything the layout reported so far, in first-occurrence order.</summary>
     internal IReadOnlyList<LayoutDiagnostic> Diagnostics => _sink.Snapshot().AsReadOnly();
+
+    /// <summary>
+    /// Reports each character whose ToUnicode value the claim forbids and the font writer named
+    /// otherwise. Called once per save, after the layout has registered every glyph, so the set is
+    /// complete; the Kernel decides the values, so the report and the file cannot disagree.
+    /// </summary>
+    internal void ReportToUnicodeSubstitutions()
+    {
+        var claim = _pdf.Conformance;
+        if (!ToUnicodeValues.ClaimNeedsToUnicode(claim)) return;
+
+        _sink.CurrentKind = LayoutElementKind.Document;
+        _sink.CurrentIndex = null;
+        _sink.CurrentPage = null;
+        foreach (var handle in _pdf.EmbeddedFontHandles)
+        {
+            foreach (var (codePoint, value) in handle.Embedder.ToUnicodeSubstitutions(claim))
+            {
+                _sink.Report(
+                    LayoutDiagnosticCode.ToUnicodeValueSubstituted,
+                    codePoint,
+                    static code => string.Create(
+                        System.Globalization.CultureInfo.InvariantCulture,
+                        $"U+{code:X4} is written to the font's ToUnicode map as U+{ToUnicodeValues.SubstituteFor((int)code):X4}, because a ToUnicode value may not be U+0000, U+FEFF or U+FFFE; text extraction reads U+{ToUnicodeValues.SubstituteFor((int)code):X4} where the text held U+{code:X4}."),
+                    clause: LayoutDiagnosticSink.ClauseFor(LayoutDiagnosticCode.ToUnicodeValueSubstituted, claim));
+            }
+        }
+    }
 
     /// <summary>
     /// Characters written via <see cref="PdfCanvas.ShowText"/> across every page rendered so far

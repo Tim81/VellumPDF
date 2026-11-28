@@ -243,6 +243,9 @@ internal sealed class LayoutDiagnosticSink
             (LayoutDiagnosticCode.UnembeddedFont, PdfConformance.None) => null,
             (LayoutDiagnosticCode.UnembeddedFont, PdfConformance.PdfUA1) => "ISO 14289-1:2014, 7.21.4.1",
             (LayoutDiagnosticCode.UnembeddedFont, _) => "ISO 19005-2:2011, 6.2.11.4.1",
+            (LayoutDiagnosticCode.ToUnicodeValueSubstituted, PdfConformance.PdfUA1) => "ISO 14289-1:2014, 7.21.7",
+            (LayoutDiagnosticCode.ToUnicodeValueSubstituted, PdfConformance.PdfA2u or PdfConformance.PdfA2a) =>
+                "ISO 19005-2:2011, 6.2.11.7.2",
             _ => null,
         };
 

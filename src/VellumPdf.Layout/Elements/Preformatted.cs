@@ -48,9 +48,10 @@ namespace VellumPdf.Layout.Elements;
 /// than <see cref="VellumPdf.Document.PdfConformance.None"/> it is also thrown when the style's
 /// font is not embedded, and when a character of the text, a tab's spaces included, has no glyph
 /// in the embedded font. Under PDF/A-2a, PDF/A-2u and PDF/UA-1 a U+FEFF or U+FFFE is refused as
-/// well, even when the font has a glyph for it, because a ToUnicode value may not be either. The
-/// default style is Courier, which is not embedded, so a document that claims a standard must pass
-/// an embedded font.</para>
+/// well, even when the font has a glyph for it, because a ToUnicode value may not be either; a
+/// paragraph writes U+FEFF with another ToUnicode value instead, see
+/// <see cref="LayoutDiagnosticCode.ToUnicodeValueSubstituted"/>. The default style is Courier,
+/// which is not embedded, so a document that claims a standard must pass an embedded font.</para>
 /// <para><b>With no claim</b>, a character the embedded font has no glyph for is drawn as glyph 0,
 /// and the save lists it as <see cref="LayoutDiagnosticCode.NotdefGlyph"/>, as for a paragraph;
 /// <see cref="Document.StrictDiagnostics"/> refuses that save.</para>
