@@ -220,3 +220,28 @@ static VellumPdf.Layout.Elements.LayoutImage.FromFile(string! path, VellumPdf.Im
 static VellumPdf.Layout.Elements.LayoutImage.FromStream(System.IO.Stream! stream) -> VellumPdf.Layout.Elements.LayoutImage!
 static VellumPdf.Layout.Elements.LayoutImage.FromStream(System.IO.Stream! stream, VellumPdf.Images.ImageLoadOptions! options) -> VellumPdf.Layout.Elements.LayoutImage!
 static VellumPdf.Layout.Elements.LayoutImage.FromStream(System.IO.Stream! stream, VellumPdf.Images.GifLoadOptions! options) -> VellumPdf.Layout.Elements.LayoutImage!
+VellumPdf.Layout.Elements.BandRule
+VellumPdf.Layout.Elements.BandRule.BandRule(VellumPdf.Layout.Elements.BandRulePosition position, double width = 0.5, VellumPdf.Layout.Core.ColorRgb? color = null) -> void
+VellumPdf.Layout.Elements.BandRule.Color.get -> VellumPdf.Layout.Core.ColorRgb
+VellumPdf.Layout.Elements.BandRule.Position.get -> VellumPdf.Layout.Elements.BandRulePosition
+VellumPdf.Layout.Elements.BandRule.Width.get -> double
+VellumPdf.Layout.Elements.BandRulePosition
+VellumPdf.Layout.Elements.BandRulePosition.Above = 0 -> VellumPdf.Layout.Elements.BandRulePosition
+VellumPdf.Layout.Elements.BandRulePosition.Below = 1 -> VellumPdf.Layout.Elements.BandRulePosition
+VellumPdf.Layout.Elements.BandZone
+VellumPdf.Layout.Elements.BandZone.BandZone(System.Collections.Generic.IEnumerable<VellumPdf.Layout.Elements.TextRun!>! runs) -> void
+VellumPdf.Layout.Elements.BandZone.BandZone(string! text, VellumPdf.Layout.Core.TextStyle! style) -> void
+VellumPdf.Layout.Elements.BandZone.Image.get -> VellumPdf.Layout.Elements.LayoutImage?
+VellumPdf.Layout.Elements.BandZone.Runs.get -> System.Collections.Generic.IReadOnlyList<VellumPdf.Layout.Elements.TextRun!>!
+VellumPdf.Layout.Elements.RunningBand.Center.get -> VellumPdf.Layout.Elements.BandZone?
+VellumPdf.Layout.Elements.RunningBand.Left.get -> VellumPdf.Layout.Elements.BandZone?
+VellumPdf.Layout.Elements.RunningBand.MirrorZones.get -> bool
+VellumPdf.Layout.Elements.RunningBand.MirrorZones.init -> void
+VellumPdf.Layout.Elements.RunningBand.Right.get -> VellumPdf.Layout.Elements.BandZone?
+VellumPdf.Layout.Elements.RunningBand.Rule.get -> VellumPdf.Layout.Elements.BandRule?
+VellumPdf.Layout.Elements.RunningBand.Rule.init -> void
+VellumPdf.Layout.Elements.RunningBand.RunningBand(VellumPdf.Layout.Elements.BandZone! left, VellumPdf.Layout.Elements.BandZone! center, VellumPdf.Layout.Elements.BandZone! right) -> void
+VellumPdf.Layout.Elements.RunningBand.ZoneGap.get -> double
+VellumPdf.Layout.Elements.RunningBand.ZoneGap.init -> void
+static VellumPdf.Layout.Elements.BandZone.Empty.get -> VellumPdf.Layout.Elements.BandZone!
+static VellumPdf.Layout.Elements.BandZone.Logo(VellumPdf.Layout.Elements.LayoutImage! image) -> VellumPdf.Layout.Elements.BandZone!

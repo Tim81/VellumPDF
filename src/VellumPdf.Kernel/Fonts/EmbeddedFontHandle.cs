@@ -33,6 +33,9 @@ public sealed class EmbeddedFontHandle
     /// font.</summary>
     internal string PostScriptName => Embedder.PostScriptName;
 
+    /// <summary>The font's bounding box above and below the baseline, in ems; see <see cref="TrueTypeFontEmbedder.BoundingBoxExtent"/>.</summary>
+    internal (double Ascent, double Descent) BoundingBoxExtent => Embedder.BoundingBoxExtent;
+
     /// <summary>
     /// SHA-256 of the font program this handle embeds, as the owning document keyed it. Another
     /// document that embedded the same program recognises it by this value.
