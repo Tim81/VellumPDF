@@ -44,7 +44,7 @@ public sealed class LongWordBreakTests
     private static List<string> Lines(string text, TextStyle style, double width, bool honourBreaks)
     {
         using var on = On();
-        return Lines(text, style, width, honourBreaks);
+        return TableRenderer.WordWrapLines(text, style, width, honourBreaks);
     }
 
     private static string[] Paragraph(string text, double width = Line) =>
@@ -310,6 +310,7 @@ public sealed class LongWordBreakTests
     [Fact]
     public void ATableCellOfRunsInTwoStylesKeepsTheStylesOfItsPieces()
     {
+        using var on = On();
         var a = Courier();
         var b = Courier();
         var cell = new Cell([new TextRun("aaaa/bb", a), new TextRun("bbbbbbbbbbb", b)]);
@@ -333,6 +334,7 @@ public sealed class LongWordBreakTests
     [InlineData("xx aa/bb/cc/d", new[] { "xx", "aa/bb/cc/d" })]
     public void ACellStringAndACellOfRunsWrapTheSameAsTheParagraph(string word, string[] expected)
     {
+        using var on = On();
         var style = Courier();
 
         Assert.Equal(expected, Paragraph(word));
