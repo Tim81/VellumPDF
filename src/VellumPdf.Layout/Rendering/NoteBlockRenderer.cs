@@ -212,7 +212,7 @@ internal sealed class NoteBlockRenderer : IRenderer, IPageBreakSource, IKeepSour
             }
 
             var childArea = new LayoutBox(left, area.Y + used, width, Room(area.Height, used, reserve));
-            var answer = renderer.Layout(new LayoutContext(childArea));
+            var answer = renderer.Layout(new LayoutContext(childArea) { BreakLongWordsAtPlaces = context.BreakLongWordsAtPlaces });
 
             if (answer.Status == LayoutResult.Outcome.Full)
             {

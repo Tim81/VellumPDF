@@ -16,7 +16,9 @@ internal enum LineEnd : byte
     Hard,
 
     /// <summary>
-    /// The line ended inside a word that is wider than the line, cut between two characters.
+    /// The line ended inside a word that is wider than the line, cut between two characters: at the
+    /// glyph, or, when the document set <see cref="VellumPdf.Layout.Document.BreakLongWordsAtPlaces"/>,
+    /// after a solidus, a reverse solidus or a hyphen-minus where one fits.
     /// </summary>
     Forced,
 

@@ -169,7 +169,8 @@ public sealed partial class ParagraphRenderer
         double maxWidth,
         IReadOnlyList<TabStop> stops,
         List<LineFragment[]> lines,
-        List<LineEnd> ends)
+        List<LineEnd> ends,
+        bool atPlaces)
     {
         // Each piece is measured once, in its own style. Measuring a piece in an embedded font
         // records its glyphs, and so does the space measured beside it, as the plain wrap does.
@@ -256,13 +257,13 @@ public sealed partial class ParagraphRenderer
                 cur.Add(new Frag(tokens[k].Text, tokens[k].Style!, tokenWidth[k]));
         }
 
-        // A word at the start of a line. A word wider than the line is cut at a character, as the
-        // plain wrap does.
+        // A word at the start of a line. A word wider than the line is cut as the plain wrap cuts
+        // it: at a character, or after a place when the document asked for that.
         void StartLine(int first, int end, double wordW)
         {
             if (wordW > maxWidth)
             {
-                unresolved = HardBreakWord(tokens, first, end, maxWidth, lines, ends);
+                unresolved = HardBreakWord(tokens, first, end, maxWidth, lines, ends, atPlaces);
                 pen = 0.0;
                 return;
             }

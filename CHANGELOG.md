@@ -8,6 +8,37 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- **`Document.BreakLongWordsAtPlaces` cuts a web address or a path after a slash or hyphen
+  (#594).** Off by default, a word wider than its line is cut at the character that does not fit, as
+  2.3 does. With it set, such a word is cut after the last `/`, `\` or `-` that leaves the line no
+  wider than its width, so `https://example.org/a/b/c` ends a line at a segment and a Windows path
+  at a folder. It applies to paragraphs, headings, list items, the paragraphs of a `NoteBlock` and
+  table cells given as a string or as runs. A word with no such place that fits is cut at the
+  character, and a word that fits is never cut. No hyphen or other glyph is added at the cut.
+  Following UAX #14, a `-` before a digit and a `/` or `\` before a digit that follows a digit
+  (`1/2`) are cut at only when no other such place fits. `?`, `&`, `=`, `.`, `_` and `#` are not
+  places. A link on the word gets one rectangle per piece.
+  - **The value travels on the new `LayoutContext.BreakLongWordsAtPlaces`.** The document sets it on
+    every context it hands out. A renderer of yours that lays a built-in renderer out passes it on by
+    deriving the child's context with `WithArea`, on any thread or task; a context built with
+    `new LayoutContext(area)` has it false. A paragraph or table renderer keeps the value it first
+    wrapped text with, and so does every piece a paragraph, a table or a list splits into: laying
+    one out again with the other value throws `InvalidOperationException` from that call, and so
+    from the save. A list instance builds its entries again for each save, so it follows each
+    document and is refused only within one save. `Preformatted` does not read the value and cuts at
+    the character. A wrap that takes no context cuts at the character.
+  - **A program that never sets either property saves to the same bytes as before, with the same
+    verdicts.** The value is not read from the thread, a task or an earlier save.
+  - **Turning it on can make a save fail that succeeded.** A cut after a place ends a line earlier,
+    so a text takes the same lines or more. A single element that then needs more than 50,000 page
+    continuations is refused, as is a table whose repeated header rows or row-span group no longer
+    fit a page, and any other element that becomes too tall for a page. The throws are
+    `InvalidOperationException` from `Save`, `SaveAsync` and the `Sign` methods, not from the
+    setter. A value set on the document after a save is never used. Issue #750 tracks making the
+    cut the default.
+  - Text extraction returns the pieces as written, with the extractor's line separator between
+    them. Reading a cut address back as one token needs marked content the library does not write
+    yet (#588).
 - **A running header or footer holds a left, a centre and a right zone (#365).** A book-style band
   puts a title at the left, a chapter at the centre and a page number at the right on one line.
   `new RunningBand(left, center, right)` takes three `BandZone` values, each one holding styled

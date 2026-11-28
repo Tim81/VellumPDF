@@ -517,6 +517,55 @@ public sealed class Document : IDisposable
     public bool MirrorMargins { get; set; }
 
     /// <summary>
+    /// When true, a word wider than its line is cut after the last solidus (<c>/</c>), reverse
+    /// solidus (<c>\</c>) or hyphen-minus (<c>-</c>) that leaves the line no wider than its width,
+    /// so a web address or a path ends a line at a segment. Off by default, which cuts such a word
+    /// at the character that does not fit, as 2.3 does.
+    /// </summary>
+    /// <remarks>
+    /// <b>Setting this can make a save fail that succeeded without it.</b> A cut after a place ends
+    /// a line earlier than a cut at the character, so a text takes the same lines or more, and the
+    /// pages after it can move. A document that turns it on can therefore be refused by the same
+    /// checks as one with more text: a single element needs more than 50,000 page continuations
+    /// ("A single element needed more than 50000 page continuations, ..."), a table's repeated
+    /// header rows, or a group of rows joined by <see cref="Cell.RowSpan"/>, no longer fit a page,
+    /// or any other element becomes too tall for a page ("An element is too tall to fit on a single
+    /// page and cannot be rendered. ..."). A paragraph or table renderer that two documents with different
+    /// values lay out is refused as <see cref="LayoutContext.BreakLongWordsAtPlaces"/> says. Each throw comes
+    /// from the save, not from this setter.
+    /// <para>The cut applies to these wraps: a paragraph, a heading, a list
+    /// item, the paragraphs of a <see cref="NoteBlock"/>, and a table cell given as a string or as
+    /// runs. A <see cref="Preformatted"/> block is not one of them and cuts at the glyph. The document puts the value on every <see cref="LayoutContext"/> it hands to a
+    /// renderer, and a built-in renderer reads it there; <see cref="LayoutContext.BreakLongWordsAtPlaces"/>
+    /// says how a renderer of yours passes it on and what a renderer keeps. No hyphen or other glyph
+    /// is added at the cut, so extracted text has the extractor's line separator between the
+    /// pieces, and a link on the word gets one rectangle per piece. A word that fits its line is
+    /// never cut, and a word with no such place that fits is cut at the character. <c>?</c>,
+    /// <c>&amp;</c>, <c>=</c>, <c>.</c>, <c>_</c> and <c>#</c> are not places. A <c>-</c> before a
+    /// digit, and a solidus before a digit that follows a digit, are used only when no other place
+    /// fits (UAX #14, LB25).</para>
+    /// <para><b>The document reads this property when a save lays the document out, and at no other time.</b>
+    /// A value set after the document has saved is stored and never used, because a document saves
+    /// once. A refused save that failed before layout started leaves the document usable, and a
+    /// value set before the retry is the one used. A renderer of yours that lays a built-in
+    /// renderer out with a context it builds itself, not one derived from the context it was given,
+    /// passes false, so the built-in renderer cuts at the glyph.</para>
+    /// <para><b>Do not rely on the default.</b> Issue #750 tracks making the cut the default.</para>
+    /// </remarks>
+    /// <exception cref="InvalidOperationException">
+    /// Raised from <see cref="Save(System.IO.Stream)"/>, <see cref="Save(string)"/>,
+    /// <see cref="SaveAsync(System.IO.Stream, System.Threading.CancellationToken)"/>,
+    /// <see cref="SaveAsync(string, System.Threading.CancellationToken)"/> and the
+    /// <c>Sign</c> and <c>SignAsync</c> extension methods of <c>VellumPdf.Signing</c> for this
+    /// document, not from this setter, when the cut makes a single element need more than 50,000
+    /// page continuations, makes a table's repeated header rows or a row-span group not fit a
+    /// page, makes any other element too tall for a page, or lays a renderer out that an earlier
+    /// layout bound to the other value. The document is not usable for another save once the
+    /// layout has started.
+    /// </exception>
+    public bool BreakLongWordsAtPlaces { get; set; }
+
+    /// <summary>
     /// Optional header band drawn at the top of every page.
     /// Set via <see cref="SetHeader"/> for a fluent API.
     /// Supports {page} and {pages} tokens, and {chapter} when
@@ -1595,6 +1644,7 @@ public sealed class Document : IDisposable
             Header = Header,
             Footer = Footer,
             MirrorMargins = MirrorMargins,
+            BreakLongWordsAtPlaces = BreakLongWordsAtPlaces,
             DocumentPageLabel = PageLabel,
         };
         foreach (var r in _content) renderer.Add(r);

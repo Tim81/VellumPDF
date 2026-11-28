@@ -26,6 +26,32 @@ public sealed partial class ParagraphRenderer : IRenderer, IPageBreakSource, IKe
 
     // Computed during Layout:
     private List<LineFragment[]>? _lines;
+
+    // The value of LayoutContext.BreakLongWordsAtPlaces this renderer wrapped under, fixed by the
+    // first Layout that wraps text and carried by every piece. A later Layout with the other value
+    // is refused, so the lines, the line height taken from them and the start line of every piece
+    // always belong to one wrap, and Draw and the line counts read the value they were made with.
+    private bool _atPlaces;
+    private bool _bound;
+
+    /// <summary>The value this renderer is bound to; false until the first Layout that wraps.</summary>
+    internal bool AtPlaces => _atPlaces;
+
+    // Fixes the value on first use and refuses the other afterwards.
+    internal void Bind(bool value)
+    {
+        if (!_bound)
+        {
+            (_atPlaces, _bound) = (value, true);
+        }
+        else if (_atPlaces != value)
+        {
+            throw new InvalidOperationException(
+                "A paragraph renderer, or a piece it was split into, was first laid out with LayoutContext.BreakLongWordsAtPlaces set to "
+                + (_atPlaces ? "true" : "false") + " and is now laid out with it set to " + (value ? "true" : "false")
+                + ". Its lines and the start lines of its pieces belong to the first value. Lay a new renderer out for the other value.");
+        }
+    }
     private List<LineEnd>? _lineEnds;  // one per entry of _lines
 
     /// <summary>
@@ -159,6 +185,7 @@ public sealed partial class ParagraphRenderer : IRenderer, IPageBreakSource, IKe
         if (area.Width <= 0)
             return LayoutResult.Nothing();
 
+        Bind(context.BreakLongWordsAtPlaces);
         EnsureWrapped(area.Width);
 
         // The line height is a property of the wrap, so it is taken once per wrap: every later
@@ -211,6 +238,8 @@ public sealed partial class ParagraphRenderer : IRenderer, IPageBreakSource, IKe
         var overflow = new ParagraphRenderer(_para, _endLine)
         {
             _lines = _lines,
+            _atPlaces = _atPlaces,
+            _bound = _bound,
             _lineEnds = _lineEnds,
             _lineHeight = _lineHeight,
             _lineHeightTaken = true,
@@ -224,6 +253,8 @@ public sealed partial class ParagraphRenderer : IRenderer, IPageBreakSource, IKe
         var split = new ParagraphRenderer(_para, _startLine)
         {
             _lines = _lines,
+            _atPlaces = _atPlaces,
+            _bound = _bound,
             _lineEnds = _lineEnds,
             _endLine = _endLine,
             _lineHeight = _lineHeight,
@@ -276,7 +307,7 @@ public sealed partial class ParagraphRenderer : IRenderer, IPageBreakSource, IKe
         var stops = StopsWithin(_para, width, out _tabStopsBeyond);
         _reads = null;
         var runs = PageReferences.Effective(_para.Runs, ref _reads);
-        (_lines, _lineEnds) = WordWrap(runs, width, out var nullStyleRuns, stops);
+        (_lines, _lineEnds) = WordWrapWith(runs, width, out var nullStyleRuns, stops, _atPlaces);
         _nullStyleRuns = nullStyleRuns;
         WrapCalls++;
     }
@@ -291,6 +322,7 @@ public sealed partial class ParagraphRenderer : IRenderer, IPageBreakSource, IKe
         // The subtraction Deflate makes, so the width is the one Layout would wrap at.
         var width = boxWidth - _para.Margins.Left - _para.Margins.Right;
         if (width <= 0) return 0;
+        if (!_bound) Bind(false);
         EnsureWrapped(width);
         return _lines.Count;
     }
@@ -1044,7 +1076,13 @@ public sealed partial class ParagraphRenderer : IRenderer, IPageBreakSource, IKe
     /// </returns>
     internal static (List<LineFragment[]> Lines, List<LineEnd> Ends) WordWrap(
         IReadOnlyList<TextRun> runs, double maxWidth, out int nullStyleRuns,
-        IReadOnlyList<TabStop>? stops = null)
+        IReadOnlyList<TabStop>? stops = null) =>
+        WordWrapWith(runs, maxWidth, out nullStyleRuns, stops, atPlaces: false);
+
+    // The wrap, cutting a word wider than the line after a place when atPlaces is set.
+    internal static (List<LineFragment[]> Lines, List<LineEnd> Ends) WordWrapWith(
+        IReadOnlyList<TextRun> runs, double maxWidth, out int nullStyleRuns,
+        IReadOnlyList<TabStop>? stops, bool atPlaces)
     {
         var tabbed = stops is not null;
         var lines = new List<LineFragment[]>();
@@ -1060,7 +1098,7 @@ public sealed partial class ParagraphRenderer : IRenderer, IPageBreakSource, IKe
         }
 
         if (tabbed)
-            return WrapWithTabs(tokens, maxWidth, stops!, lines, ends);
+            return WrapWithTabs(tokens, maxWidth, stops!, lines, ends, atPlaces);
 
         // Greedy wrap
         var lineFrags = new List<(string Word, TextStyle Style, double Width)>();
@@ -1127,7 +1165,7 @@ public sealed partial class ParagraphRenderer : IRenderer, IPageBreakSource, IKe
                 if (wordW > maxWidth)
                 {
                     // Hard-break oversized word
-                    unresolved = HardBreakWord(tokens, ti, tj, maxWidth, lines, ends);
+                    unresolved = HardBreakWord(tokens, ti, tj, maxWidth, lines, ends, atPlaces);
                     lineWidth = 0.0;
                 }
                 else
@@ -1175,7 +1213,7 @@ public sealed partial class ParagraphRenderer : IRenderer, IPageBreakSource, IKe
 
                     if (wordW > maxWidth)
                     {
-                        unresolved = HardBreakWord(tokens, ti, tj, maxWidth, lines, ends);
+                        unresolved = HardBreakWord(tokens, ti, tj, maxWidth, lines, ends, atPlaces);
                         lineWidth = 0.0;
                     }
                     else
@@ -1207,7 +1245,9 @@ public sealed partial class ParagraphRenderer : IRenderer, IPageBreakSource, IKe
     }
 
     /// <summary>
-    /// Hard-breaks a single word wider than maxWidth at character granularity. The word is the
+    /// Hard-breaks a single word wider than maxWidth at character granularity, or after a place
+    /// when the document set <see cref="VellumPdf.Layout.Document.BreakLongWordsAtPlaces"/>
+    /// (<see cref="HardBreakWordAtPlaces"/>). The word is the
     /// pieces <paramref name="first"/> up to <paramref name="end"/> of <paramref name="tokens"/>;
     /// each rune is measured in its piece's style and a line holds one fragment for each style
     /// change. Every line but the last is recorded as ending inside the word. Returns the index
@@ -1219,8 +1259,11 @@ public sealed partial class ParagraphRenderer : IRenderer, IPageBreakSource, IKe
         int end,
         double maxWidth,
         List<LineFragment[]> lines,
-        List<LineEnd> ends)
+        List<LineEnd> ends,
+        bool atPlaces)
     {
+        if (atPlaces) return HardBreakWordAtPlaces(tokens, first, end, maxWidth, lines, ends);
+
         var lineFragments = new List<LineFragment>();
         var fragment = new System.Text.StringBuilder();
         var fragmentW = 0.0;
@@ -1268,6 +1311,87 @@ public sealed partial class ParagraphRenderer : IRenderer, IPageBreakSource, IKe
             lines.Add([.. lineFragments]);
             ends.Add(LineEnd.Last);
         }
+        return lines.Count - 1;
+    }
+
+    /// <summary>
+    /// Cuts a single word wider than maxWidth, for a document that set
+    /// <see cref="VellumPdf.Layout.Document.BreakLongWordsAtPlaces"/>. The word is the pieces <paramref name="first"/> up
+    /// to <paramref name="end"/> of <paramref name="tokens"/>; each character is measured in its
+    /// piece's style and a line holds one fragment for each style change. A line ends after the
+    /// last solidus, reverse solidus or hyphen-minus that leaves it no wider than the line
+    /// (<see cref="LongWordBreaks"/>), and at the character that does not fit when the word has
+    /// none; no glyph is added at the cut. Every line but the last is recorded as ending inside
+    /// the word. Returns the index of the last line, whose end the caller settles.
+    /// </summary>
+    private static int HardBreakWordAtPlaces(
+        List<(string Text, TextStyle? Style, TokenKind Kind)> tokens,
+        int first,
+        int end,
+        double maxWidth,
+        List<LineFragment[]> lines,
+        List<LineEnd> ends)
+    {
+        // Each character is measured once, in order, so the fonts record the glyphs they always
+        // did, and the cut is chosen from the widths.
+        var length = 0;
+        for (var k = first; k < end; k++) length += tokens[k].Text.Length;
+        using var word = new LongWordBreaks.Word(length);
+
+        // The number of characters up to the end of each piece, so that a character's piece is found
+        // by walking forward and no list holds one entry per character.
+        var pieceEnds = new int[end - first];
+        for (var k = first; k < end; k++)
+        {
+            var style = tokens[k].Style!;
+            foreach (var rune in tokens[k].Text.EnumerateRunes())
+                word.Add(rune, style.FontRef.MeasureString(LongWordBreaks.RuneText(rune), style.FontSize));
+            pieceEnds[k - first] = word.Count;
+        }
+
+        var from = double.NegativeInfinity;
+        var below = double.PositiveInfinity;
+        var starts = new List<int>();
+        word.Lines(maxWidth, ref from, ref below, starts);
+        var runes = word.Runes;
+        var widths = word.Widths;
+
+        var lineFragments = new List<LineFragment>();
+        var fragment = new System.Text.StringBuilder();
+        var pieceAt = 0;
+        for (var s = 0; s < starts.Count; s++)
+        {
+            var lineEnd = s + 1 < starts.Count ? starts[s + 1] : runes.Length;
+            lineFragments.Clear();
+            fragment.Clear();
+            var fragmentW = 0.0;
+            var piece = -1;
+            for (var i = starts[s]; i < lineEnd; i++)
+            {
+                while (i >= pieceEnds[pieceAt]) pieceAt++;
+
+                // A piece in another style starts a fragment of its own.
+                if (pieceAt != piece)
+                {
+                    if (fragment.Length > 0)
+                    {
+                        lineFragments.Add(new LineFragment(fragment.ToString(), tokens[first + piece].Style!, fragmentW));
+                        fragment.Clear();
+                        fragmentW = 0.0;
+                    }
+
+                    piece = pieceAt;
+                }
+
+                fragment.Append(LongWordBreaks.RuneText(runes[i]));
+                fragmentW += widths[i];
+            }
+
+            lineFragments.Add(new LineFragment(fragment.ToString(), tokens[first + piece].Style!, fragmentW));
+            lines.Add([.. lineFragments]);
+            ends.Add(s + 1 < starts.Count ? LineEnd.Forced : LineEnd.Last);
+        }
+
         return lines.Count - 1;
     }
 }

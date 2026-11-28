@@ -24,10 +24,26 @@ namespace VellumPdf.Layout.Elements;
 /// other white-space character, except the no-break spaces, at the end of one run or the start of
 /// the next. With none, the two runs hold one word and nothing is drawn between them, so the run
 /// <c>Bold</c> followed by the run <c>er</c> is drawn as <c>Bolder</c>, and a word can change style
-/// part-way. Such a word wraps as one unit, and when it is wider than its line it is cut at a
-/// character, in whichever style that character has. An empty run adds nothing to a word, so it
-/// does not separate its neighbours. A run ending in a carriage return and the next starting with
-/// a line feed are two line breaks, because each run's line breaks are read on their own.</para>
+/// part-way. Such a word wraps as one unit, and when it is wider than its line it is cut as
+/// described below, each piece in the style of its characters. An empty run adds nothing to a word,
+/// so it does not separate its neighbours. A run ending in a carriage return and the next starting
+/// with a line feed are two line breaks, because each run's line breaks are read on their own.
+/// </para>
+/// <para><b>A word wider than its line is cut at the character that does not fit.</b> When the context says so
+/// (<see cref="VellumPdf.Layout.Core.LayoutContext.BreakLongWordsAtPlaces"/>, which
+/// <see cref="VellumPdf.Layout.Document.BreakLongWordsAtPlaces"/> sets) it is cut after the last <c>/</c>, <c>\</c> or
+/// <c>-</c> that leaves the line no wider than its width, so a web address or a path ends a line at
+/// one of its segments, and at the character only when it has no such place that fits. No hyphen
+/// or other glyph is added at the cut, so the characters of the word read back as written, with the
+/// reader's line separator in the middle of them. A word that fits its line is never cut. A
+/// hyphen-minus before a digit, and a <c>/</c> or <c>\</c> before a digit when a digit comes before
+/// it, are places only when no other place on the line fits, because Unicode line breaking forbids
+/// a break there (UAX #14, rule LB25). A <c>?</c>, <c>&amp;</c>, <c>=</c>, <c>.</c>, <c>_</c> or
+/// <c>#</c> is not a place. The setting can make a save refuse a document that saved without it;
+/// its documentation says which refusals.</para>
+/// <para><b>Do not</b> expect a cut address to read back as one token. This version writes no
+/// marked content that joins the pieces of a cut word, so text extraction returns the pieces with a
+/// line separator between them.</para>
 /// <para>The pieces of one word that share one <see cref="TextStyle"/> instance are measured and
 /// drawn as one piece, so a word split between runs of one instance is drawn as the same word in a
 /// single run. That includes a surrogate pair split between two such runs. Pieces whose styles are

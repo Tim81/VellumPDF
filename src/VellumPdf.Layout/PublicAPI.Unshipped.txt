@@ -220,6 +220,8 @@ static VellumPdf.Layout.Elements.LayoutImage.FromFile(string! path, VellumPdf.Im
 static VellumPdf.Layout.Elements.LayoutImage.FromStream(System.IO.Stream! stream) -> VellumPdf.Layout.Elements.LayoutImage!
 static VellumPdf.Layout.Elements.LayoutImage.FromStream(System.IO.Stream! stream, VellumPdf.Images.ImageLoadOptions! options) -> VellumPdf.Layout.Elements.LayoutImage!
 static VellumPdf.Layout.Elements.LayoutImage.FromStream(System.IO.Stream! stream, VellumPdf.Images.GifLoadOptions! options) -> VellumPdf.Layout.Elements.LayoutImage!
+VellumPdf.Layout.Document.BreakLongWordsAtPlaces.get -> bool
+VellumPdf.Layout.Document.BreakLongWordsAtPlaces.set -> void
 VellumPdf.Layout.Elements.BandRule
 VellumPdf.Layout.Elements.BandRule.BandRule(VellumPdf.Layout.Elements.BandRulePosition position, double width = 0.5, VellumPdf.Layout.Core.ColorRgb? color = null) -> void
 VellumPdf.Layout.Elements.BandRule.Color.get -> VellumPdf.Layout.Core.ColorRgb
@@ -245,3 +247,5 @@ VellumPdf.Layout.Elements.RunningBand.ZoneGap.get -> double
 VellumPdf.Layout.Elements.RunningBand.ZoneGap.init -> void
 static VellumPdf.Layout.Elements.BandZone.Empty.get -> VellumPdf.Layout.Elements.BandZone!
 static VellumPdf.Layout.Elements.BandZone.Logo(VellumPdf.Layout.Elements.LayoutImage! image) -> VellumPdf.Layout.Elements.BandZone!
+VellumPdf.Layout.Core.LayoutContext.BreakLongWordsAtPlaces.get -> bool
+VellumPdf.Layout.Core.LayoutContext.BreakLongWordsAtPlaces.init -> void

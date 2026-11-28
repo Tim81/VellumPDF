@@ -491,6 +491,14 @@ public sealed class ListRenderer : IRenderer, IPageBreakSource, IKeepSource, IPl
 
         var built = _built!;
         var items = built.Items;
+
+        // Every entry wraps under the value this layout carries, whatever asks for its line count
+        // before it is laid out. An entry that an earlier layout bound to the other value refuses.
+        foreach (var entry in items)
+        {
+            entry.Marker.Bind(context.BreakLongWordsAtPlaces);
+            entry.Content.Bind(context.BreakLongWordsAtPlaces);
+        }
         _moveSites = 0;
         if (!_isPiece) _fromFirstEntry = _startItem == 0 && _partialContentOverrideAtStart is null;
         if (items.Count == 0)
@@ -872,9 +880,9 @@ public sealed class ListRenderer : IRenderer, IPageBreakSource, IKeepSource, IPl
             // enough to drop a line (#556); the fallback is for a renderer Layout never ran on.
             var offeredHeight = _offered is { } o ? o[i - _startItem] : area.Bottom - y;
             var itemArea = new LayoutBox(area.X, y, area.Width, offeredHeight);
-            var markerResult = isContinuation ? null : marker.Layout(LayoutContext.Addressed(itemArea, marker, childMode));
+            var markerResult = isContinuation ? null : marker.Layout(LayoutContext.Addressed(itemArea, marker, childMode, marker.AtPlaces));
             var markerH = markerResult?.OccupiedArea?.Height ?? 0;
-            var contentResult = content.Layout(LayoutContext.Addressed(itemArea, content, childMode));
+            var contentResult = content.Layout(LayoutContext.Addressed(itemArea, content, childMode, content.AtPlaces));
 
             // A paragraph that answers Nothing keeps where its last layout that placed lines put
             // them, and Draw reads that. The lines of a layout that did not place anything for

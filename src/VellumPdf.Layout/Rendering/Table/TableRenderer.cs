@@ -86,6 +86,28 @@ public sealed class TableRenderer : IRenderer, IPageBreakSource, IKeepSource, IP
     // document reports an anchor only for a renderer it placed. Removed in 3.0 (#688).
     private TableRenderer? _laidOutBy;
 
+    // The value of LayoutContext.BreakLongWordsAtPlaces this renderer wrapped under, fixed by the
+    // first Layout and carried by every piece. A later Layout with the other value is refused, so
+    // the grid, the row heights, the lines a cut row resumes at and what Draw wraps all belong to
+    // one wrap.
+    private bool _atPlaces;
+    private bool _bound;
+
+    private void Bind(bool value)
+    {
+        if (!_bound)
+        {
+            (_atPlaces, _bound) = (value, true);
+        }
+        else if (_atPlaces != value)
+        {
+            throw new InvalidOperationException(
+                "A table renderer, or a piece it was split into, was first laid out with LayoutContext.BreakLongWordsAtPlaces set to "
+                + (_atPlaces ? "true" : "false") + " and is now laid out with it set to " + (value ? "true" : "false")
+                + ". Its measured heights and the lines of a row it cut belong to the first value. Lay a new renderer out for the other value.");
+        }
+    }
+
     // What the decision reports to the document: an upper bound on the continuations of the
     // placement in either layout, over the grid that keeps the breaks and the grid that reads every
     // cell unbroken, which is the twin's. Where the decision leaves no cell its breaks the two are
@@ -299,6 +321,7 @@ public sealed class TableRenderer : IRenderer, IPageBreakSource, IKeepSource, IP
         // laid out as it was before breaks were honoured, by its twin. Removed in 3.0 (#688).
         var mode = context.ModeFor(this);
         _laidOutBy = null;
+        Bind(context.BreakLongWordsAtPlaces);
         if (mode == ContinuationMode.Twin && !_readsUnbrokenForTheLimit)
         {
             _laidOutBy = (TableRenderer)((IContinuationTwin)this).Twin();
@@ -577,6 +600,8 @@ public sealed class TableRenderer : IRenderer, IPageBreakSource, IKeepSource, IP
         next._placedAsTwin = _placedAsTwin;
         next._reportBound = _reportBound;
         next._decidedFor = _decidedFor;
+        next._atPlaces = _atPlaces;
+        next._bound = _bound;
         return next;
     }
 
@@ -636,8 +661,8 @@ public sealed class TableRenderer : IRenderer, IPageBreakSource, IKeepSource, IP
             var honourBreaks = HonoursBreaks(r, cellIndex);
             var wrapWidth = Math.Max(1, innerW);
             var lines = _measured is null
-                ? CellLineCount(cell, cs, wrapWidth, honourBreaks)
-                : CachedLineCount(_measured, (r, cellIndex, row.Cells.Count), cell, cs, wrapWidth, honourBreaks);
+                ? CellLineCount(cell, cs, wrapWidth, honourBreaks, _atPlaces)
+                : CachedLineCount(_measured, (r, cellIndex, row.Cells.Count), cell, cs, wrapWidth, honourBreaks, _atPlaces);
             var cellH = lines * LeadingOf(cell, cs) + cell.Padding.Vertical;
             maxH = Math.Max(maxH, cellH);
             col += cell.ColSpan;
@@ -652,7 +677,7 @@ public sealed class TableRenderer : IRenderer, IPageBreakSource, IKeepSource, IP
     /// </summary>
     private static int CachedLineCount(
         TableMeasureCache cache, (int Row, int Cell, int CellCount) at, Cell cell, TextStyle style,
-        double width, bool honourBreaks)
+        double width, bool honourBreaks, bool atPlaces)
     {
         ref var entry = ref cache.Of(at.Row, at.Cell, at.CellCount, honourBreaks);
         var probe = TableMeasureProbe.Current;
@@ -667,7 +692,7 @@ public sealed class TableRenderer : IRenderer, IPageBreakSource, IKeepSource, IP
                 if (probe is not null)
                 {
                     probe.WrapHits++;
-                    if (probe.Verify && runText.CountLines(width, honourBreaks) != entry.Lines)
+                    if (probe.Verify && runText.CountLines(width, honourBreaks, atPlaces) != entry.Lines)
                         throw new InvalidOperationException(
                             $"A cached line count of {entry.Lines} does not hold at width {width:R}.");
                 }
@@ -675,7 +700,7 @@ public sealed class TableRenderer : IRenderer, IPageBreakSource, IKeepSource, IP
             }
 
             if (probe is not null) probe.WrapMisses++;
-            entry.Lines = runText.CountLines(width, honourBreaks, out entry.From, out entry.Below);
+            entry.Lines = runText.CountLines(width, honourBreaks, out entry.From, out entry.Below, atPlaces);
             entry.HasLines = true;
             return entry.Lines;
         }
@@ -685,7 +710,7 @@ public sealed class TableRenderer : IRenderer, IPageBreakSource, IKeepSource, IP
             if (probe is not null)
             {
                 probe.WrapHits++;
-                if (probe.Verify && WordWrapCount(text, style, width, honourBreaks) != entry.Lines)
+                if (probe.Verify && WordWrapCount(text, style, width, honourBreaks, atPlaces) != entry.Lines)
                     throw new InvalidOperationException(
                         $"A cached line count of {entry.Lines} does not hold at width {width:R}.");
             }
@@ -693,7 +718,7 @@ public sealed class TableRenderer : IRenderer, IPageBreakSource, IKeepSource, IP
         }
 
         if (probe is not null) probe.WrapMisses++;
-        entry.Lines = CountLines(text, style, width, honourBreaks, out entry.From, out entry.Below);
+        entry.Lines = CountLines(text, style, width, honourBreaks, out entry.From, out entry.Below, atPlaces);
         entry.HasLines = true;
         return entry.Lines;
     }
@@ -710,7 +735,13 @@ public sealed class TableRenderer : IRenderer, IPageBreakSource, IKeepSource, IP
     /// </summary>
     internal static int CountLines(
         string text, TextStyle style, double maxWidth, bool honourBreaks,
-        out double from, out double below)
+        out double from, out double below) =>
+        CountLines(text, style, maxWidth, honourBreaks, out from, out below, atPlaces: false);
+
+    // The count, with a word wider than the line cut after a place when atPlaces is set.
+    internal static int CountLines(
+        string text, TextStyle style, double maxWidth, bool honourBreaks,
+        out double from, out double below, bool atPlaces)
     {
         from = double.NegativeInfinity;
         below = double.PositiveInfinity;
@@ -718,12 +749,12 @@ public sealed class TableRenderer : IRenderer, IPageBreakSource, IKeepSource, IP
 
         var total = 0;
         foreach (var line in CellLines(text, honourBreaks))
-            total += CountLine(line, style, maxWidth, ref from, ref below);
+            total += CountLine(line, style, maxWidth, ref from, ref below, atPlaces);
         return total;
     }
 
     private static int CountLine(
-        string text, TextStyle style, double maxWidth, ref double from, ref double below)
+        string text, TextStyle style, double maxWidth, ref double from, ref double below, bool atPlaces)
     {
         if (string.IsNullOrEmpty(text)) return 1;
 
@@ -761,7 +792,7 @@ public sealed class TableRenderer : IRenderer, IPageBreakSource, IKeepSource, IP
             if (ww > maxWidth)
             {
                 below = Math.Min(below, ww);
-                lines += CountHardBreakFragments(word, style, maxWidth, ref from, ref below);
+                lines += CountHardBreakFragments(word, style, maxWidth, ref from, ref below, atPlaces);
                 continue;
             }
             from = Math.Max(from, ww);
@@ -778,8 +809,14 @@ public sealed class TableRenderer : IRenderer, IPageBreakSource, IKeepSource, IP
     /// holds over, like the ones in <see cref="CountLine"/>.
     /// </summary>
     private static int CountHardBreakFragments(
-        string word, TextStyle style, double maxWidth, ref double from, ref double below)
+        string word, TextStyle style, double maxWidth, ref double from, ref double below, bool atPlaces)
     {
+        if (atPlaces)
+        {
+            using var measured = MeasureRunes(word, style);
+            return measured.Lines(maxWidth, ref from, ref below, null);
+        }
+
         var fragments = 0;
         var open = false;
         var fragmentW = 0.0;
@@ -1373,7 +1410,7 @@ public sealed class TableRenderer : IRenderer, IPageBreakSource, IKeepSource, IP
             {
                 var cell = cells[c];
                 var innerW = ColSpanWidth(col, cell.ColSpan) - cell.Padding.Horizontal;
-                lines += CellLineCount(cell, cell.Style ?? style, Math.Max(1, innerW), HonoursBreaks(r, c));
+                lines += CellLineCount(cell, cell.Style ?? style, Math.Max(1, innerW), HonoursBreaks(r, c), _atPlaces);
                 col += cell.ColSpan;
             }
             units += Math.Max(1, lines);
@@ -1516,7 +1553,7 @@ public sealed class TableRenderer : IRenderer, IPageBreakSource, IKeepSource, IP
             var cell = row.Cells[c];
             var cs = cell.Style ?? style;
             var innerW = ColSpanWidth(col, cell.ColSpan) - cell.Padding.Horizontal;
-            cells[c] = WrapCell(cell, cs, Math.Max(1, innerW), HonoursBreaks(rowIndex, c));
+            cells[c] = WrapCell(cell, cs, Math.Max(1, innerW), HonoursBreaks(rowIndex, c), _atPlaces);
             col += cell.ColSpan;
         }
         return new RowLines(rowIndex, width, cells);
@@ -2008,7 +2045,7 @@ public sealed class TableRenderer : IRenderer, IPageBreakSource, IKeepSource, IP
         }
         else
         {
-            wrappedLines = WrapCell(cell, cs, Math.Max(1, innerBox.Width), HonoursBreaks(rowIndex, cellIndex));
+            wrappedLines = WrapCell(cell, cs, Math.Max(1, innerBox.Width), HonoursBreaks(rowIndex, cellIndex), _atPlaces);
             lineCount = wrappedLines.Count;
         }
 
@@ -2237,16 +2274,16 @@ public sealed class TableRenderer : IRenderer, IPageBreakSource, IKeepSource, IP
     }
 
     /// <summary>The lines a cell wraps into: its string, or its runs.</summary>
-    private static List<string> WrapCell(Cell cell, TextStyle style, double maxWidth, bool honourBreaks) =>
+    private static List<string> WrapCell(Cell cell, TextStyle style, double maxWidth, bool honourBreaks, bool atPlaces) =>
         cell.RunText is { } runText
-            ? runText.Lines(maxWidth, honourBreaks)
-            : WordWrapLines(cell.LaidOutContent, style, maxWidth, honourBreaks);
+            ? runText.Lines(maxWidth, honourBreaks, atPlaces)
+            : WordWrapLines(cell.LaidOutContent, style, maxWidth, honourBreaks, atPlaces);
 
     /// <summary>The number of lines <see cref="WrapCell"/> returns.</summary>
-    private static int CellLineCount(Cell cell, TextStyle style, double maxWidth, bool honourBreaks) =>
+    private static int CellLineCount(Cell cell, TextStyle style, double maxWidth, bool honourBreaks, bool atPlaces) =>
         cell.RunText is { } runText
-            ? runText.CountLines(maxWidth, honourBreaks)
-            : WordWrapCount(cell.LaidOutContent, style, maxWidth, honourBreaks);
+            ? runText.CountLines(maxWidth, honourBreaks, atPlaces)
+            : WordWrapCount(cell.LaidOutContent, style, maxWidth, honourBreaks, atPlaces);
 
     /// <summary>
     /// The height of one line of the cell: its style's, or for a cell of runs the largest of the
@@ -2277,8 +2314,8 @@ public sealed class TableRenderer : IRenderer, IPageBreakSource, IKeepSource, IP
     /// let the hard-break below (#473) reach both call sites from a single change instead of two
     /// that would otherwise have to be kept in step by hand.
     /// </summary>
-    internal static int WordWrapCount(string text, TextStyle style, double maxWidth, bool honourBreaks) =>
-        WordWrapLines(text, style, maxWidth, honourBreaks).Count;
+    internal static int WordWrapCount(string text, TextStyle style, double maxWidth, bool honourBreaks, bool atPlaces = false) =>
+        WordWrapLines(text, style, maxWidth, honourBreaks, atPlaces).Count;
 
     /// <summary>
     /// Word-wraps text into lines for drawing. A word wider than <paramref name="maxWidth"/> on
@@ -2303,7 +2340,7 @@ public sealed class TableRenderer : IRenderer, IPageBreakSource, IKeepSource, IP
     /// it in the source. <c>ParagraphRenderer</c> already guards on <c>lineFrags.Count == 0</c> for
     /// the same reason, which is why it never had this.
     /// </summary>
-    private static List<string> WrapLine(string text, TextStyle style, double maxWidth)
+    private static List<string> WrapLine(string text, TextStyle style, double maxWidth, bool atPlaces)
     {
         var result = new List<string>();
         if (string.IsNullOrEmpty(text)) { result.Add(string.Empty); return result; }
@@ -2320,7 +2357,7 @@ public sealed class TableRenderer : IRenderer, IPageBreakSource, IKeepSource, IP
             {
                 if (ww > maxWidth)
                 {
-                    HardBreakWord(word, style, maxWidth, result);
+                    HardBreakWord(word, style, maxWidth, result, atPlaces);
                     continue;
                 }
                 lineBuilder.Append(word);
@@ -2340,7 +2377,7 @@ public sealed class TableRenderer : IRenderer, IPageBreakSource, IKeepSource, IP
 
                 if (ww > maxWidth)
                 {
-                    HardBreakWord(word, style, maxWidth, result);
+                    HardBreakWord(word, style, maxWidth, result, atPlaces);
                     continue;
                 }
                 lineBuilder.Append(word);
@@ -2365,24 +2402,24 @@ public sealed class TableRenderer : IRenderer, IPageBreakSource, IKeepSource, IP
     /// wrapped at spaces alone, measuring each control white-space character at its own width, and
     /// the lines are drawn without them, so a line is never wider than it was measured.
     /// </summary>
-    internal static List<string> WordWrapLines(string text, TextStyle style, double maxWidth, bool honourBreaks)
+    internal static List<string> WordWrapLines(string text, TextStyle style, double maxWidth, bool honourBreaks, bool atPlaces = false)
     {
-        if (string.IsNullOrEmpty(text)) return WrapLine(string.Empty, style, maxWidth);
+        if (string.IsNullOrEmpty(text)) return WrapLine(string.Empty, style, maxWidth, atPlaces);
 
         var hardLines = CellLines(text, honourBreaks);
         if (!honourBreaks)
         {
-            var wrapped = WrapLine(hardLines[0], style, maxWidth);
+            var wrapped = WrapLine(hardLines[0], style, maxWidth, atPlaces);
             for (var i = 0; i < wrapped.Count; i++)
                 wrapped[i] = LayoutText.RemoveControlSpaces(wrapped[i]);
             return wrapped;
         }
 
-        if (hardLines.Length == 1) return WrapLine(hardLines[0], style, maxWidth);
+        if (hardLines.Length == 1) return WrapLine(hardLines[0], style, maxWidth, atPlaces);
 
         var result = new List<string>();
         foreach (var line in hardLines)
-            result.AddRange(WrapLine(line, style, maxWidth));
+            result.AddRange(WrapLine(line, style, maxWidth, atPlaces));
         return result;
     }
 
@@ -2401,9 +2438,18 @@ public sealed class TableRenderer : IRenderer, IPageBreakSource, IKeepSource, IP
         return lines;
     }
 
-    /// <summary>Hard-breaks a word wider than <paramref name="maxWidth"/> at character granularity.</summary>
-    private static void HardBreakWord(string word, TextStyle style, double maxWidth, List<string> lines)
+    /// <summary>
+    /// Hard-breaks a word wider than <paramref name="maxWidth"/> at character granularity, or after
+    /// a place when the document set <see cref="VellumPdf.Layout.Document.BreakLongWordsAtPlaces"/>.
+    /// </summary>
+    private static void HardBreakWord(string word, TextStyle style, double maxWidth, List<string> lines, bool atPlaces)
     {
+        if (atPlaces)
+        {
+            HardBreakWordAtPlaces(word, style, maxWidth, lines);
+            return;
+        }
+
         var fragment = new System.Text.StringBuilder();
         var fragmentW = 0.0;
 
@@ -2422,6 +2468,40 @@ public sealed class TableRenderer : IRenderer, IPageBreakSource, IKeepSource, IP
         }
         if (fragment.Length > 0)
             lines.Add(fragment.ToString());
+    }
+
+    /// <summary>
+    /// Cuts a word wider than <paramref name="maxWidth"/> after the last solidus, reverse solidus or
+    /// hyphen-minus that leaves the line no wider than the width (<see cref="LongWordBreaks"/>), and
+    /// at the character that does not fit when the word has none. No glyph is added at the cut.
+    /// </summary>
+    private static void HardBreakWordAtPlaces(string word, TextStyle style, double maxWidth, List<string> lines)
+    {
+        using var measured = MeasureRunes(word, style);
+        var from = double.NegativeInfinity;
+        var below = double.PositiveInfinity;
+        var starts = new List<int>();
+        measured.Lines(maxWidth, ref from, ref below, starts);
+        var runes = measured.Runes;
+
+        var fragment = new System.Text.StringBuilder();
+        for (var s = 0; s < starts.Count; s++)
+        {
+            var lineEnd = s + 1 < starts.Count ? starts[s + 1] : runes.Length;
+            fragment.Clear();
+            for (var i = starts[s]; i < lineEnd; i++)
+                fragment.Append(RuneString(runes[i]));
+            lines.Add(fragment.ToString());
+        }
+    }
+
+    // The characters of a word and the width of each in the style, measured once and in order.
+    private static LongWordBreaks.Word MeasureRunes(string word, TextStyle style)
+    {
+        var measured = new LongWordBreaks.Word(word.Length);
+        foreach (var rune in word.EnumerateRunes())
+            measured.Add(rune, style.FontRef.MeasureString(RuneString(rune), style.FontSize));
+        return measured;
     }
 
     /// <summary>

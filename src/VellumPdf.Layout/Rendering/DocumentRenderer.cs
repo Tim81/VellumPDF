@@ -834,6 +834,13 @@ public sealed partial class DocumentRenderer
     /// </summary>
     internal bool MirrorMargins { get; set; }
 
+    /// <summary>
+    /// Whether a word wider than its line is cut after a place while this renderer lays out. Set by
+    /// <see cref="Document"/> from <see cref="Document.BreakLongWordsAtPlaces"/>; a renderer built
+    /// directly cuts at the character, as before 2.4.
+    /// </summary>
+    internal bool BreakLongWordsAtPlaces { get; set; }
+
     // Parity is the physical position in the kernel document and page 1 is recto; a page label
     // never enters it, because labels may restart. One rule for the recto break, the content
     // area's x and the bands: the recto break and the content area ask IsRecto, which numbers the
@@ -1211,6 +1218,7 @@ public sealed partial class DocumentRenderer
             FreshPageArea = fresh,
             AtPageTop = retry || atTop,
             HonourLineCounts = lineCounts,
+            BreakLongWordsAtPlaces = BreakLongWordsAtPlaces,
             Session = session,
         });
     }
