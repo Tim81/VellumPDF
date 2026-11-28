@@ -224,6 +224,23 @@ public sealed class LongWordSettingTests
             ex.Message);
     }
 
+    [Fact]
+    public void ASaveWithTheSettingOn_leavesNothingBehindForTheWrapsAfterIt()
+    {
+        // The save sets the setting on its own thread while it lays out and restores it, also when
+        // the layout throws, so a later save of a document that has it off, and a wrap outside any
+        // save, cut at the glyph.
+        using (var on = Build(Path_.Paragraph, on: true)) Assert.Equal(AtThePlace, Shown(on));
+
+        using (var off = Build(Path_.Paragraph, on: false)) Assert.Equal(AtTheGlyph, Shown(off));
+
+        using var refused = ManyAddresses(on: true, 6000);
+        Assert.Throws<InvalidOperationException>(() => SaveTo(refused));
+
+        var (lines, _) = ParagraphRenderer.WordWrap([new TextRun(Path, Courier())], 60, out _);
+        Assert.Equal(AtTheGlyph, lines.Select(l => string.Concat(l.Select(f => f.Text))));
+    }
+
     // A renderer of a caller's that lays out a built-in one inside the document's layout.
     private sealed class Forward(IRenderer inner) : IRenderer
     {
