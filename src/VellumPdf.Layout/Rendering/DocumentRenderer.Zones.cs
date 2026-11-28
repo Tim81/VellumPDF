@@ -246,8 +246,8 @@ public sealed partial class DocumentRenderer
     /// <remarks>
     /// The cut falls before the last space that is literal text, in any run, counting only the first
     /// space of a run of spaces and no space at the very start, as <see cref="FitToWidth"/> cuts a
-    /// string band. A boundary between two
-    /// runs is a cut only where a space stands. A token's value is never cut: spaces inside it are not
+    /// string band. A boundary between two runs is a cut only where a space stands. A token's value is
+    /// never cut: spaces inside it are not
     /// cut points, and a cut that cannot use a space backs off to the start of the token. When no
     /// space qualifies, the cut falls at the last position that fits and is not inside a token, so a
     /// zone of one long word is cut as a string band cuts it. When nothing fits, every run is empty.

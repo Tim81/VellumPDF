@@ -20,9 +20,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   band less the rule, is drawn as an artifact in a tagged document, and has no alternative text.
   `Rule` takes a `BandRule` along the band's top or bottom edge, inside the band, across the
   content width, on every page that has the band (a blank page a recto break inserts has neither
-  band nor rule); it also works on a string band. The rule keeps 1 point clear of the text box and the logos, the logo is shortened by the
-  rule's width and that clearance, and a band too short for its text box plus the rule is refused
-  by the save. With `Document.MirrorMargins` set, `MirrorZones` swaps the left and right zones on
+  band nor rule); it also works on a string band. The rule keeps 1 point clear of the text box and
+  the logos, and a band too short for its text box plus the rule is refused by the save. With
+  `Document.MirrorMargins` set, `MirrorZones` swaps the left and right zones on
   even pages, counted by physical page, so the first page of a decimal body that follows three
   roman pages swaps. Zones that would overlap are cut and not overprinted: a logo is kept whole,
   then the right zone, the left and the centre take what is left with `ZoneGap` points (6 by
