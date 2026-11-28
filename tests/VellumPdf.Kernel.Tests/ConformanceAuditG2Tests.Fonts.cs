@@ -100,7 +100,8 @@ public sealed partial class ConformanceAuditG2Tests
 
     private static byte[] FontBytes(Kind kind) => kind == Kind.SourceSansCff ? SourceSans : DejaVu;
 
-    private static string PostScriptName(Kind kind) => kind == Kind.SourceSansCff ? "SourceSans3-ExtraLight" : "DejaVuSans";
+    private static string PostScriptName(Kind kind) => kind == Kind.SourceSansCff ? "SourceSans3-ExtraLight"
+        : "DejaVuSans";
 
     // ── ISO 32000-1, 9.7 and 9.8; ISO 19005-2, 6.2.11.2 to 6.2.11.4; ISO 14289-1, 7.21.2 to 7.21.4 ─────
 
@@ -129,8 +130,10 @@ public sealed partial class ConformanceAuditG2Tests
         // (19005-2 6.2.11.3.1, 14289-1 7.21.3.1), and the three keys of Table 116 are all present.
         Assert.Equal("Font", Assert.IsType<PdfName>(font.CidFont.Get(PdfName.Type)).Value);
         var info = pdf.Dict(font.CidFont.Get(N("CIDSystemInfo")));
-        Assert.Equal("Adobe", Encoding.ASCII.GetString(Assert.IsType<PdfLiteralString>(info.Get(N("Registry"))).Bytes.ToArray()));
-        Assert.Equal("Identity", Encoding.ASCII.GetString(Assert.IsType<PdfLiteralString>(info.Get(N("Ordering"))).Bytes.ToArray()));
+        Assert.Equal("Adobe",
+            Encoding.ASCII.GetString(Assert.IsType<PdfLiteralString>(info.Get(N("Registry"))).Bytes.ToArray()));
+        Assert.Equal("Identity",
+            Encoding.ASCII.GetString(Assert.IsType<PdfLiteralString>(info.Get(N("Ordering"))).Bytes.ToArray()));
         Assert.Equal(0, Assert.IsType<PdfInteger>(info.Get(N("Supplement"))).Value);
 
         // 9.7.4.1 and 9.9: glyf outlines are a CIDFontType2 with an Identity CIDToGIDMap, CFF
@@ -163,12 +166,15 @@ public sealed partial class ConformanceAuditG2Tests
         Assert.Null(font.CidFont.Get(N("DW2")));
         Assert.Null(font.Descriptor.Get(N("CIDSet")));
 
-        // 9.6.4: the three names agree, and 9.8.1: FontName is the BaseFont of the font it describes.
-        var baseFont = BaseFont(font.Type0);
-        Assert.Equal(baseFont, BaseFont(font.CidFont));
+        // 9.6.4 and 9.8.1: the CIDFont's BaseFont and the descriptor's FontName agree (shall). The Type0
+        // BaseFont is a should (Table 121) that names the CIDFont for a Type 2 descendant and another
+        // form for a Type 0 CIDFont, so it is asserted for the glyf kinds only.
+        var baseFont = BaseFont(font.CidFont);
         Assert.Equal(baseFont, Assert.IsType<PdfName>(font.Descriptor.Get(N("FontName"))).Value);
+        if (kind != Kind.SourceSansCff)
+            Assert.Equal(baseFont, BaseFont(font.Type0));
 
-        // 9.10.3: the Type0 font names its ToUnicode stream (9.10.3); the descriptor's program is a stream.
+        // 9.10.3: the Type0 font names its ToUnicode stream; the descriptor's program is a stream.
         Assert.NotEmpty(font.ToUnicodeBytes);
         Assert.NotEmpty(font.ProgramBytes);
     }
@@ -181,8 +187,11 @@ public sealed partial class ConformanceAuditG2Tests
         var font = Assert.Single(EmbeddedFonts(pdf));
 
         // 9.6.4 (and 32000-2 9.9.2): the tag is exactly six uppercase letters and a plus sign, then
-        // the PostScript name of the font the subset was made from.
-        Assert.Matches("^[A-Z]{6}\\+" + PostScriptName(kind) + "$", BaseFont(font.Type0));
+        // the PostScript name of the font the subset was made from, in the BaseFont and in the
+        // FontName of the descriptor (the Type0 font has no descriptor).
+        var pattern = "^[A-Z]{6}\\+" + PostScriptName(kind) + "$";
+        Assert.Matches(pattern, BaseFont(font.CidFont));
+        Assert.Matches(pattern, Assert.IsType<PdfName>(font.Descriptor.Get(N("FontName"))).Value);
     }
 
     [Fact]
@@ -251,7 +260,8 @@ public sealed partial class ConformanceAuditG2Tests
         // Table 122: Type, FontName, Flags, FontBBox, ItalicAngle, Ascent, Descent, CapHeight and
         // StemV are required for a font that is not Type 3.
         Assert.Equal("FontDescriptor", Assert.IsType<PdfName>(d.Get(PdfName.Type)).Value);
-        foreach (var key in new[] { "FontName", "Flags", "FontBBox", "ItalicAngle", "Ascent", "Descent", "CapHeight", "StemV" })
+        foreach (var key in new[] { "FontName", "Flags", "FontBBox", "ItalicAngle", "Ascent", "Descent", "CapHeight",
+            "StemV" })
             Assert.NotNull(d.Get(N(key)));
 
         // Ascent is above the baseline, Descent is a negative number (9.8.1), CapHeight is positive.
@@ -265,7 +275,8 @@ public sealed partial class ConformanceAuditG2Tests
 
     [Theory]
     [MemberData(nameof(KindsAndClaims))]
-    public void Iso32000_1_9_8_2_FlagsHoldNoUndefinedBitAndExactlyOneOfSymbolicAndNonsymbolic(Kind kind, PdfConformance claim)
+    public void Iso32000_1_9_8_2_FlagsHoldNoUndefinedBitAndExactlyOneOfSymbolicAndNonsymbolic(
+        Kind kind, PdfConformance claim)
     {
         using var pdf = new Pdf(KernelFixture(kind, claim));
         var flags = Assert.IsType<PdfInteger>(Assert.Single(EmbeddedFonts(pdf)).Descriptor.Get(N("Flags"))).Value;
@@ -277,7 +288,9 @@ public sealed partial class ConformanceAuditG2Tests
         Assert.NotEqual((flags & 4) != 0, (flags & 32) != 0);
     }
 
-    [Fact(Skip = "Gap #753: the Nonsymbolic flag is written for every font, so a subset that shows characters outside the Adobe standard Latin set (here Greek, a snowman and an emoji) is not marked Symbolic, which 9.8.2 requires whenever the font holds such glyphs.")]
+    [Fact(Skip = "Gap #753: the Nonsymbolic flag is written for every font, so a subset that shows characters " +
+        "outside the Adobe standard Latin set (here Greek, a snowman and an emoji) is not marked " +
+        "Symbolic, which 9.8.2 requires whenever the font holds such glyphs.")]
     public void Iso32000_1_9_8_2_ASubsetWithGlyphsOutsideTheLatinSetIsMarkedSymbolic()
     {
         using var pdf = new Pdf(KernelFixture(Kind.DejaVuBmp, PdfConformance.None));
@@ -321,7 +334,8 @@ public sealed partial class ConformanceAuditG2Tests
 
     [Theory]
     [MemberData(nameof(KindsAndClaims))]
-    public void Iso19005_2_6_2_11_5_WidthsInTheWArrayAgreeWithTheProgramWithinOneThousandth(Kind kind, PdfConformance claim)
+    public void Iso19005_2_6_2_11_5_WidthsInTheWArrayAgreeWithTheProgramWithinOneThousandth(
+        Kind kind, PdfConformance claim)
     {
         using var pdf = new Pdf(KernelFixture(kind, claim));
         var font = Assert.Single(EmbeddedFonts(pdf));
@@ -369,7 +383,8 @@ public sealed partial class ConformanceAuditG2Tests
 
         if (kind == Kind.SourceSansCff)
         {
-            // 32000-1 Table 126 and 9.9 (32000-2 Table 124 and 9.9.1): an OpenType program with CFF outlines holds the CFF table and
+            // 32000-1 Table 126 and 9.9 (32000-2 Table 124 and 9.9.1): an OpenType program with CFF outlines holds
+            // the CFF table and
             // the cmap table, Subtype is OpenType, and no Length1/2/3 key is written for it.
             Assert.Contains("CFF ", tags);
             Assert.Contains("cmap", tags);
@@ -381,7 +396,8 @@ public sealed partial class ConformanceAuditG2Tests
         }
         else
         {
-            // 32000-1 9.9 (32000-2 9.9.1): head, hhea, hmtx, loca, maxp and glyf; cvt, fpgm and prep when the source has
+            // 32000-1 9.9 (32000-2 9.9.1): head, hhea, hmtx, loca, maxp and glyf; cvt, fpgm and prep when the
+            // source has
             // them; and no cmap, because the descendant is a CIDFont whose CIDToGIDMap maps codes.
             foreach (var tag in new[] { "head", "hhea", "hmtx", "loca", "maxp", "glyf" })
                 Assert.Contains(tag, tags);
@@ -389,7 +405,8 @@ public sealed partial class ConformanceAuditG2Tests
                 Assert.Contains(tag, tags);
             Assert.DoesNotContain("cmap", tags);
             // Table 127: Length1 is the length of the decoded TrueType program.
-            Assert.Equal(font.ProgramBytes.Length, Assert.IsType<PdfInteger>(font.Program.Dictionary.Get(N("Length1"))).Value);
+            Assert.Equal(font.ProgramBytes.Length,
+                Assert.IsType<PdfInteger>(font.Program.Dictionary.Get(N("Length1"))).Value);
             Assert.Null(font.Program.Dictionary.Get(PdfName.Subtype));
         }
 
@@ -444,17 +461,30 @@ public sealed partial class ConformanceAuditG2Tests
             // compared with the source program's CFF table (read with the library's CFF parser).
             using var cffPdf = new Pdf(KernelFixture(kind, PdfConformance.None));
             var cffFont = Assert.Single(EmbeddedFonts(cffPdf));
-            var sourceCff = VellumPdf.Fonts.Cff.CffFont.Parse(Sfnt(SourceSans).GetTableBytes(new Tag("CFF ")).ToArray());
-            var subsetCff = VellumPdf.Fonts.Cff.CffFont.Parse(Sfnt(cffFont.ProgramBytes).GetTableBytes(new Tag("CFF ")).ToArray());
+            var cffTag = new Tag("CFF ");
+            var sourceCff = VellumPdf.Fonts.Cff.CffFont.Parse(Sfnt(SourceSans).GetTableBytes(cffTag).ToArray());
+            var subsetCff = VellumPdf.Fonts.Cff.CffFont.Parse(
+                Sfnt(cffFont.ProgramBytes).GetTableBytes(cffTag).ToArray());
             var shownCff = ShownStrings(Content(cffPdf)).SelectMany(s => Codes(s.Codes)).Distinct().Append(0).ToList();
             Assert.True(shownCff.Count > 5);
+            var localSubrs = new HashSet<int>();
+            var globalSubrs = new HashSet<int>();
             foreach (var gid in shownCff)
             {
                 var expected = sourceCff.GetCharstring(gid).ToArray();
                 Assert.True(expected.Length > 1, $"glyph {gid} has no outline in the source");
                 Assert.Equal(expected, subsetCff.GetCharstring(gid).ToArray());
+                var stems = 0;
+                ReachSubrs(sourceCff, expected, [], ref stems, localSubrs, globalSubrs);
             }
 
+            // A glyph's outline often sits in subroutines, so the top-level charstring can be a short call.
+            // Every subroutine a shown glyph reaches, local and global, must hold the source's bytes.
+            Assert.NotEmpty(localSubrs.Concat(globalSubrs));
+            foreach (var index in localSubrs)
+                Assert.Equal(sourceCff.GetLocalSubr(index).ToArray(), subsetCff.GetLocalSubr(index).ToArray());
+            foreach (var index in globalSubrs)
+                Assert.Equal(sourceCff.GetGlobalSubr(index).ToArray(), subsetCff.GetGlobalSubr(index).ToArray());
             return;
         }
 
@@ -512,7 +542,8 @@ public sealed partial class ConformanceAuditG2Tests
 
     [Theory]
     [MemberData(nameof(KindsAndClaims))]
-    public void Iso32000_1_9_10_3_AToUnicodeCMapCoversEveryShownCodeAndMapsItBackToTheText(Kind kind, PdfConformance claim)
+    public void Iso32000_1_9_10_3_AToUnicodeCMapCoversEveryShownCodeAndMapsItBackToTheText(
+        Kind kind, PdfConformance claim)
     {
         using var pdf = new Pdf(KernelFixture(kind, claim));
         var font = Assert.Single(EmbeddedFonts(pdf));
@@ -638,7 +669,8 @@ public sealed partial class ConformanceAuditG2Tests
                 doc.Add(new VellumPdf.Layout.Elements.Heading(text, style) { Level = 1 });
                 break;
             case Element.ListItem:
-                doc.Add(new VellumPdf.Layout.Elements.ListElement().Add(new VellumPdf.Layout.Elements.ListItem(text, style)));
+                doc.Add(new VellumPdf.Layout.Elements.ListElement().Add(new VellumPdf.Layout.Elements.ListItem(text,
+                    style)));
                 break;
             default:
                 var table = new VellumPdf.Layout.Elements.Table.TableElement { DefaultCellStyle = style };
@@ -650,13 +682,16 @@ public sealed partial class ConformanceAuditG2Tests
         return Save(doc);
     }
 
-    [Theory(Skip = "Gap #752: U+FEFF has a glyph in DejaVu Sans and Source Sans 3, so the Kernel and a Layout paragraph draw it and ToUnicode maps its code to U+FEFF, which 6.2.11.7.2 and 14289-1 7.21.7 forbid (veraPDF 6.2.11.7.2-2 and 7.21.7-2 fail). Preformatted refuses it already.")]
+    [Theory(Skip = "Gap #752: U+FEFF has a glyph in DejaVu Sans and Source Sans 3, so the Kernel and a Layout " +
+        "paragraph draw it and ToUnicode maps its code to U+FEFF, which 6.2.11.7.2 and 14289-1 7.21.7" +
+        " forbid (veraPDF 6.2.11.7.2-2 and 7.21.7-2 fail). Preformatted refuses it already.")]
     [InlineData(false, PdfConformance.PdfA2u)]
     [InlineData(true, PdfConformance.PdfA2u)]
     [InlineData(true, PdfConformance.PdfA2a)]
     [InlineData(true, PdfConformance.PdfUA1)]
     [InlineData(false, PdfConformance.PdfUA1)]
-    public void Iso19005_2_6_2_11_7_2_ACharacterThatToUnicodeCannotNameIsNotWrittenUnderALevelThatNeedsToUnicode(bool layout, PdfConformance claim)
+    public void Iso19005_2_6_2_11_7_2_ACharacterThatToUnicodeCannotNameIsNotWrittenUnderALevelThatNeedsToUnicode(
+        bool layout, PdfConformance claim)
     {
         byte[]? bytes = null;
         try
@@ -672,7 +707,8 @@ public sealed partial class ConformanceAuditG2Tests
             return;
         using var pdf = new Pdf(bytes);
         var map = ParseToUnicode(Assert.Single(EmbeddedFonts(pdf)).ToUnicodeBytes);
-        Assert.DoesNotContain(map.Entries, e => e.Value.Any(v => v.Contains(Feff) || v.Contains('\uFFFE') || v.Contains('\0')));
+        Assert.DoesNotContain(map.Entries, e => e.Value.Any(v => v.Contains(Feff) || v.Contains('\uFFFE')
+            || v.Contains('\0')));
     }
 
     // ── 9.7.4.2 and #629: characters outside the BMP ────────────────────────────────────────
@@ -682,7 +718,8 @@ public sealed partial class ConformanceAuditG2Tests
     [InlineData(Kind.DejaVuAstral, 0x1D538)]
     [InlineData(Kind.DejaVuAstral, 0x1D7D8)]
     [InlineData(Kind.SourceSansCff, 0x1F4A9)]
-    public void Iso32000_1_9_7_4_2_ACharacterOutsideTheBmpIsShownByItsGlyphAndMapsBackAsASurrogatePair(Kind kind, int codePoint)
+    public void Iso32000_1_9_7_4_2_ACharacterOutsideTheBmpIsShownByItsGlyphAndMapsBackAsASurrogatePair(
+        Kind kind, int codePoint)
     {
         using var pdf = new Pdf(KernelFixture(kind, PdfConformance.PdfA2u));
         var font = Assert.Single(EmbeddedFonts(pdf));
@@ -700,7 +737,8 @@ public sealed partial class ConformanceAuditG2Tests
         var map = ParseToUnicode(font.ToUnicodeBytes);
         var text = char.ConvertFromUtf32(codePoint);
         Assert.Equal(text, map.Single(expected));
-        var pair = ((int)text[0]).ToString("X4", CultureInfo.InvariantCulture) + ((int)text[1]).ToString("X4", CultureInfo.InvariantCulture);
+        var pair = ((int)text[0]).ToString("X4", CultureInfo.InvariantCulture) + ((int)text[1]).ToString("X4",
+            CultureInfo.InvariantCulture);
         Assert.Contains($"<{expected:X4}> <{pair}>", Encoding.ASCII.GetString(font.ToUnicodeBytes));
     }
 
@@ -745,7 +783,8 @@ public sealed partial class ConformanceAuditG2Tests
 
     [Theory]
     [MemberData(nameof(OracleClaimData))]
-    public void Iso19005_2_6_2_11_8_ACharacterTheFontLacksIsWrittenAsGlyphZeroAndToUnicodeNamesItReplacement(PdfConformance claim)
+    public void Iso19005_2_6_2_11_8_ACharacterTheFontLacksIsWrittenAsGlyphZeroAndToUnicodeNamesItReplacement(
+        PdfConformance claim)
     {
         var bytes = MissingGlyphFixture(DejaVu, claim);
         using var pdf = new Pdf(bytes);
@@ -782,7 +821,8 @@ public sealed partial class ConformanceAuditG2Tests
         Assert.Empty(VeraPdfFailures("2u", bytes));
     }
 
-    [Theory(Skip = "Gap #474: a PDF/A or PDF/UA claim is stamped on a document that shows glyph 0. The save reports it (PdfDocument.NotdefGlyphs, Layout NotdefGlyph) and writes the file; 3.0 refuses it.")]
+    [Theory(Skip = "Gap #474: a PDF/A or PDF/UA claim is stamped on a document that shows glyph 0. The save " +
+        "reports it (PdfDocument.NotdefGlyphs, Layout NotdefGlyph) and writes the file instead of refusing it.")]
     [MemberData(nameof(OracleClaimData))]
     public void Iso19005_2_6_2_11_8_ACharacterTheFontLacksIsRefusedUnderAClaim(PdfConformance claim)
     {
@@ -822,21 +862,29 @@ public sealed partial class ConformanceAuditG2Tests
         return Save(doc);
     }
 
-    [Fact(Skip = "Gap #602: neither the Kernel nor Layout writes /ActualText, so a character in the private use area has none under PDF/A-2a (veraPDF 6.2.11.7.3-1 fails); 6.2.11.7.3 requires one.")]
+    [Fact(Skip = "Gap #602: neither the Kernel nor Layout writes /ActualText, so a character in the private " +
+        "use area has none under PDF/A-2a (veraPDF 6.2.11.7.3-1 fails); 6.2.11.7.3 requires one.")]
     public void Iso19005_2_6_2_11_7_3_APrivateUseCharacterHasActualTextUnderLevelA()
     {
-        // Read the decoded content, where a marked-content property list holds it, and every
-        // object of the file the Reader can decode, so the form the fix picks does not matter.
         using var pdf = new Pdf(PrivateUse(PdfConformance.PdfA2a));
-        var decoded = Encoding.Latin1.GetString(pdf.Bytes) + Content(pdf) + string.Concat(Enumerable.Range(1, 400).Select(n => DecodedObject(pdf, n)));
-        Assert.Contains("/ActualText", decoded);
+
+        // The marked-content sequence that shows the private use character carries /ActualText in its
+        // property list, or its MCID is the content of a structure element that carries it.
+        var actual = ActualTextOfSequenceShowing(pdf, 0xF000);
+        Assert.False(string.IsNullOrEmpty(actual));
     }
 
     // ── 19005-2 6.2.11.4.1 and 14289-1 7.21.4.1: embedding, Standard 14 and the Liberation program ──
 
     private static byte[] Standard14Fixture(PdfConformance claim)
     {
-        var doc = new PdfDocument { Conformance = claim, Timestamp = Pinned, DocumentId = PinnedId, Language = "en-US" };
+        var doc = new PdfDocument
+        {
+            Conformance = claim,
+            Timestamp = Pinned,
+            DocumentId = PinnedId,
+            Language = "en-US"
+        };
         doc.Info.Title = "G2 audit";
         var page = doc.AddPage();
         var canvas = new VellumPdf.Canvas.PdfCanvas(page).BeginArtifactMarkedContent().BeginText();
@@ -853,7 +901,8 @@ public sealed partial class ConformanceAuditG2Tests
 
     [Theory]
     [MemberData(nameof(ClaimData))]
-    public void Iso19005_2_6_2_11_4_1_EveryStandard14FaceIsWrittenWithoutAFontProgramAndTheKernelDoesNotRefuseIt(PdfConformance claim)
+    public void Iso19005_2_6_2_11_4_1_EveryStandard14FaceIsWrittenWithoutAFontProgramAndTheKernelDoesNotRefuseIt(
+        PdfConformance claim)
     {
         using var pdf = new Pdf(Standard14Fixture(claim));
         var fonts = SimpleFonts(pdf);
@@ -881,16 +930,19 @@ public sealed partial class ConformanceAuditG2Tests
         else if (claim == PdfConformance.PdfUA1)
             Assert.Contains("7.21.4.1-1", VeraPdfFailures("ua1", pdf.Bytes));
 
-        // Symbol and ZapfDingbats have no Encoding, so the exemption of 7.21.7 does not reach them and
-        // their ToUnicode is missing: veraPDF fails 6.2.11.7.2-1 (2u, 2a) and 7.21.7-1 (UA-1), the
-        // same class as the embedding failure.
+        // The twelve WinAnsi faces are exempt from 7.21.7 by its first condition, and Symbol is by the
+        // second, read literally (its glyph names are in the Symbol set of Annex D.5). veraPDF's rule
+        // tests only whether a ToUnicode entry exists, so it fails Symbol and ZapfDingbats, which have
+        // none, with 6.2.11.7.2-1 (2u, 2a) and 7.21.7-1 (UA-1), in the class of the embedding failure.
         if (claim is PdfConformance.PdfA2u or PdfConformance.PdfA2a)
             Assert.Contains("6.2.11.7.2-1", VeraPdfFailures(Flavour(claim), pdf.Bytes));
         else if (claim == PdfConformance.PdfUA1)
             Assert.Contains("7.21.7-1", VeraPdfFailures("ua1", pdf.Bytes));
     }
 
-    [Theory(Skip = "Gap #711 and #474: a Standard 14 font is written unembedded under a PDF/A or PDF/UA claim, in the Kernel without a report and in Layout as an Error diagnostic that does not stop the save. 3.0 resolves it to an embedded face (#711) and refuses the claim (#474).")]
+    [Theory(Skip = "Gap #711 and #474: a Standard 14 font is written unembedded under a PDF/A or PDF/UA claim, " +
+        "in the Kernel without a report and in Layout as an Error diagnostic that does not stop the " +
+        "save, so no embedded face and no refusal.")]
     [MemberData(nameof(OracleClaimData))]
     public void Iso19005_2_6_2_11_4_1_AStandard14FontIsEmbeddedOrRefusedUnderAClaim(PdfConformance claim)
     {
@@ -929,14 +981,16 @@ public sealed partial class ConformanceAuditG2Tests
         // and no Standard 14 dictionary beside them.
         Assert.Equal(12, fonts.Count);
         Assert.Empty(SimpleFonts(pdf));
-        Assert.All(fonts, f => Assert.Matches("^[A-Z]{6}\\+Liberation(Sans|Serif|Mono)(-[A-Za-z]+)?$", BaseFont(f.Type0)));
+        Assert.All(fonts, f => Assert.Matches("^[A-Z]{6}\\+Liberation(Sans|Serif|Mono)(-[A-Za-z]+)?$",
+            BaseFont(f.Type0)));
         Assert.Equal(12, fonts.Select(f => BaseFont(f.Type0)).Distinct().Count());
         Assert.All(fonts, f => Assert.NotNull(f.Descriptor.Get(N("FontFile2"))));
 
         // Each program's own text reads back, so the faces were not mixed up.
         var shown = ShownStrings(Content(pdf));
         var byResource = fonts.ToDictionary(f => f.ResourceName);
-        Assert.Equal(12, shown.Count(s => Decode(s, byResource[s.Resource]).Contains("Hello", StringComparison.Ordinal)));
+        Assert.Equal(12, shown.Count(s => Decode(s, byResource[s.Resource]).Contains("Hello",
+            StringComparison.Ordinal)));
 
         Assert.Empty(VeraPdfFailures(Flavour(claim), bytes));
         QpdfChecks(bytes);
@@ -979,7 +1033,7 @@ public sealed partial class ConformanceAuditG2Tests
     public void Iso14289_1_7_21_4_1_AFontWhoseFsTypeRestrictsEmbeddingIsEmbeddedAnywayToday()
     {
         // The state #267 describes: the permission is parsed (Os2Table.FsType) and not enforced, as
-        // the package READMEs say under "2.11 Font completeness" (#267).
+        // the package READMEs say ("currently parses and ignores", #267).
         var font = RestrictedDejaVu();
         Assert.Equal(2, FsType(font) & 0xF);
         var bytes = Save(KernelDocument(PdfConformance.PdfUA1, (font, "Hello")));
@@ -987,10 +1041,15 @@ public sealed partial class ConformanceAuditG2Tests
         Assert.Single(EmbeddedFonts(pdf));
     }
 
-    [Fact(Skip = "Gap #267: the OS/2 fsType permission is parsed and not enforced (package READMEs: 'enforcing the fsType embedding permission the library currently parses and ignores', milestone 2.11). A font whose fsType forbids embedding is embedded under PDF/UA-1, which 7.21.4.1 allows only for fonts embeddable without restriction. The test expects InvalidOperationException, as the other save-time refusals use.")]
+    [Fact(Skip = "Gap #267: the OS/2 fsType permission is parsed and not enforced (package READMEs: 'enforcing" +
+        " the fsType embedding permission the library currently parses and ignores')." +
+        " A font whose fsType forbids embedding is embedded under PDF/UA-1, which 7.21.4.1 allows " +
+        "only for fonts embeddable without restriction. The test expects InvalidOperationException, " +
+        "as the other save-time refusals use.")]
     public void Iso14289_1_7_21_4_1_AFontWhoseFsTypeRestrictsEmbeddingIsRefusedUnderAClaim()
     {
-        Assert.Throws<InvalidOperationException>(() => Save(KernelDocument(PdfConformance.PdfUA1, (RestrictedDejaVu(), "Hello"))));
+        Assert.Throws<InvalidOperationException>(() => Save(KernelDocument(PdfConformance.PdfUA1,
+            (RestrictedDejaVu(), "Hello"))));
     }
 
     // ── The oracles for the Kernel text fixtures ────────────────────────────────────────────
@@ -1046,7 +1105,13 @@ public sealed partial class ConformanceAuditG2Tests
 
     private static List<string> FaceNames(PdfConformance claim, params Standard14[] faces)
     {
-        using var doc = new PdfDocument { Conformance = claim, Timestamp = Pinned, DocumentId = PinnedId, Language = "en-US" };
+        using var doc = new PdfDocument
+        {
+            Conformance = claim,
+            Timestamp = Pinned,
+            DocumentId = PinnedId,
+            Language = "en-US"
+        };
         doc.Info.Title = "G2 audit";
         var page = doc.AddPage();
         var canvas = new VellumPdf.Canvas.PdfCanvas(page).BeginArtifactMarkedContent().BeginText();
@@ -1082,7 +1147,9 @@ public sealed partial class ConformanceAuditG2Tests
         Assert.Equal(4, names.Distinct().Count());
     }
 
-    [Fact(Skip = "Gap #754: the subset tag hashes the glyph ids alone, so two different fonts that show the same glyph ids share a tag. ISO 32000-1 9.6.4 says different subsets in one file have different tags; ISO 32000-2 9.9.2 narrows that to subsets of the same font.")]
+    [Fact(Skip = "Gap #754: the subset tag hashes the glyph ids alone, so two different fonts that show the " +
+        "same glyph ids share a tag. ISO 32000-1 9.6.4 says different subsets in one file have " +
+        "different tags; ISO 32000-2 9.9.2 narrows that to subsets of the same font.")]
     public void Iso32000_1_9_6_4_TwoSubsetsOfDifferentFontsHaveDifferentTags()
     {
         // Saved under a PDF/A-2 claim, a PDF 1.7 file, which is the edition whose sentence is read.
@@ -1126,7 +1193,8 @@ public sealed partial class ConformanceAuditG2Tests
         (int CodePoint, string Octal)[] table =
         [
             (0xE9, "351"), (0x20AC, "200"), (0x2018, "221"), (0x2019, "222"), (0x201C, "223"), (0x201D, "224"),
-            (0x2022, "225"), (0x2013, "226"), (0x2014, "227"), (0x178, "237"), (0x152, "214"), (0x2122, "231"), (0x2026, "205"),
+            (0x2022, "225"), (0x2013, "226"), (0x2014, "227"), (0x178, "237"), (0x152, "214"), (0x2122, "231"),
+                (0x2026, "205"),
         ];
         var text = string.Concat(table.Select(r => char.ConvertFromUtf32(r.CodePoint)));
         using var doc = new PdfDocument { Timestamp = Pinned, DocumentId = PinnedId };
@@ -1214,6 +1282,7 @@ public sealed partial class ConformanceAuditG2Tests
         var box = font.Descriptor.Get(N("FontBBox"));
         var written = Assert.IsType<PdfArray>(box).Items().Select(Num).ToArray();
 
-        Assert.Equal([Math.Floor(Exact(xMin)), Math.Floor(Exact(yMin)), Math.Ceiling(Exact(xMax)), Math.Ceiling(Exact(yMax))], written);
+        Assert.Equal([Math.Floor(Exact(xMin)), Math.Floor(Exact(yMin)), Math.Ceiling(Exact(xMax)),
+            Math.Ceiling(Exact(yMax))], written);
     }
 }

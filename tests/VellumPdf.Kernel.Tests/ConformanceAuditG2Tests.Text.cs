@@ -17,7 +17,8 @@ namespace VellumPdf.Kernel.Tests;
 
 // Tabs and leaders (#653), Preformatted (#662), joined runs (#650), the space at a soft line end,
 // and the Layout reports of glyph 0 and unembedded fonts (#657): what the content stream shows for
-// them, read back through each font's own ToUnicode map, against ISO 32000-1 9.10 and 14.8.2.5 and the product rules of #647, #653 and #662,
+// them, read back through each font's own ToUnicode map, against ISO 32000-1 9.10 and 14.8.2.5 and the product
+// rules of #647, #653 and #662,
 // ISO 19005-2 6.2.11 and 6.7.3, and ISO 14289-1 7.21.
 public sealed partial class ConformanceAuditG2Tests
 {
@@ -31,7 +32,8 @@ public sealed partial class ConformanceAuditG2Tests
         return (bytes, doc);
     }
 
-    /// <summary>The text of every string shown, in order, with its font size, position and the tags open around it.</summary>
+    /// <summary>The text of every string shown, in order, with its font size, position and the tags open around
+    /// it.</summary>
     private static List<(string Text, ConformanceAuditG2Support.Shown Shown)> Strings(Pdf pdf, int page = 0)
     {
         var fonts = EmbeddedFonts(pdf).ToDictionary(f => f.ResourceName);
@@ -52,7 +54,8 @@ public sealed partial class ConformanceAuditG2Tests
             });
             doc.Add(new Paragraph("Chapter one\t12\tx\ty", style)
             {
-                TabStops = [new TabStop(150, TabAlignment.Left, TabLeader.Dashes), new TabStop(250, TabAlignment.Left, TabLeader.Rule)],
+                TabStops = [new TabStop(150, TabAlignment.Left, TabLeader.Dashes), new TabStop(250,
+                    TabAlignment.Left, TabLeader.Rule)],
             });
         });
         return (bytes, style!);
@@ -68,7 +71,8 @@ public sealed partial class ConformanceAuditG2Tests
 
         // The construct: the right-aligned numbers are their own show strings, placed by Tm, and
         // no tab character or glyph 0 reaches the font.
-        Assert.Equal(["Chapter one ", "12", "Chapter two ", "134", "Chapter one ", "12 ", "x y"], strings.Select(s => s.Text).ToArray());
+        Assert.Equal(["Chapter one ", "12", "Chapter two ", "134", "Chapter one ", "12 ", "x y"], strings.Select(s
+            => s.Text).ToArray());
         Assert.All(strings, s => Assert.DoesNotContain('\t', s.Text));
         Assert.DoesNotContain(0, strings.SelectMany(s => Codes(s.Shown.Codes)));
         var map = ParseToUnicode(Assert.Single(EmbeddedFonts(pdf)).ToUnicodeBytes);
@@ -100,7 +104,8 @@ public sealed partial class ConformanceAuditG2Tests
                     from = double.Parse(op.Operands[0], CultureInfo.InvariantCulture);
                     break;
                 case "l" when from is { } x1:
-                    paths.Add((marked.Count > 0 ? marked.Peek() : "", x1, double.Parse(op.Operands[0], CultureInfo.InvariantCulture)));
+                    paths.Add((marked.Count > 0 ? marked.Peek() : "", x1, double.Parse(op.Operands[0],
+                        CultureInfo.InvariantCulture)));
                     break;
             }
         }
@@ -111,7 +116,8 @@ public sealed partial class ConformanceAuditG2Tests
         Assert.All(paths, p => Assert.Equal(Tagged(claim) ? "Artifact" : "", p.Tag));
         // The dotted leader fills the gap between "Chapter one " and the number, without overlapping either.
         var textEnd = 72 + style.MeasureString("Chapter one ");
-        Assert.True(paths[0].X1 >= textEnd - 0.01 && paths[0].X2 <= number.X + 0.01, $"leader {paths[0].X1}..{paths[0].X2}");
+        Assert.True(paths[0].X1 >= textEnd - 0.01 && paths[0].X2 <= number.X + 0.01,
+            $"leader {paths[0].X1}..{paths[0].X2}");
         // A leader stays out of the shown text: a poppler read of the page holds the words and no leader glyph.
         var text = PopplerText(bytes);
         Assert.Contains("Chapter one 12", text, StringComparison.Ordinal);
@@ -196,7 +202,9 @@ public sealed partial class ConformanceAuditG2Tests
         Assert.Equal("alpha betagamma delta", string.Concat(strings));
     }
 
-    [Fact(Skip = "Gap #588: a Preformatted line ends without a space in its show string, so the character stream of a tagged file reads 'betagamma' across the line; 14.8.2.5 asks for the separator that plain text would have.")]
+    [Fact(Skip = "Gap #588: a Preformatted line ends without a space in its show string, so the character " +
+        "stream of a tagged file reads 'betagamma' across the line; 14.8.2.5 asks for the separator " +
+        "that plain text would have.")]
     public void Iso19005_2_6_7_3_2_APreformattedLineEndHasASpaceInItsShowString()
     {
         var strings = TaggedStrings((d, s) => d.Add(new Preformatted("alpha beta" + Lf + "gamma delta", s)));
@@ -215,7 +223,10 @@ public sealed partial class ConformanceAuditG2Tests
         Assert.Equal(["alpha beta", "gamma delta"], strings);
     }
 
-    [Fact(Skip = "Gap #588: a paragraph's explicit line break ends a show string without a space, so a tagged file's character stream reads 'betagamma' across it; 14.8.2.5 asks for the separator that plain text would have. #588's Scope sentence about lines ended by an explicit line feed conflicts with this.")]
+    [Fact(Skip = "Gap #588: a paragraph's explicit line break ends a show string without a space, so a tagged " +
+        "file's character stream reads 'betagamma' across it; 14.8.2.5 asks for the separator that " +
+        "plain text would have. #588's Scope sentence about lines ended by an explicit line feed " +
+        "conflicts with this.")]
     public void Iso19005_2_6_7_3_2_AParagraphLineBreakHasASpaceInItsShowString()
     {
         var strings = TaggedStrings((d, s) => d.Add(new Paragraph("alpha beta" + Lf + "gamma delta", s)));
@@ -263,7 +274,8 @@ public sealed partial class ConformanceAuditG2Tests
     [InlineData(PdfConformance.PdfA2u, "6.2.11.4.1")]
     [InlineData(PdfConformance.PdfA2a, "6.2.11.4.1")]
     [InlineData(PdfConformance.PdfUA1, "7.21.4.1")]
-    public void Iso19005_2_6_2_11_4_1_APreformattedBlockInAnUnembeddedFontIsRefusedUnderAClaimAndSavesWithout(PdfConformance claim, string clause)
+    public void Iso19005_2_6_2_11_4_1_APreformattedBlockInAnUnembeddedFontIsRefusedUnderAClaimAndSavesWithout(
+        PdfConformance claim, string clause)
     {
         // R4: Preformatted is new API, so it refuses a font that is not embedded at the save.
         var doc = LayoutDocument(claim);
@@ -283,7 +295,8 @@ public sealed partial class ConformanceAuditG2Tests
     [InlineData(PdfConformance.PdfA2b, "\u0378")]
     [InlineData(PdfConformance.PdfA2u, "\u0378")]
     [InlineData(PdfConformance.PdfUA1, "\u0378")]
-    public void Iso19005_2_6_2_11_8_APreformattedBlockRefusesACharacterToUnicodeCannotNameOrTheFontLacks(PdfConformance claim, string character)
+    public void Iso19005_2_6_2_11_8_APreformattedBlockRefusesACharacterToUnicodeCannotNameOrTheFontLacks(
+        PdfConformance claim, string character)
     {
         var doc = LayoutDocument(claim);
         doc.Add(new Preformatted("A" + character + "B", Style(doc, DejaVu, 10)));
@@ -297,12 +310,14 @@ public sealed partial class ConformanceAuditG2Tests
 
     // ── Joined runs (#650), the space at a style change, and the soft line end ─────────────────
 
-    private static (byte[] Bytes, List<string> Strings) Runs(PdfConformance claim, params (string Text, double Size)[] runs)
+    private static (byte[] Bytes, List<string> Strings) Runs(PdfConformance claim, params (string Text,
+        double Size)[] runs)
     {
         var (bytes, _) = Build(claim, doc =>
         {
             var styles = new Dictionary<double, TextStyle>();
-            TextStyle S(double size) => styles.TryGetValue(size, out var s) ? s : styles[size] = Style(doc, DejaVu, size);
+            TextStyle S(double size) => styles.TryGetValue(size, out var s) ? s : styles[size] = Style(doc, DejaVu,
+                size);
             doc.Add(new Paragraph(runs.Select(r => new TextRun(r.Text, S(r.Size)))));
         });
         using var pdf = new Pdf(bytes);
@@ -359,7 +374,8 @@ public sealed partial class ConformanceAuditG2Tests
     [Theory]
     [InlineData(PdfConformance.PdfA2a)]
     [InlineData(PdfConformance.PdfUA1)]
-    public void Iso19005_2_6_7_3_2_TheLastShowStringOfAWrappedLineHasNoSpaceAndTheLinesJoinWithoutOne(PdfConformance claim)
+    public void Iso19005_2_6_7_3_2_TheLastShowStringOfAWrappedLineHasNoSpaceAndTheLinesJoinWithoutOne(
+        PdfConformance claim)
     {
         // The state issue #588 describes, pinned: a line that wraps at a space ends in the word and the
         // next begins with the next word, so the Unicode stream across the break has no space. Inside
@@ -370,13 +386,16 @@ public sealed partial class ConformanceAuditG2Tests
         Assert.All(lines, l => Assert.DoesNotMatch("\\s$", l));
         Assert.All(lines, l => Assert.Contains(' ', l));
         Assert.NotEqual(Wrapped, string.Concat(lines));
-        Assert.Equal(Wrapped.Replace(" ", "", StringComparison.Ordinal), string.Concat(lines).Replace(" ", "", StringComparison.Ordinal));
+        Assert.Equal(Wrapped.Replace(" ", "", StringComparison.Ordinal), string.Concat(lines).Replace(" ", "",
+            StringComparison.Ordinal));
         // poppler reads the break as a line end, so it gets the words right by the layout it measures,
         // not by a character in the stream.
         Assert.Equal(Wrapped, PopplerText(bytes).Trim());
     }
 
-    [Theory(Skip = "Gap #588: the last show string of a line that wrapped at a space has no trailing space, so the Unicode stream of a tagged file reads 'alphabeta' across the break; 14.8.2.5 and 19005-2 6.7.3.2 need the space in that show string.")]
+    [Theory(Skip = "Gap #588: the last show string of a line that wrapped at a space has no trailing space, so " +
+        "the Unicode stream of a tagged file reads 'alphabeta' across the break; 14.8.2.5 and 19005-2" +
+        " 6.7.3.2 need the space in that show string.")]
     [InlineData(PdfConformance.PdfA2a)]
     [InlineData(PdfConformance.PdfUA1)]
     public void Iso19005_2_6_7_3_2_AWordEndingAtASoftLineEndHasASpaceInItsShowString(PdfConformance claim)
@@ -389,7 +408,8 @@ public sealed partial class ConformanceAuditG2Tests
 
     // ── Glyph 0 and unembedded fonts as Layout reports them (#657, #591) ─────────────────────
 
-    private static LayoutDocument DocumentWith(PdfConformance claim, bool strict, Func<LayoutDocument, Paragraph> paragraph)
+    private static LayoutDocument DocumentWith(PdfConformance claim, bool strict, Func<LayoutDocument,
+        Paragraph> paragraph)
     {
         var doc = LayoutDocument(claim);
         doc.StrictDiagnostics = strict;
@@ -402,7 +422,8 @@ public sealed partial class ConformanceAuditG2Tests
     [InlineData(PdfConformance.PdfA2u, "6.2.11.8")]
     [InlineData(PdfConformance.PdfA2a, "6.2.11.8")]
     [InlineData(PdfConformance.PdfUA1, "7.21.8")]
-    public void Iso19005_2_6_2_11_8_LayoutReportsEachCharacterWrittenAsGlyphZeroWithTheClauseAndStrictModeRefusesIt(PdfConformance claim, string clause)
+    public void Iso19005_2_6_2_11_8_LayoutReportsEachCharacterWrittenAsGlyphZeroWithTheClauseAndStrictModeRefusesIt(
+        PdfConformance claim, string clause)
     {
         var doc = DocumentWith(claim, strict: false, d => new Paragraph("A\u0378B", Style(d, DejaVu)));
         var bytes = Save(doc);
@@ -435,9 +456,11 @@ public sealed partial class ConformanceAuditG2Tests
     [InlineData(PdfConformance.PdfA2u, "6.2.11.4.1")]
     [InlineData(PdfConformance.PdfA2a, "6.2.11.4.1")]
     [InlineData(PdfConformance.PdfUA1, "7.21.4.1")]
-    public void Iso19005_2_6_2_11_4_1_LayoutReportsAStandard14FontAsAnErrorAndSavesItUnlessStrict(PdfConformance claim, string clause)
+    public void Iso19005_2_6_2_11_4_1_LayoutReportsAStandard14FontAsAnErrorAndSavesItUnlessStrict(
+        PdfConformance claim, string clause)
     {
-        var doc = DocumentWith(claim, strict: false, _ => new Paragraph("Hello", new TextStyle { FontRef = Standard14.Helvetica }));
+        var doc = DocumentWith(claim, strict: false, _ => new Paragraph("Hello",
+            new TextStyle { FontRef = Standard14.Helvetica }));
         var bytes = Save(doc);
 
         using var pdf = new Pdf(bytes);
@@ -447,14 +470,16 @@ public sealed partial class ConformanceAuditG2Tests
         Assert.Equal(LayoutDiagnosticSeverity.Error, report.Severity);
         Assert.Contains(clause, report.Clause, StringComparison.Ordinal);
 
-        var strict = DocumentWith(claim, strict: true, _ => new Paragraph("Hello", new TextStyle { FontRef = Standard14.Helvetica }));
+        var strict = DocumentWith(claim, strict: true, _ => new Paragraph("Hello",
+            new TextStyle { FontRef = Standard14.Helvetica }));
         Assert.Throws<InvalidOperationException>(() => Save(strict));
     }
 
     [Fact]
     public void Iso19005_2_6_2_11_4_1_WithoutAClaimAStandard14FontIsNotReported()
     {
-        var doc = DocumentWith(PdfConformance.None, strict: true, _ => new Paragraph("Hello", new TextStyle { FontRef = Standard14.Helvetica }));
+        var doc = DocumentWith(PdfConformance.None, strict: true, _ => new Paragraph("Hello",
+            new TextStyle { FontRef = Standard14.Helvetica }));
 
         Assert.NotEmpty(Save(doc));
         Assert.DoesNotContain(doc.Diagnostics, d => d.Code == LayoutDiagnosticCode.UnembeddedFont);
@@ -466,9 +491,14 @@ public sealed partial class ConformanceAuditG2Tests
     {
         var doc = LayoutDocument(claim);
         var style = Style(doc, DejaVu);
-        doc.Add(new Paragraph("Chapter one\t12\nChapter two\t134", style) { TabStops = [new TabStop(300, TabAlignment.Right, TabLeader.Dots)] });
+        doc.Add(new Paragraph("Chapter one\t12\nChapter two\t134", style)
+        {
+            TabStops = [new TabStop(300,
+            TabAlignment.Right, TabLeader.Dots)]
+        });
         doc.Add(new Preformatted(Code, Style(doc, Mono, 10)));
-        doc.Add(new Paragraph([new TextRun("Hel", style), new TextRun("lo wor", Style(doc, DejaVu, 14)), new TextRun("ld", style)]));
+        doc.Add(new Paragraph([new TextRun("Hel", style), new TextRun("lo wor", Style(doc, DejaVu, 14)),
+            new TextRun("ld", style)]));
         doc.Add(new Paragraph(Wrapped, style));
         doc.Add(new Paragraph("Astral \U0001F600 \U0001D538 and private \uF6C5", style));
         return Save(doc);

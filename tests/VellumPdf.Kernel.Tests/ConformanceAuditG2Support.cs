@@ -26,7 +26,8 @@ internal static class ConformanceAuditG2Support
     internal static readonly byte[] PinnedId = Convert.FromHexString("000102030405060708090A0B0C0D0E0F");
 
     internal static readonly PdfConformance[] Claims =
-        [PdfConformance.None, PdfConformance.PdfA2b, PdfConformance.PdfA2u, PdfConformance.PdfA2a, PdfConformance.PdfUA1];
+        [PdfConformance.None, PdfConformance.PdfA2b, PdfConformance.PdfA2u, PdfConformance.PdfA2a,
+            PdfConformance.PdfUA1];
 
     internal static readonly PdfConformance[] ClaimsWithAnOracle =
         [PdfConformance.PdfA2b, PdfConformance.PdfA2u, PdfConformance.PdfA2a, PdfConformance.PdfUA1];
@@ -50,10 +51,17 @@ internal static class ConformanceAuditG2Support
 
     // ── Documents ───────────────────────────────────────────────────────────────────────────
 
-    /// <summary>A Kernel document whose one page shows <paramref name="text"/> in an embedded font, inside an artifact.</summary>
+    /// <summary>A Kernel document whose one page shows <paramref name="text"/> in an embedded font, inside an
+    /// artifact.</summary>
     internal static PdfDocument KernelDocument(PdfConformance claim, params (byte[] Font, string Text)[] lines)
     {
-        var doc = new PdfDocument { Conformance = claim, Timestamp = Pinned, DocumentId = PinnedId, Language = "en-US" };
+        var doc = new PdfDocument
+        {
+            Conformance = claim,
+            Timestamp = Pinned,
+            DocumentId = PinnedId,
+            Language = "en-US"
+        };
         doc.Info.Title = "G2 audit";
         var page = doc.AddPage();
         var canvas = new PdfCanvas(page).BeginArtifactMarkedContent().BeginText();
@@ -93,7 +101,8 @@ internal static class ConformanceAuditG2Support
 
     // ── The font objects of a file ──────────────────────────────────────────────────────────
 
-    /// <summary>One embedded font as the file holds it: the Type 0 dictionary, its one descendant and the objects they name.</summary>
+    /// <summary>One embedded font as the file holds it: the Type 0 dictionary, its one descendant and the objects
+    /// they name.</summary>
     internal sealed record EmbeddedFont(
         string ResourceName,
         PdfDictionary Type0,
@@ -116,14 +125,16 @@ internal static class ConformanceAuditG2Support
             foreach (var (key, value) in pdf.Dict(fontEntry).Entries)
             {
                 var font = pdf.Dict(value);
-                if (font.Get(PdfName.Subtype) is not PdfName { Value: "Type0" } || !seen.Add(key.Value + "/" + BaseFont(font)))
+                if (font.Get(PdfName.Subtype) is not PdfName { Value: "Type0" } || !seen.Add(key.Value + "/"
+                    + BaseFont(font)))
                     continue;
                 var cid = pdf.Dict(Assert.Single(pdf.Array(font.Get(N("DescendantFonts"))).Items()));
                 var descriptor = pdf.Dict(cid.Get(N("FontDescriptor")));
                 var programRef = descriptor.Get(N("FontFile2")) ?? descriptor.Get(N("FontFile3"))
                     ?? throw new InvalidOperationException("The descriptor names no font program.");
                 var program = pdf.Reader.ResolveStream(Assert.IsType<PdfIndirectReference>(programRef))!;
-                var toUnicode = pdf.Reader.ResolveStream(Assert.IsType<PdfIndirectReference>(font.Get(N("ToUnicode"))))!;
+                var toUnicodeRef = Assert.IsType<PdfIndirectReference>(font.Get(N("ToUnicode")));
+                var toUnicode = pdf.Reader.ResolveStream(toUnicodeRef)!;
                 result.Add(new EmbeddedFont(
                     key.Value, font, cid, descriptor, program, pdf.Reader.GetDecodedStreamData(program)!,
                     toUnicode, pdf.Reader.GetDecodedStreamData(toUnicode)!));
@@ -203,7 +214,8 @@ internal static class ConformanceAuditG2Support
             list.Add(value);
         }
 
-        foreach (Match m in Regex.Matches(text, @"(\d+) begincodespacerange\s+(.*?)endcodespacerange", RegexOptions.Singleline))
+        foreach (Match m in Regex.Matches(text, @"(\d+) begincodespacerange\s+(.*?)endcodespacerange",
+            RegexOptions.Singleline))
         {
             var ranges = Regex.Matches(m.Groups[2].Value, @"<([0-9A-Fa-f]+)>\s*<([0-9A-Fa-f]+)>");
             Assert.Equal(int.Parse(m.Groups[1].Value, CultureInfo.InvariantCulture), ranges.Count);
@@ -222,7 +234,8 @@ internal static class ConformanceAuditG2Support
         foreach (Match m in Regex.Matches(text, @"(\d+) beginbfrange\s+(.*?)endbfrange", RegexOptions.Singleline))
         {
             var count = 0;
-            foreach (Match r in Regex.Matches(m.Groups[2].Value, @"<([0-9A-Fa-f]+)>\s*<([0-9A-Fa-f]+)>\s*(<[0-9A-Fa-f]+>|\[[^\]]*\])"))
+            foreach (Match r in Regex.Matches(m.Groups[2].Value,
+                @"<([0-9A-Fa-f]+)>\s*<([0-9A-Fa-f]+)>\s*(<[0-9A-Fa-f]+>|\[[^\]]*\])"))
             {
                 count++;
                 var low = Hex(r.Groups[1].Value);
@@ -254,7 +267,8 @@ internal static class ConformanceAuditG2Support
     internal sealed record Op(string Name, List<string> Operands);
 
     private static readonly Regex ContentToken = new(
-        @"\((?:\\.|[^\\()])*\)|<<|>>|<[0-9A-Fa-f\s]*>|\[|\]|/[^\s\[\]<>()/%]*|[-+]?\d*\.?\d+|[A-Za-z'""*][A-Za-z0-9'""*]*",
+        @"\((?:\\.|[^\\()])*\)|<<|>>|<[0-9A-Fa-f\s]*>|\[|\]|/[^\s\[\]<>()/%]*" +
+        @"|[-+]?\d*\.?\d+|[A-Za-z'""*][A-Za-z0-9'""*]*",
         RegexOptions.Compiled);
 
     internal static List<Op> Operators(string content)
@@ -279,10 +293,12 @@ internal static class ConformanceAuditG2Support
         return ops;
     }
 
-    /// <summary>A string shown by Tj, with the font and text matrix in force and the marked content around it.</summary>
+    /// <summary>A string shown by Tj, with the font and text matrix in force and the marked content around
+    /// it.</summary>
     internal sealed record Shown(string Resource, double Size, byte[] Codes, double X, double Y, string[] Marked);
 
-    /// <summary>The Tj and TJ strings of every page, in order, with the font each used and the marked-content tags open.</summary>
+    /// <summary>The Tj and TJ strings of every page, in order, with the font each used and the marked-content tags
+    /// open.</summary>
     internal static List<Shown> ShownStrings(string content)
     {
         var shown = new List<Shown>();
@@ -385,7 +401,8 @@ internal static class ConformanceAuditG2Support
         var sb = new StringBuilder();
         foreach (var code in Codes(shown.Codes))
         {
-            Assert.True(map.Entries.ContainsKey(code), $"ToUnicode has no entry for code {code:X4} of {shown.Resource}.");
+            Assert.True(map.Entries.ContainsKey(code),
+                $"ToUnicode has no entry for code {code:X4} of {shown.Resource}.");
             sb.Append(map.Single(code));
         }
 
@@ -433,7 +450,6 @@ internal static class ConformanceAuditG2Support
         return (os2[8] << 8) | os2[9];
     }
 
-
     /// <summary>
     /// A code point to glyph lookup read from the font's own cmap table, without the library's
     /// reader: the format 12 subtable of platform 3 / encoding 10 or platform 0 / encoding 4 when
@@ -449,7 +465,8 @@ internal static class ConformanceAuditG2Support
             .Select(r => (r.Platform, r.Encoding, r.Offset, Format: U16(r.Offset)))
             .ToList();
 
-        var wide = tables.FirstOrDefault(t => t.Format == 12 && ((t.Platform == 3 && t.Encoding == 10) || (t.Platform == 0 && t.Encoding == 4)));
+        var wide = tables.FirstOrDefault(t => t.Format == 12 && ((t.Platform == 3 && t.Encoding == 10)
+            || (t.Platform == 0 && t.Encoding == 4)));
         if (wide.Format == 12)
         {
             var groups = (int)U32(wide.Offset + 12);
@@ -493,7 +510,8 @@ internal static class ConformanceAuditG2Support
         };
     }
 
-    /// <summary>The decoded bytes of stream object <paramref name="number"/> as Latin-1 text, or empty when it is not a stream.</summary>
+    /// <summary>The decoded bytes of stream object <paramref name="number"/> as Latin-1 text, or empty when it is
+    /// not a stream.</summary>
     internal static string DecodedObject(Pdf pdf, int number)
     {
         try
@@ -504,6 +522,157 @@ internal static class ConformanceAuditG2Support
         catch (Exception)
         {
             return "";
+        }
+    }
+
+    /// <summary>
+    /// The replacement text of the marked-content sequence that shows <paramref name="codePoint"/>: the
+    /// /ActualText of its property list, or of the structure element whose content is its MCID. Null
+    /// when the sequence has none.
+    /// </summary>
+    internal static string? ActualTextOfSequenceShowing(Pdf pdf, int codePoint)
+    {
+        var fonts = EmbeddedFonts(pdf).ToDictionary(f => f.ResourceName);
+        var open = new Stack<List<string>>();
+        var font = "";
+        foreach (var op in Operators(Content(pdf)))
+        {
+            switch (op.Name)
+            {
+                case "Tf":
+                    font = op.Operands[0][1..];
+                    break;
+                case "BMC" or "BDC":
+                    open.Push(op.Operands);
+                    break;
+                case "EMC":
+                    open.Pop();
+                    break;
+                case "Tj":
+                    var shown = new Shown(font, 0, StringBytes(op.Operands[0]), 0, 0, []);
+                    if (!Decode(shown, fonts[font]).Contains(char.ConvertFromUtf32(codePoint),
+                        StringComparison.Ordinal))
+                        break;
+                    foreach (var properties in open)
+                    {
+                        var at = properties.IndexOf("/ActualText");
+                        if (at >= 0)
+                            return TextOf(StringBytes(properties[at + 1]));
+                    }
+
+                    var mcid = open.Select(p => p.IndexOf("/MCID")).Zip(open, (at, p) => at >= 0 ? p[at + 1] : null)
+                        .FirstOrDefault(v => v is not null);
+                    return mcid is null ? null : ActualTextOfElementWithContent(pdf, mcid);
+            }
+        }
+
+        return null;
+    }
+
+    private static string? ActualTextOfElementWithContent(Pdf pdf, string mcid)
+    {
+        for (var n = 1; n < 4000; n++)
+        {
+            PdfObject? value;
+            try
+            {
+                value = pdf.Reader.ResolveValue(new PdfIndirectReference(n, 0));
+            }
+            catch (Exception)
+            {
+                continue;
+            }
+
+            if (value is PdfDictionary d && d.Get(N("ActualText")) is PdfLiteralString text
+                && d.Get(N("K")) is PdfInteger k && k.Value.ToString(CultureInfo.InvariantCulture) == mcid)
+            {
+                return TextOf(text.Bytes.ToArray());
+            }
+        }
+
+        return null;
+    }
+
+    private static string TextOf(byte[] bytes) =>
+        bytes.Length >= 2 && bytes[0] == 0xFE && bytes[1] == 0xFF
+            ? Encoding.BigEndianUnicode.GetString(bytes, 2, bytes.Length - 2)
+            : Encoding.Latin1.GetString(bytes);
+
+    /// <summary>
+    /// Collects the local and global subroutines a Type 2 charstring reaches, following calls into
+    /// subroutines and counting stems to size the hint mask bytes (TN5177).
+    /// </summary>
+    internal static void ReachSubrs(
+        VellumPdf.Fonts.Cff.CffFont font, byte[] code, List<int> stack, ref int stems, HashSet<int> locals,
+            HashSet<int> globals)
+    {
+        var i = 0;
+        while (i < code.Length)
+        {
+            var b = code[i];
+            if (b >= 32 || b == 28)
+            {
+                if (b == 28)
+                {
+                    stack.Add((short)((code[i + 1] << 8) | code[i + 2]));
+                    i += 3;
+                }
+                else if (b <= 246)
+                {
+                    stack.Add(b - 139);
+                    i++;
+                }
+                else if (b <= 250)
+                {
+                    stack.Add(((b - 247) * 256) + code[i + 1] + 108);
+                    i += 2;
+                }
+                else if (b <= 254)
+                {
+                    stack.Add((-(b - 251) * 256) - code[i + 1] - 108);
+                    i += 2;
+                }
+                else
+                {
+                    stack.Add(0);
+                    i += 5;
+                }
+
+                continue;
+            }
+
+            i++;
+            switch (b)
+            {
+                case 1 or 3 or 18 or 23:
+                    stems += stack.Count / 2;
+                    stack.Clear();
+                    break;
+                case 19 or 20:
+                    stems += stack.Count / 2;
+                    stack.Clear();
+                    i += (stems + 7) / 8;
+                    break;
+                case 10 or 29:
+                    var index = stack[^1] + (b == 10 ? font.LocalSubrBias : font.GlobalSubrBias);
+                    stack.RemoveAt(stack.Count - 1);
+                    if ((b == 10 ? locals : globals).Add(index))
+                    {
+                        var body = (b == 10 ? font.GetLocalSubr(index) : font.GetGlobalSubr(index)).ToArray();
+                        ReachSubrs(font, body, stack, ref stems, locals, globals);
+                    }
+
+                    break;
+                case 11 or 14:
+                    return;
+                case 12:
+                    i++;
+                    stack.Clear();
+                    break;
+                default:
+                    stack.Clear();
+                    break;
+            }
         }
     }
 }
