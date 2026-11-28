@@ -529,6 +529,11 @@ public sealed class Document : IDisposable
     /// <see cref="TextStyle.FontSize"/>, <see cref="TextStyle.Leading"/> and
     /// <see cref="TextStyle.FontRef"/>. The chapter title that <c>{chapter}</c> prints comes from
     /// the document's level-0 headings; see <see cref="RunningBand.ChapterToken"/>.
+    /// <para>A band built from three <see cref="BandZone"/> values is assigned here like any other.
+    /// The save refuses a zoned band whose height cannot hold its text and rule, or whose logos
+    /// cannot stand side by side, with <see cref="InvalidOperationException"/> naming the band
+    /// before it draws anything; zones that overlap on a page are cut and reported as a string
+    /// band's text is. Both are described on <see cref="RunningBand"/>.</para>
     /// </remarks>
     /// <exception cref="ArgumentException">
     /// Raised from <see cref="Save(System.IO.Stream)"/> and the other save overloads, when the
@@ -540,8 +545,13 @@ public sealed class Document : IDisposable
     /// <see cref="TextStyle.FontRef"/>.
     /// </exception>
     /// <exception cref="InvalidOperationException">
-    /// Raised from <see cref="Save(System.IO.Stream)"/> and the other save overloads, when the
-    /// band's height, or its style's size or leading, is refused; see
+    /// Raised from <see cref="Save(System.IO.Stream)"/> and the other save overloads, before any
+    /// layout, when a zoned band's logos do not fit side by side, a logo is wider than the content box
+    /// or would be written with no area, or its height is below its text box plus its rule's width and
+    /// clearance; the message names the header or the footer. It is raised where the band is drawn when
+    /// the runs of a zoned band together resolve to more than <see cref="int.MaxValue"/> characters on
+    /// a page. See <see cref="RunningBand"/>.
+    /// It is raised too when the band's height, or its style's size or leading, is refused; see
     /// <see cref="RunningBand.Height"/>, <see cref="TextStyle.FontSize"/> and
     /// <see cref="TextStyle.Leading"/>. It is also raised when a template that repeats
     /// <c>{chapter}</c> resolves to more than <see cref="int.MaxValue"/> characters; see

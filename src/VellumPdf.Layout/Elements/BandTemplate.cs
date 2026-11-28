@@ -218,6 +218,20 @@ internal sealed class BandText
         _offset = 0;
     }
 
+    /// <summary>How many literal runs and tokens the template holds.</summary>
+    internal int SegmentCount => Template.Kinds.Length;
+
+    /// <summary>
+    /// The kind (a <see cref="BandToken"/> value, or -1 for literal text) and the length in the
+    /// resolved text of segment <paramref name="segment"/>. A token's length is its value's, which is
+    /// what the last <see cref="Reset"/> set.
+    /// </summary>
+    internal (int Kind, int Length) SegmentAt(int segment)
+    {
+        var kind = Template.Kinds[segment];
+        return (kind, kind < 0 ? Template.Lengths[segment] : _values[kind].Length);
+    }
+
     internal char this[int index]
     {
         get
