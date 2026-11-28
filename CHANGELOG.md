@@ -17,10 +17,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   zones stand at the content box's left edge, centre and right edge, and all the text sits on one
   baseline: the largest ascent and descent of the band's fonts, taken from their bounding boxes,
   make a text box that is centred in what the rule leaves of the band. A logo is as tall as the
-  band less the rule, is drawn as an artifact in a tagged document, and has no alternative text. `Rule` takes a `BandRule` along the
-  band's top or bottom edge, inside the band, across the content width, on every page that has the
-  band (a blank page a recto break inserts has neither band nor rule); it also works on a string
-  band. The rule keeps 1 point clear of the text box and the logos, the logo is shortened by the
+  band less the rule, is drawn as an artifact in a tagged document, and has no alternative text.
+  `Rule` takes a `BandRule` along the band's top or bottom edge, inside the band, across the
+  content width, on every page that has the band (a blank page a recto break inserts has neither
+  band nor rule); it also works on a string band. The rule keeps 1 point clear of the text box and the logos, the logo is shortened by the
   rule's width and that clearance, and a band too short for its text box plus the rule is refused
   by the save. With `Document.MirrorMargins` set, `MirrorZones` swaps the left and right zones on
   even pages, counted by physical page, so the first page of a decimal body that follows three
