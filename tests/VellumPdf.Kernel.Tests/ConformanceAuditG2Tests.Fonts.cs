@@ -1142,12 +1142,12 @@ public sealed partial class ConformanceAuditG2Tests
     }
 
     [Fact]
-    public void Iso32000_1_9_10_3_TwoCharactersThatShareAGlyphGiveItsCodeTwoEntriesAndTheLaterOneWins()
+    public void Iso32000_1_9_10_3_TwoCharactersThatShareAGlyphGiveItsCodeTwoEntriesInTheOrderOfFirstUse()
     {
         // Source Sans 3 draws U+0020 and U+00A0 with glyph 1. Both entries are written for that code, in
-        // the order the characters were first drawn, and TN5014 says a later code mapping supersedes an
-        // earlier one, so which of the two a reader returns depends on the order. Pinned as the
-        // measured state; no clause forbids it.
+        // the order the characters were first drawn. TN5014 lets a later code mapping supersede an
+        // earlier one, but a measured reader (poppler 26.08) returned U+0020 for both orders, so readers
+        // disagree on which entry counts. Pinned as the measured state; no clause forbids it.
         var nbsp = char.ConvertFromUtf32(0xA0);
         var bytes = Save(KernelDocument(PdfConformance.PdfA2u, (SourceSans, "A B" + nbsp + "C")));
         using var pdf = new Pdf(bytes);
