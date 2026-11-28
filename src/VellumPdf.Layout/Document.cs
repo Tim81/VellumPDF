@@ -530,12 +530,12 @@ public sealed class Document : IDisposable
     /// ("A single element needed more than 50000 page continuations, ..."), a table's repeated
     /// header rows, or a group of rows joined by <see cref="Cell.RowSpan"/>, no longer fit a page,
     /// or any other element becomes too tall for a page ("An element is too tall to fit on a single
-    /// page and cannot be rendered. ..."). A renderer that two documents with different values lay
-    /// out is refused as <see cref="LayoutContext.BreakLongWordsAtPlaces"/> says. Each throw comes
+    /// page and cannot be rendered. ..."). A paragraph or table renderer that two documents with different
+    /// values lay out is refused as <see cref="LayoutContext.BreakLongWordsAtPlaces"/> says. Each throw comes
     /// from the save, not from this setter.
-    /// <para>The cut applies to every wrap the document performs: a paragraph, a heading, a list
+    /// <para>The cut applies to these wraps: a paragraph, a heading, a list
     /// item, the paragraphs of a <see cref="NoteBlock"/>, and a table cell given as a string or as
-    /// runs. The document puts the value on every <see cref="LayoutContext"/> it hands to a
+    /// runs. A <see cref="Preformatted"/> block is not one of them and cuts at the glyph. The document puts the value on every <see cref="LayoutContext"/> it hands to a
     /// renderer, and a built-in renderer reads it there; <see cref="LayoutContext.BreakLongWordsAtPlaces"/>
     /// says how a renderer of yours passes it on and what a renderer keeps. No hyphen or other glyph
     /// is added at the cut, so extracted text has the extractor's line separator between the

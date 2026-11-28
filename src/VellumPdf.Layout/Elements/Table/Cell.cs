@@ -27,7 +27,8 @@ public sealed class Cell
     /// the cell then draws no text, and the save refuses it only where a column is sized
     /// automatically, as the constructor describes.
     /// Spaces are the only break points between words, and a word wider than the cell is broken
-    /// between characters. With <see cref="VellumPdf.Layout.Document.BreakLongWordsAtPlaces"/> set it is broken after
+    /// between characters. When the context says so (<see cref="VellumPdf.Layout.Core.LayoutContext.BreakLongWordsAtPlaces"/>, which
+    /// <see cref="VellumPdf.Layout.Document.BreakLongWordsAtPlaces"/> sets) it is broken after
     /// the last <c>/</c>, <c>\</c> or <c>-</c> that leaves the line no wider than the cell text area,
     /// and between characters when none fits, as a <see cref="Elements.Paragraph"/> breaks one. No
     /// hyphen or other glyph is added at the break.

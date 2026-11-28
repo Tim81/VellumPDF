@@ -21,10 +21,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   - **The value travels on the new `LayoutContext.BreakLongWordsAtPlaces`.** The document sets it on
     every context it hands out. A renderer of yours that lays a built-in renderer out passes it on by
     deriving the child's context with `WithArea`, on any thread or task; a context built with
-    `new LayoutContext(area)` has it false. A built-in renderer keeps the value it first wrapped
-    text with, and so does every piece it splits into: laying one out again with the other value
-    throws `InvalidOperationException` from that call, and so from the save. A wrap that takes no
-    context cuts at the character.
+    `new LayoutContext(area)` has it false. A paragraph or table renderer keeps the value it first
+    wrapped text with, and so does every piece a paragraph, a table or a list splits into: laying
+    one out again with the other value throws `InvalidOperationException` from that call, and so
+    from the save. A list instance builds its entries again for each save, so it follows each
+    document and is refused only within one save. `Preformatted` does not read the value and cuts at
+    the character. A wrap that takes no context cuts at the character.
   - **A program that never sets either property saves to the same bytes as before, with the same
     verdicts.** Nothing is read from the thread, the task or an earlier save.
   - **Turning it on can make a save fail that succeeded.** A cut after a place ends a line earlier,

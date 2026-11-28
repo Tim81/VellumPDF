@@ -46,9 +46,9 @@ public interface IRenderer
     /// context from <see cref="VellumPdf.Layout.Document.BreakLongWordsAtPlaces"/>. A renderer of
     /// yours that lays a built-in renderer out passes the value on by deriving the child's context
     /// from its own with <see cref="LayoutContext.WithArea"/>, on any thread or task; a context it
-    /// builds with <c>new LayoutContext(area)</c> has the value false. A built-in renderer keeps the
-    /// value it first wrapped text with and refuses the other, as
-    /// <see cref="LayoutContext.BreakLongWordsAtPlaces"/> says. The setting can make the save
+    /// builds with <c>new LayoutContext(area)</c> has the value false. A paragraph or table renderer
+    /// keeps the value it first wrapped text with and refuses the other, and a list takes each
+    /// save's value, as <see cref="LayoutContext.BreakLongWordsAtPlaces"/> says. The setting can make the save
     /// refuse what it saved without it; the documentation of the document's property lists the
     /// refusals. Where this renderer's layout holds text, a line that ends earlier takes more
     /// lines, and the 50,000 limit and the page height are met sooner.</para>

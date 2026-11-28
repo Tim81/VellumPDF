@@ -29,8 +29,9 @@ namespace VellumPdf.Layout.Elements;
 /// so it does not separate its neighbours. A run ending in a carriage return and the next starting
 /// with a line feed are two line breaks, because each run's line breaks are read on their own.
 /// </para>
-/// <para><b>A word wider than its line is cut at the character that does not fit.</b> With
-/// <see cref="VellumPdf.Layout.Document.BreakLongWordsAtPlaces"/> set it is cut after the last <c>/</c>, <c>\</c> or
+/// <para><b>A word wider than its line is cut at the character that does not fit.</b> When the context says so
+/// (<see cref="VellumPdf.Layout.Core.LayoutContext.BreakLongWordsAtPlaces"/>, which
+/// <see cref="VellumPdf.Layout.Document.BreakLongWordsAtPlaces"/> sets) it is cut after the last <c>/</c>, <c>\</c> or
 /// <c>-</c> that leaves the line no wider than its width, so a web address or a path ends a line at
 /// one of its segments, and at the character only when it has no such place that fits. No hyphen
 /// or other glyph is added at the cut, so the characters of the word read back as written, with the

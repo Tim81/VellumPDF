@@ -296,6 +296,73 @@ public sealed class LongWordReuseTests
         Assert.Equal(string.Format(TableRefusal, cutUnder ? "true" : "false", cutUnder ? "false" : "true"), ex.Message);
     }
 
+    // ── A list takes the value of each save ──────────────────────────────────
+
+    private static ListRenderer Url()
+    {
+        var url = string.Concat(Enumerable.Repeat("aaaaa/", 10));
+        return new ListRenderer(new ListElement { DefaultStyle = Courier(), Indent = 20 }.Add(url));
+    }
+
+    private static byte[] SaveList(IRenderer renderer, bool on)
+    {
+        using var doc = NewDocument(on, 100, 37, 10);
+        doc.Add(renderer);
+        return Save(doc);
+    }
+
+    [Theory]
+    [InlineData(true, false)]
+    [InlineData(false, true)]
+    public void AListRendererLaidOutByTwoDocuments_followsEachDocumentAndIsNotRefused(bool first, bool second)
+    {
+        // A list builds its entries again for each save, so unlike a paragraph or a table renderer
+        // the same instance is not bound to the first document's value.
+        var shared = Url();
+        SaveList(shared, first);
+
+        Assert.Equal(SaveList(Url(), second), SaveList(shared, second));
+    }
+
+    [Fact]
+    public void AListEntryThatMovesToTheNextPage_isLaidOutThere_withTheSettingOn()
+    {
+        // The second entry does not fit the room below the first, so the document's own layout moves
+        // it whole to the next page. Words that fit their line are never cut, so the setting makes
+        // no difference to the text and the two documents have to save the same bytes. If the child
+        // context of that try lost the value, the list would fall back to the layout that does not
+        // move entries, and the bytes would differ.
+        static byte[] Save(bool on)
+        {
+            using var doc = NewDocument(on, 100, 80, 10);
+            doc.Add(new ListElement { DefaultStyle = Courier(), Indent = 20 }
+                .Add("one")
+                .Add("two words on three lines of a narrow text area for the entry"));
+            using var ms = new MemoryStream();
+            doc.Save(ms);
+            return ms.ToArray();
+        }
+
+        Assert.Equal(Save(false), Save(true));
+    }
+
+    [Fact]
+    public void ATableRowCutAcrossPages_drawsEveryLineOfEveryPageAfterThePlace()
+    {
+        // One row whose cell holds four 60-character words: 40 lines cut after the place, over four
+        // pages of 13 lines. The lines of the cut row are wrapped for each page it resumes on.
+        using var doc = NewDocument(on: true, 92, 180, 10);
+        var table = new TableElement { DefaultCellStyle = Courier() }.SetColumnWidths(72);
+        var word = string.Concat(Enumerable.Repeat("aaaaa/", 10));
+        table.AddRow().AddCell(string.Join(' ', Enumerable.Repeat(word, 4)));
+        doc.Add(table);
+
+        var lines = Placements(Save(doc));
+
+        Assert.Equal(40, lines.Length);
+        Assert.All(lines, l => Assert.Equal("aaaaa/", l));
+    }
+
     // ── Nothing outlives a save ──────────────────────────────────────────────
 
     // A renderer of a caller's that keeps one worker thread for the program and sends every layout to

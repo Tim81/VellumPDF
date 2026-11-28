@@ -33,26 +33,35 @@ public sealed class LayoutContext
 
     /// <summary>
     /// Whether a word wider than its line is cut after the last solidus, reverse solidus or
-    /// hyphen-minus that fits, in the text of the renderer this context is handed to and of every
-    /// renderer it lays out. False unless the document sets
-    /// <see cref="VellumPdf.Layout.Document.BreakLongWordsAtPlaces"/> or you set this.
+    /// hyphen-minus that fits, in the paragraph, heading, list item, note block and table cell wraps
+    /// of the renderer this context is handed to and of the renderers it lays out. False unless the
+    /// document sets <see cref="VellumPdf.Layout.Document.BreakLongWordsAtPlaces"/> or you set this.
+    /// A <see cref="VellumPdf.Layout.Elements.Preformatted"/> block does not read it and cuts at the
+    /// glyph.
     /// </summary>
     /// <remarks>
-    /// <b>A renderer keeps the value it first wrapped text with, and refuses the other.</b> A
-    /// built-in renderer fixes the value at its first <see cref="IRenderer.Layout"/> that wraps
-    /// text, and so does every piece it splits into. A later <c>Layout</c> of that renderer or of
-    /// one of its pieces with a context whose value differs throws
+    /// <b>A paragraph or table renderer keeps the value it first wrapped text with, and refuses the
+    /// other.</b> It fixes the value at its first <see cref="IRenderer.Layout"/> that wraps text, and
+    /// so does every piece a paragraph, a table or a list splits into. A later <c>Layout</c> of that
+    /// renderer or of one of its pieces with a context whose value differs throws
     /// <see cref="InvalidOperationException"/> naming this property, from that call and so from
     /// the save, because the lines it wrapped and the line numbers its pieces start at belong to
     /// one wrap. Draw, the line counts and every later wrap use the value it was fixed to, whatever
     /// the context says. The throw is reachable only when some context has the value true, which
     /// only a program that sets this property or
     /// <see cref="VellumPdf.Layout.Document.BreakLongWordsAtPlaces"/> can make.
+    /// <para><b>A <see cref="VellumPdf.Layout.Rendering.ListRenderer"/> takes the value of each save
+    /// and refuses a second value only within one save.</b> It builds its entries again whenever a
+    /// new save lays it out, so the same list instance laid out by two documents with different
+    /// values follows each document and is not refused. Its pieces share the entries of the layout
+    /// that cut them, so a piece is refused under the other value, as a second layout of the same
+    /// instance under another value inside one save is.</para>
     /// <para><b>A renderer of yours that lays a built-in renderer out must pass the value on.</b>
     /// <see cref="WithArea"/> copies it, on whatever thread it runs. A context made with
     /// <c>new LayoutContext(area)</c> has it false, so the built-in renderer cuts at the glyph
-    /// under it. <b>Do not</b> lay one renderer out under contexts with different values, and do
-    /// not give a piece that one save returned to a document or context with the other value.</para>
+    /// under it. <b>Do not</b> lay one paragraph or table renderer out under contexts with different
+    /// values, and do not give a piece that one save returned to a document or context with the
+    /// other value.</para>
     /// <para>A wrap that takes no context cuts at the glyph. The value is read when a renderer
     /// first wraps text and never after, so changing a document's setting once a save has begun
     /// changes nothing.</para>
@@ -60,8 +69,8 @@ public sealed class LayoutContext
     /// <exception cref="InvalidOperationException">
     /// Raised from <see cref="IRenderer.Layout"/> of a built-in renderer, and so from
     /// <see cref="VellumPdf.Layout.Document.Save(System.IO.Stream)"/>, the other save overloads and
-    /// the signing saves of <c>VellumPdf.Signing</c>, when the renderer or a piece it split into was
-    /// first laid out with the other value.
+    /// the signing saves of <c>VellumPdf.Signing</c>, when a paragraph or table renderer, a piece, or
+    /// a list within one save, was first laid out with the other value.
     /// </exception>
     public bool BreakLongWordsAtPlaces { get; init; }
 
