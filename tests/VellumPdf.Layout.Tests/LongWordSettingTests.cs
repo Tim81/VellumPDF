@@ -65,20 +65,20 @@ public sealed class LongWordSettingTests
                 doc.Add(new NoteBlock { Padding = new EdgeInsets(0), BorderWidth = 0 }.Add(Path, Courier()));
                 break;
             case Path_.CellString:
-            {
-                var table = new TableElement { DefaultCellStyle = Courier() }.SetColumnWidths(72);
-                table.AddRow().AddCell(Path);
-                doc.Add(table);
-                break;
-            }
+                {
+                    var table = new TableElement { DefaultCellStyle = Courier() }.SetColumnWidths(72);
+                    table.AddRow().AddCell(Path);
+                    doc.Add(table);
+                    break;
+                }
 
             case Path_.CellRuns:
-            {
-                var table = new TableElement { DefaultCellStyle = Courier() }.SetColumnWidths(72);
-                table.AddRow().AddCell(new Cell([new TextRun(Path, Courier())]));
-                doc.Add(table);
-                break;
-            }
+                {
+                    var table = new TableElement { DefaultCellStyle = Courier() }.SetColumnWidths(72);
+                    table.AddRow().AddCell(new Cell([new TextRun(Path, Courier())]));
+                    doc.Add(table);
+                    break;
+                }
 
             case Path_.ForwardedParagraph:
                 doc.Add(new Forward(new ParagraphRenderer(new Paragraph(Path, Courier()))));
