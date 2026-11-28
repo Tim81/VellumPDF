@@ -23,7 +23,7 @@ namespace VellumPdf.Layout.Rendering;
 /// including a header or footer that leaves the content area no positive size. One element may take
 /// at most 50,000 page continuations; see <see cref="IRenderer.Layout"/>.
 /// </remarks>
-public sealed class DocumentRenderer
+public sealed partial class DocumentRenderer
 {
     // Bounds the per-element continuation loop in both pagination passes (#459). It exists because
     // Document.Add(IRenderer) takes any implementation and LayoutResult.Partial accepts any overflow
@@ -475,6 +475,12 @@ public sealed class DocumentRenderer
         _chapterBefore = _chapterFirst = _chapterLatest = null;
         ChapterNotes = 0;
 
+        // A zoned band's own members are checked before any layout, naming the band; a string band
+        // has none to check.
+        var bandContentWidth = _pageSize.Width - _margins.Horizontal;
+        Header?.ValidateZones(RunningBandKind.Header, bandContentWidth);
+        Footer?.ValidateZones(RunningBandKind.Footer, bandContentWidth);
+
         var contentArea = ContentArea;
         if (contentArea.Width <= 0 || contentArea.Height <= 0)
             throw new ArgumentException(
@@ -625,7 +631,7 @@ public sealed class DocumentRenderer
     // A null template is left for the band's first draw to refuse, as it always was.
     private static bool WantsChapter(RunningBand? band) =>
         band is { ChapterToken: true, Template: not null }
-        && band.Compiled.TokenCounts[(int)BandToken.Chapter] > 0;
+        && band.CountOf(BandToken.Chapter) > 0;
 
     // Called with each renderer the drawing pass accepted, which is the placement that stays: the
     // measuring pass never reaches it, and a renderer that was laid out and then replaced is not
@@ -1867,11 +1873,17 @@ public sealed class DocumentRenderer
         if (Header is not null)
         {
             _sink.CurrentKind = LayoutElementKind.Header;
-            var text = ResolveBand(
-                Header, ref _headerText, pageNumber, totalPages, LabelFor(Header, pageNumber), ChapterOnPage);
             var bandY = _margins.Top;
             var bandHeight = Header.EffectiveHeight;
-            DrawBandText(ctx, canvas, text, Header, RunningBandKind.Header, pageNumber, bandY, bandHeight);
+            if (Header.IsZoned)
+                DrawZonedBand(
+                    ctx, canvas, Header, RunningBandKind.Header, ref _headerZones, pageNumber, totalPages, bandY, bandHeight);
+            else
+            {
+                var text = ResolveBand(
+                    Header, ref _headerText, pageNumber, totalPages, LabelFor(Header, pageNumber), ChapterOnPage);
+                DrawBandText(ctx, canvas, text, Header, RunningBandKind.Header, pageNumber, bandY, bandHeight);
+            }
         }
 
         _sink.SyncEncodingWarnings(canvas, report: true);
@@ -1879,11 +1891,17 @@ public sealed class DocumentRenderer
         if (Footer is not null)
         {
             _sink.CurrentKind = LayoutElementKind.Footer;
-            var text = ResolveBand(
-                Footer, ref _footerText, pageNumber, totalPages, LabelFor(Footer, pageNumber), ChapterOnPage);
             var bandY = _pageSize.Height - _margins.Bottom - Footer.EffectiveHeight;
             var bandHeight = Footer.EffectiveHeight;
-            DrawBandText(ctx, canvas, text, Footer, RunningBandKind.Footer, pageNumber, bandY, bandHeight);
+            if (Footer.IsZoned)
+                DrawZonedBand(
+                    ctx, canvas, Footer, RunningBandKind.Footer, ref _footerZones, pageNumber, totalPages, bandY, bandHeight);
+            else
+            {
+                var text = ResolveBand(
+                    Footer, ref _footerText, pageNumber, totalPages, LabelFor(Footer, pageNumber), ChapterOnPage);
+                DrawBandText(ctx, canvas, text, Footer, RunningBandKind.Footer, pageNumber, bandY, bandHeight);
+            }
         }
     }
 
@@ -1905,7 +1923,7 @@ public sealed class DocumentRenderer
     // band with no {page} asks for nothing, so a label too long to print is refused only where it
     // would be shown.
     private string? LabelFor(RunningBand band, int pageNumber) =>
-        _labels.IsEmpty || band.Compiled.TokenCounts[(int)BandToken.Page] == 0
+        _labels.IsEmpty || band.CountOf(BandToken.Page) == 0
             ? null
             : _labels.LabelOf(pageNumber - 1);
 
@@ -1927,6 +1945,9 @@ public sealed class DocumentRenderer
         // check. The size only: a colour is written only when text is drawn, and a band that draws
         // nothing is not refused for one.
         LayoutValidation.ValidateFontSize(style, $"The {kind.ToString().ToLowerInvariant()} band");
+
+        if (band.Rule is { } rule)
+            DrawBandRule(ctx, canvas, rule, pageNumber, bandY, bandHeight, ownMarkedContent: true);
 
         var contentWidth = _pageSize.Width - _margins.Horizontal;
         var (drawn, textWidth) = FitToWidth(style, text, contentWidth);
