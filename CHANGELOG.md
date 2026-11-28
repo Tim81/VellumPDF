@@ -28,7 +28,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
     document and is refused only within one save. `Preformatted` does not read the value and cuts at
     the character. A wrap that takes no context cuts at the character.
   - **A program that never sets either property saves to the same bytes as before, with the same
-    verdicts.** Nothing is read from the thread, the task or an earlier save.
+    verdicts.** The value is not read from the thread, a task or an earlier save.
   - **Turning it on can make a save fail that succeeded.** A cut after a place ends a line earlier,
     so a text takes the same lines or more. A single element that then needs more than 50,000 page
     continuations is refused, as is a table whose repeated header rows or row-span group no longer

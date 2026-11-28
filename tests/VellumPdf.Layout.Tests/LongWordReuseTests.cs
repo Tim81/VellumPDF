@@ -324,6 +324,23 @@ public sealed class LongWordReuseTests
         Assert.Equal(SaveList(Url(), second), SaveList(shared, second));
     }
 
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void APieceOfAListIsBoundToTheValueItWasCutUnder(bool cutUnder)
+    {
+        // The pieces of a list share the entries of the layout that cut them, so a piece laid out in
+        // a document with the other value is refused, though the list instance itself follows each
+        // document.
+        var url = string.Concat(Enumerable.Repeat("aaaaa/", 10));
+        var keep = new KeepOverflow(new ListRenderer(new ListElement { DefaultStyle = Courier(), Indent = 20 }.Add(url)));
+        SaveList(keep, cutUnder);
+        var piece = keep.Piece;
+        Assert.NotNull(piece);
+
+        Assert.Throws<InvalidOperationException>(() => SaveList(piece, !cutUnder));
+    }
+
     [Fact]
     public void AListWhoseIndentLeavesTheTextNoWidth_isLaidOutWithTheTextWithTheSettingOn()
     {

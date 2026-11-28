@@ -544,7 +544,7 @@ public sealed class Document : IDisposable
     /// <c>&amp;</c>, <c>=</c>, <c>.</c>, <c>_</c> and <c>#</c> are not places. A <c>-</c> before a
     /// digit, and a solidus before a digit that follows a digit, are used only when no other place
     /// fits (UAX #14, LB25).</para>
-    /// <para><b>The value is read when a save lays the document out, and nothing else reads it.</b>
+    /// <para><b>The document reads this property when a save lays the document out, and at no other time.</b>
     /// A value set after the document has saved is stored and never used, because a document saves
     /// once. A refused save that failed before layout started leaves the document usable, and a
     /// value set before the retry is the one used. A renderer of yours that lays a built-in
