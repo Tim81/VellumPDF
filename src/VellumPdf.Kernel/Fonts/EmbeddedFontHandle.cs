@@ -82,6 +82,11 @@ public sealed class EmbeddedFontHandle
     /// <see cref="VellumPdf.Canvas.PdfCanvas.NotdefGlyphs"/>, without the character. <b>Do
     /// not pass</b> a code point this method answers 0 for to <c>ShowGlyphs</c> under either
     /// claim.</para>
+    /// <para>A font with a glyph for U+FEFF, U+FFFE or U+0000 gives it a non-zero id like any other
+    /// character. Under PDF/A-2u, PDF/A-2a and PDF/UA-1 the save names that glyph U+2060 (for
+    /// U+FEFF) or U+FFFD (for the other two) in the ToUnicode CMap, as
+    /// <see cref="VellumPdf.Document.PdfDocument.Conformance"/> describes; text extraction reads
+    /// that value. <b>Do not pass</b> U+FEFF under those claims.</para>
     /// </remarks>
     public ushort GetGlyphId(int codePoint) => Embedder.GetGlyphId(codePoint);
 

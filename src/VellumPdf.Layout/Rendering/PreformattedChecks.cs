@@ -81,7 +81,7 @@ internal static class PreformattedChecks
     private static void CheckCharacters(int index, Preformatted element, PdfConformance claim)
     {
         var handle = element.Style.FontRef.Embedded;
-        var banUnicodeNoncharacters = claim is PdfConformance.PdfA2u or PdfConformance.PdfA2a or PdfConformance.PdfUA1;
+        var banUnicodeNoncharacters = ToUnicodeValues.ClaimNeedsToUnicode(claim);
         var text = element.Text;
         var line = 1;
         for (var i = 0; i < text.Length;)
@@ -102,7 +102,7 @@ internal static class PreformattedChecks
             }
 
             var scalar = c == '\t' ? ' ' : char.IsHighSurrogate(c) && i + 1 < text.Length ? char.ConvertToUtf32(c, text[i + 1]) : c;
-            if (banUnicodeNoncharacters && scalar is 0xFEFF or 0xFFFE)
+            if (banUnicodeNoncharacters && ToUnicodeValues.IsForbidden(scalar))
             {
                 throw new InvalidOperationException(
                     FormattableString.Invariant(

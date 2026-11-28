@@ -638,28 +638,62 @@ public sealed partial class ConformanceAuditG2Tests
         return data;
     }
 
-    [Theory]
-    [MemberData(nameof(Elements))]
-    public void Iso19005_2_6_2_11_7_2_ATextWithAZeroWidthNoBreakSpaceIsAcceptedAndMapsItToFeff(Element element)
+    public static TheoryData<Element, PdfConformance> ElementsWithoutAToUnicodeLevel()
     {
-        // The state the gap test below describes, pinned so the fix has to change it: the character
-        // has a glyph in DejaVu, the save does not refuse it, and ToUnicode maps its code to U+FEFF.
-        // Every Layout element that draws text in an embedded font is covered, not only a paragraph.
-        var bytes = WithFeff(element, PdfConformance.PdfA2u);
+        var data = new TheoryData<Element, PdfConformance>();
+        foreach (var e in Enum.GetValues<Element>())
+        {
+            data.Add(e, PdfConformance.None);
+            data.Add(e, PdfConformance.PdfA2b);
+        }
+
+        return data;
+    }
+
+    public static TheoryData<Element, PdfConformance> ElementsUnderALevelThatNeedsToUnicode()
+    {
+        var data = new TheoryData<Element, PdfConformance>();
+        foreach (var e in Enum.GetValues<Element>())
+        {
+            data.Add(e, PdfConformance.PdfA2u);
+            data.Add(e, PdfConformance.PdfA2a);
+            data.Add(e, PdfConformance.PdfUA1);
+        }
+
+        return data;
+    }
+
+    // Glyph 5367 is U+FEFF in DejaVu Sans; the first assertion that uses it reads the font's cmap.
+    private const int DejaVuFeffGlyph = 5367;
+
+    [Theory]
+    [MemberData(nameof(ElementsWithoutAToUnicodeLevel))]
+    public void Iso19005_2_6_2_11_7_2_ATextWithAZeroWidthNoBreakSpaceKeepsTheFontsOwnMappingWhereNoLevelNeedsToUnicode(
+        Element element, PdfConformance claim)
+    {
+        // A file with no claim or PDF/A-2b has no ToUnicode value rule, and 2.x keeps writing what
+        // it wrote: the code of the character maps to U+FEFF. Every Layout element that draws text
+        // in an embedded font is covered, not only a paragraph.
+        Assert.Equal(DejaVuFeffGlyph, CmapLookup(DejaVu)(0xFEFF));
+        var bytes = WithFeff(element, claim);
         using var pdf = new Pdf(bytes);
-        var map = ParseToUnicode(Assert.Single(EmbeddedFonts(pdf)).ToUnicodeBytes);
+        var font = Assert.Single(EmbeddedFonts(pdf));
+        var map = ParseToUnicode(font.ToUnicodeBytes);
 
         Assert.Contains(map.Entries, e => e.Value.Contains(Feff));
+        Assert.Contains("<14F7> <FEFF>", Encoding.ASCII.GetString(font.ToUnicodeBytes));
         Assert.Contains(Feff, string.Concat(ShownText(pdf)));
     }
 
-    private static byte[] WithFeff(Element element, PdfConformance claim)
+    private static byte[] WithFeff(Element element, PdfConformance claim) =>
+        WithText(element, claim, DejaVu, "A" + Feff + "B");
+
+    private static byte[] WithText(Element element, PdfConformance claim, byte[] font, string text)
     {
-        var text = "A" + Feff + "B";
         if (element == Element.Kernel)
-            return Save(KernelDocument(claim, (DejaVu, text)));
+            return Save(KernelDocument(claim, (font, text)));
         var doc = LayoutDocument(claim);
-        var style = Style(doc, DejaVu);
+        var style = Style(doc, font);
         switch (element)
         {
             case Element.Paragraph:
@@ -682,33 +716,207 @@ public sealed partial class ConformanceAuditG2Tests
         return Save(doc);
     }
 
-    [Theory(Skip = "Gap #752: U+FEFF has a glyph in DejaVu Sans and Source Sans 3, so the Kernel and a Layout " +
-        "paragraph draw it and ToUnicode maps its code to U+FEFF, which 6.2.11.7.2 and 14289-1 7.21.7" +
-        " forbid (veraPDF 6.2.11.7.2-2 and 7.21.7-2 fail). Preformatted refuses it already.")]
+    [Theory]
     [InlineData(false, PdfConformance.PdfA2u)]
     [InlineData(true, PdfConformance.PdfA2u)]
     [InlineData(true, PdfConformance.PdfA2a)]
+    [InlineData(false, PdfConformance.PdfA2a)]
     [InlineData(true, PdfConformance.PdfUA1)]
     [InlineData(false, PdfConformance.PdfUA1)]
     public void Iso19005_2_6_2_11_7_2_ACharacterThatToUnicodeCannotNameIsNotWrittenUnderALevelThatNeedsToUnicode(
         bool layout, PdfConformance claim)
     {
-        byte[]? bytes = null;
-        try
-        {
-            bytes = WithFeff(layout ? Element.Paragraph : Element.Kernel, claim);
-        }
-        catch (InvalidOperationException)
-        {
-            // A refusal is one way to meet the clause.
-        }
-
-        if (bytes is null)
-            return;
+        // The save does not refuse the text: it is drawn, and ToUnicode names its glyph by a value
+        // the clause allows. A refusal would be another way to meet the clause, so none is caught.
+        var bytes = WithFeff(layout ? Element.Paragraph : Element.Kernel, claim);
         using var pdf = new Pdf(bytes);
+        Assert.Contains(Feff, string.Concat(ShownText(pdf)));
         var map = ParseToUnicode(Assert.Single(EmbeddedFonts(pdf)).ToUnicodeBytes);
         Assert.DoesNotContain(map.Entries, e => e.Value.Any(v => v.Contains(Feff) || v.Contains('\uFFFE')
             || v.Contains('\0')));
+    }
+
+    [Theory]
+    [MemberData(nameof(ElementsUnderALevelThatNeedsToUnicode))]
+    public void Issue752_AZeroWidthNoBreakSpaceIsNamedAsAWordJoinerInToUnicodeAndStillDrawnAsItsOwnGlyph(
+        Element element, PdfConformance claim)
+    {
+        var bytes = WithFeff(element, claim);
+        using var pdf = new Pdf(bytes);
+        var font = Assert.Single(EmbeddedFonts(pdf));
+
+        // The glyph is shown by the code the cmap gives U+FEFF, and ToUnicode names that U+2060.
+        Assert.Contains(DejaVuFeffGlyph, ShownStrings(Content(pdf)).SelectMany(s => Codes(s.Codes)));
+        Assert.Equal("\u2060", ParseToUnicode(font.ToUnicodeBytes).Single(DejaVuFeffGlyph));
+        var cmap = Encoding.ASCII.GetString(font.ToUnicodeBytes);
+        Assert.Contains("<14F7> <2060>", cmap);
+        Assert.DoesNotContain("<14F7> <FEFF>", cmap);
+        Assert.Contains(Feff, string.Concat(ShownText(pdf)));
+    }
+
+    [Theory]
+    [MemberData(nameof(ElementsUnderALevelThatNeedsToUnicode))]
+    public void Issue752_AZeroWidthNoBreakSpaceInAnOpenTypeCffFontIsNamedAsAWordJoiner(
+        Element element, PdfConformance claim)
+    {
+        Assert.Equal(2458, CmapLookup(SourceSans)(0xFEFF));
+        var bytes = WithText(element, claim, SourceSans, "A" + Feff + "B");
+        using var pdf = new Pdf(bytes);
+        var font = Assert.Single(EmbeddedFonts(pdf));
+        Assert.Contains(2458, ShownStrings(Content(pdf)).SelectMany(s => Codes(s.Codes)));
+        Assert.Equal("\u2060", ParseToUnicode(font.ToUnicodeBytes).Single(2458));
+        Assert.Contains("<099A> <2060>", Encoding.ASCII.GetString(font.ToUnicodeBytes));
+    }
+
+    [Theory]
+    [InlineData(Element.Kernel, PdfConformance.PdfA2u, true)]
+    [InlineData(Element.Kernel, PdfConformance.PdfA2a, true)]
+    [InlineData(Element.Kernel, PdfConformance.PdfUA1, true)]
+    [InlineData(Element.Paragraph, PdfConformance.PdfA2u, true)]
+    [InlineData(Element.Paragraph, PdfConformance.PdfA2a, true)]
+    [InlineData(Element.Paragraph, PdfConformance.PdfUA1, true)]
+    [InlineData(Element.Kernel, PdfConformance.PdfA2u, false)]
+    [InlineData(Element.Paragraph, PdfConformance.PdfUA1, false)]
+    public void Issue752_VeraPdfAcceptsTheFileWithAZeroWidthNoBreakSpaceUnderALevelThatNeedsToUnicode(
+        Element element, PdfConformance claim, bool dejaVu)
+    {
+        var bytes = WithText(element, claim, dejaVu ? DejaVu : SourceSans, "A" + Feff + "B");
+        Assert.Empty(VeraPdfFailures(Flavour(claim), bytes));
+    }
+
+    [Fact]
+    public void Issue752_PdftotextReadsAWordJoinerWhereTheTextHeldAZeroWidthNoBreakSpace()
+    {
+        var text = PopplerText(WithFeff(Element.Kernel, PdfConformance.PdfA2u));
+        Assert.Contains("A\u2060B", text, StringComparison.Ordinal);
+        Assert.DoesNotContain(Feff, text, StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData(0xFEFF, 0x2060)]
+    [InlineData(0xFFFE, 0xFFFD)]
+    [InlineData(0x0000, 0xFFFD)]
+    public void Issue752_AGlyphReachedOnlyByAForbiddenCodePointIsNamedByTheSubstituteUnderAClaim(int codePoint,
+        int expected)
+    {
+        var map = new Dictionary<int, ushort> { [0x41] = 3, [codePoint] = 9 };
+        var none = new HashSet<int>();
+
+        var claimed = TrueTypeFontEmbedder.BuildToUnicodeCMapContent(map, none, true, null);
+        Assert.Contains($"<0009> <{expected:X4}>", claimed);
+        Assert.DoesNotContain($"<0009> <{codePoint:X4}>", claimed);
+
+        // Without a claim the entry is what the cmap gave, as before.
+        var unclaimed = TrueTypeFontEmbedder.BuildToUnicodeCMapContent(map, none);
+        Assert.Contains($"<0009> <{codePoint:X4}>", unclaimed);
+    }
+
+    [Fact]
+    public void Issue752_AGlyphAnotherCodePointAlsoOwnsKeepsThatCodePointsEntryAndIsNotReported()
+    {
+        // U+FEFF and U+2060 on one glyph: the allowed code point speaks for it, one line, no
+        // substitution to report.
+        var map = new Dictionary<int, ushort> { [0xFEFF] = 9, [0x2060] = 9, [0x41] = 3 };
+        var substitutions = new List<(int CodePoint, int Value)>();
+        var cmap = TrueTypeFontEmbedder.BuildToUnicodeCMapContent(map, new HashSet<int>(), true, substitutions);
+
+        Assert.Single(Regex.Matches(cmap, "<0009> <"));
+        Assert.Contains("<0009> <2060>", cmap);
+        Assert.Empty(substitutions);
+    }
+
+    [Fact]
+    public void Issue752_SeveralForbiddenCodePointsOnOneGlyphGiveOneEntryForTheLowest()
+    {
+        var map = new Dictionary<int, ushort> { [0xFFFE] = 9, [0xFEFF] = 9, [0x41] = 3 };
+        var substitutions = new List<(int CodePoint, int Value)>();
+        var cmap = TrueTypeFontEmbedder.BuildToUnicodeCMapContent(map, new HashSet<int>(), true, substitutions);
+
+        Assert.Single(Regex.Matches(cmap, "<0009> <"));
+        Assert.Contains("<0009> <2060>", cmap);
+        Assert.Equal([(0xFEFF, 0x2060)], substitutions);
+    }
+
+    [Fact]
+    public void Issue752_AClaimThatNeedsToUnicodeListsEveryCodePointItSubstitutedOnce()
+    {
+        var handle = new PdfDocument().UseTrueTypeFont(DejaVu);
+        var glyphs = new ushort[4];
+        handle.GetGlyphIds("A" + Feff + Feff + "B", glyphs);
+
+        Assert.Equal([(0xFEFF, 0x2060)], handle.Embedder.ToUnicodeSubstitutions(PdfConformance.PdfA2u));
+        Assert.Equal([(0xFEFF, 0x2060)], handle.Embedder.ToUnicodeSubstitutions(PdfConformance.PdfUA1));
+        Assert.Empty(handle.Embedder.ToUnicodeSubstitutions(PdfConformance.PdfA2b));
+        Assert.Empty(handle.Embedder.ToUnicodeSubstitutions(PdfConformance.None));
+    }
+
+    [Fact]
+    public void Issue752_AClaimWithoutAToUnicodeLevelWritesTheSameBytesAsNoClaimWhateverTheText()
+    {
+        // 120 generated texts, with and without the three characters. No claim and PDF/A-2b write
+        // one CMap; PDF/A-2u, 2a and UA-1 write it too when the text holds no U+FEFF, and differ
+        // only in that entry when it does.
+        var pool = new[] { "A", "b", " ", "\u00E9", "\u00A0", "\u202F", "\u2007", "\u0000", Feff, "\uFFFE", "\U0001F600" };
+        var random = new Random(752);
+        var withFeff = 0;
+        for (var n = 0; n < 120; n++)
+        {
+            var length = random.Next(1, 12);
+            var text = string.Concat(Enumerable.Range(0, length).Select(_ => pool[random.Next(pool.Length)]));
+            var plain = CMapOf(PdfConformance.None, text);
+            Assert.Equal(plain, CMapOf(PdfConformance.PdfA2b, text));
+            var holdsFeff = text.Contains(Feff, StringComparison.Ordinal);
+            if (holdsFeff) withFeff++;
+            foreach (var claim in new[] { PdfConformance.PdfA2u, PdfConformance.PdfA2a, PdfConformance.PdfUA1 })
+            {
+                var claimed = CMapOf(claim, text);
+                if (holdsFeff)
+                    Assert.Equal(plain.Replace("<14F7> <FEFF>", "<14F7> <2060>", StringComparison.Ordinal), claimed);
+                else
+                    Assert.Equal(plain, claimed);
+            }
+        }
+
+        // The generator reaches both cases, so neither branch above is vacuous.
+        Assert.InRange(withFeff, 20, 100);
+
+        static string CMapOf(PdfConformance claim, string text)
+        {
+            using var pdf = new Pdf(Save(KernelDocument(claim, (DejaVu, text))));
+            return Encoding.ASCII.GetString(Assert.Single(EmbeddedFonts(pdf)).ToUnicodeBytes);
+        }
+    }
+
+    [Theory]
+    [InlineData(PdfConformance.PdfA2u)]
+    [InlineData(PdfConformance.PdfA2a)]
+    [InlineData(PdfConformance.PdfUA1)]
+    [InlineData(PdfConformance.PdfA2b)]
+    public void Issue752_APreformattedBlockRefusesExactlyTheCodePointsTheToUnicodeWriterWouldRename(PdfConformance claim)
+    {
+        // The block refuses what the writer would otherwise have to rename, and both ask
+        // ToUnicodeValues. The candidates are the forbidden values and their neighbours; a code
+        // point the font has no glyph for is refused for that reason and says nothing about the
+        // predicate, so it is left out.
+        var lookup = CmapLookup(DejaVu);
+        var candidates = new[] { 0x41, 0x2060, 0x200B, 0xFEFE, 0xFEFF, 0xFF00, 0xFFFC, 0xFFFD, 0xFFFE, 0xFFFF };
+        var checkedAny = new List<int>();
+        foreach (var scalar in candidates.Where(c => lookup(c) > 0))
+        {
+            var doc = LayoutDocument(claim);
+            var style = Style(doc, DejaVu);
+            doc.Add(new VellumPdf.Layout.Elements.Preformatted("a" + char.ConvertFromUtf32(scalar), style));
+
+            var expectRefused = ToUnicodeValues.ClaimNeedsToUnicode(claim) && ToUnicodeValues.IsForbidden(scalar);
+            if (expectRefused)
+                Assert.Throws<InvalidOperationException>(() => Save(doc));
+            else
+                Assert.NotEmpty(Save(doc));
+            checkedAny.Add(scalar);
+        }
+
+        Assert.Contains(0xFEFF, checkedAny);
+        Assert.Contains(0x41, checkedAny);
     }
 
     // ── 9.7.4.2 and #629: characters outside the BMP ────────────────────────────────────────

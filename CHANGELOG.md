@@ -779,6 +779,21 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- **A text with U+FEFF no longer gets a ToUnicode value that PDF/A-2u, PDF/A-2a and PDF/UA-1
+  forbid (#752).** ISO 19005-2, 6.2.11.7.2, and ISO 14289-1, 7.21.7, allow no ToUnicode value of
+  U+0000, U+FEFF or U+FFFE, and veraPDF failed rules 6.2.11.7.2-2 and 7.21.7-2 on a Kernel or Layout
+  file whose font had a glyph for U+FEFF, as DejaVu Sans and Source Sans 3 do. Under those three
+  claims a glyph that only U+FEFF reaches is now named U+2060, the word joiner, which UAX #14 puts in
+  the same line-break class and calls the preferred character for invisible glue, and a glyph that
+  only U+FFFE or U+0000 reaches is named U+FFFD, as glyph 0 already is. A glyph that another
+  character of the same font also maps keeps that character's entry. Drawing is unchanged;
+  **text extraction now returns U+2060** where the text held U+FEFF. A Layout save lists each such
+  character as the new `LayoutDiagnosticCode.ToUnicodeValueSubstituted` (602), a warning that
+  `StrictDiagnostics` saves. **Deliberate output change:** the ToUnicode stream of a PDF/A-2u,
+  PDF/A-2a or PDF/UA-1 file that draws such a character; no claim and PDF/A-2b write the same bytes
+  as before, and so does any text without the character. `Preformatted` keeps refusing U+FEFF and
+  U+FFFE under these claims, and now asks the predicate the writer uses.
+
 - **Saving a tagged document no longer walks the whole structure tree once per page (#728).** The
   save built each page's parent-tree array with a walk over every element, so the time grew with
   pages times elements, and from 500 pages up doubling the pages of a tagged table more than

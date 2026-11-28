@@ -89,6 +89,7 @@ public sealed class LayoutDiagnostic
         LayoutDiagnosticCode.KeepWithNextRelaxed => LayoutDiagnosticSeverity.Warning,
         LayoutDiagnosticCode.KeepTogetherRelaxed => LayoutDiagnosticSeverity.Warning,
         LayoutDiagnosticCode.MinLinesRelaxed => LayoutDiagnosticSeverity.Warning,
+        LayoutDiagnosticCode.ToUnicodeValueSubstituted => LayoutDiagnosticSeverity.Warning,
         _ => LayoutDiagnosticSeverity.Error,
     };
 

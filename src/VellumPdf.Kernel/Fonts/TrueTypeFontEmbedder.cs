@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 using System.Text;
+using VellumPdf.Document;
 using VellumPdf.Fonts.Cff;
 using VellumPdf.Fonts.Sfnt;
 
@@ -483,11 +484,37 @@ public sealed class TrueTypeFontEmbedder
     /// 14289-1, 7.21.7. Glyph ids passed straight to
     /// <see cref="VellumPdf.Canvas.PdfCanvas.ShowGlyphs(System.ReadOnlySpan{ushort})"/> add no
     /// entry.</para>
+    /// <para>This overload lists every character as the font's cmap gives it, including U+FEFF,
+    /// which ISO 19005-2, 6.2.11.7.2, and ISO 14289-1, 7.21.7, do not allow as a value.
+    /// <see cref="VellumPdf.Document.PdfDocument"/> writes the map through an internal overload
+    /// that names such a character otherwise when its conformance claim is PDF/A-2u, PDF/A-2a or
+    /// PDF/UA-1, so <b>do not rely on</b> this member to meet those clauses.</para>
     /// </remarks>
-    public Core.PdfStream BuildToUnicodeCMap()
+    public Core.PdfStream BuildToUnicodeCMap() => BuildToUnicodeCMap(PdfConformance.None);
+
+    /// <summary>
+    /// The /ToUnicode CMap as <see cref="BuildToUnicodeCMap()"/> writes it, except that under a
+    /// claim that needs ToUnicode (see <see cref="ToUnicodeValues.ClaimNeedsToUnicode"/>) a glyph
+    /// reached only by a code point <see cref="ToUnicodeValues.IsForbidden"/> names gets
+    /// <see cref="ToUnicodeValues.SubstituteFor"/> instead. Any other claim gives the same bytes as
+    /// the public overload.
+    /// </summary>
+    internal Core.PdfStream BuildToUnicodeCMap(PdfConformance claim) =>
+        new(Encoding.ASCII.GetBytes(BuildToUnicodeCMapContent(
+            _unicodeToGid, _fallbackCodePoints, ToUnicodeValues.ClaimNeedsToUnicode(claim), null)));
+
+    /// <summary>
+    /// The code points whose entry <see cref="BuildToUnicodeCMap(PdfConformance)"/> writes as
+    /// another value under <paramref name="claim"/>, each with that value. Empty for a claim that
+    /// does not need ToUnicode. A code point whose glyph another code point also owns is not
+    /// listed, because the other code point's entry stays and nothing is written for it.
+    /// </summary>
+    internal IReadOnlyList<(int CodePoint, int Value)> ToUnicodeSubstitutions(PdfConformance claim)
     {
-        var cmap = BuildToUnicodeCMapContent();
-        return new Core.PdfStream(Encoding.ASCII.GetBytes(cmap));
+        if (!ToUnicodeValues.ClaimNeedsToUnicode(claim)) return [];
+        var substitutions = new List<(int CodePoint, int Value)>();
+        BuildToUnicodeCMapContent(_unicodeToGid, _fallbackCodePoints, true, substitutions);
+        return substitutions;
     }
 
     // ── Private helpers ─────────────────────────────────────────────────────
@@ -833,15 +860,27 @@ public sealed class TrueTypeFontEmbedder
         return fontBytes;
     }
 
-    private string BuildToUnicodeCMapContent() => BuildToUnicodeCMapContent(_unicodeToGid, _fallbackCodePoints);
-
     /// <summary>
     /// The /ToUnicode CMap for the given code point to glyph assignments, where
     /// <paramref name="fallbackCodePoints"/> are the ones that got a stand-in glyph. A static seam so
     /// a test can pass assignments no bundled font produces.
     /// </summary>
     internal static string BuildToUnicodeCMapContent(
-        IReadOnlyDictionary<int, ushort> unicodeToGid, IReadOnlySet<int> fallbackCodePoints)
+        IReadOnlyDictionary<int, ushort> unicodeToGid, IReadOnlySet<int> fallbackCodePoints) =>
+        BuildToUnicodeCMapContent(unicodeToGid, fallbackCodePoints, false, null);
+
+    /// <summary>
+    /// As the two-argument overload, and when <paramref name="nameForbiddenValues"/> is set a glyph
+    /// whose only code points are ones <see cref="ToUnicodeValues.IsForbidden"/> names gets one
+    /// entry, the value <see cref="ToUnicodeValues.SubstituteFor"/> gives the lowest of them, which
+    /// is appended to <paramref name="substitutions"/> when that is not null. A forbidden code
+    /// point whose glyph another code point also owns gets no entry, so the owner speaks for it.
+    /// </summary>
+    internal static string BuildToUnicodeCMapContent(
+        IReadOnlyDictionary<int, ushort> unicodeToGid,
+        IReadOnlySet<int> fallbackCodePoints,
+        bool nameForbiddenValues,
+        List<(int CodePoint, int Value)>? substitutions)
     {
         var sb = new StringBuilder();
         sb.Append("/CIDInit /ProcSet findresource begin").Append('\n');
@@ -886,6 +925,7 @@ public sealed class TrueTypeFontEmbedder
             .Select(kv => (gid: kv.Value, cp: kv.Key))
             .OrderBy(p => p.gid)
             .ToList();
+        if (nameForbiddenValues) pairs = NameForbiddenValues(pairs, substitutions);
         if (unicodeToGid.Values.Contains((ushort)0)) pairs.Insert(0, (gid: (ushort)0, cp: 0xFFFD));
 
         // Write in chunks of 100: Adobe TN5014 §7.4 caps beginbfchar/endbfchar at "a maximum of
@@ -922,6 +962,39 @@ public sealed class TrueTypeFontEmbedder
         sb.Append("CMapName currentdict /CMap defineresource pop").Append('\n');
         sb.Append("end end").Append('\n');
         return sb.ToString();
+    }
+
+    // Under a claim that needs ToUnicode a value may not be U+0000, U+FEFF or U+FFFE (ISO 19005-2,
+    // 6.2.11.7.2; ISO 14289-1, 7.21.7). A glyph that another, allowed code point also owns keeps
+    // that code point's entry, as a stand-in does above. A glyph reached only by forbidden code
+    // points gets one entry, for the lowest of them, so a code never has two values.
+    private static List<(ushort gid, int cp)> NameForbiddenValues(
+        List<(ushort gid, int cp)> pairs, List<(int CodePoint, int Value)>? substitutions)
+    {
+        var allowed = new HashSet<ushort>();
+        foreach (var (gid, cp) in pairs)
+            if (!ToUnicodeValues.IsForbidden(cp)) allowed.Add(gid);
+
+        var lowest = new Dictionary<ushort, int>();
+        foreach (var (gid, cp) in pairs)
+        {
+            if (!ToUnicodeValues.IsForbidden(cp) || allowed.Contains(gid)) continue;
+            if (!lowest.TryGetValue(gid, out var current) || cp < current) lowest[gid] = cp;
+        }
+
+        var named = new List<(ushort gid, int cp)>(pairs.Count);
+        foreach (var (gid, cp) in pairs)
+        {
+            if (!ToUnicodeValues.IsForbidden(cp)) named.Add((gid, cp));
+            else if (lowest.TryGetValue(gid, out var owner) && owner == cp)
+            {
+                var value = ToUnicodeValues.SubstituteFor(cp);
+                named.Add((gid, value));
+                substitutions?.Add((cp, value));
+            }
+        }
+
+        return named;
     }
 
     internal static uint Checksum(byte[] data)

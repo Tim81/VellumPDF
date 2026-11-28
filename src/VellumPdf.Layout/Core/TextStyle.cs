@@ -64,6 +64,15 @@ public sealed class TextStyle
     /// glyph 0 the one entry U+FFFD. <b>Do not pass</b> text the font cannot draw to such a
     /// document. A later major version refuses text the font cannot draw, and a Standard 14 font,
     /// under either claim.</para>
+    /// <para>Under PDF/A-2u, PDF/A-2a and PDF/UA-1 a glyph that only U+FEFF reaches is named U+2060
+    /// in the font's ToUnicode map, and one that only U+FFFE or U+0000 reaches is named U+FFFD,
+    /// because ISO 19005-2, 6.2.11.7.2, and ISO 14289-1, 7.21.7, allow no other value. The save
+    /// draws the text and lists each such character in
+    /// <see cref="VellumPdf.Layout.Document.Diagnostics"/> as
+    /// <see cref="VellumPdf.Layout.LayoutDiagnosticCode.ToUnicodeValueSubstituted"/>, a warning.
+    /// Text extraction returns U+2060 or U+FFFD where the text held the character.
+    /// <b>Do not pass</b> U+FEFF, which is also a byte order mark, to such a document; remove it
+    /// first.</para>
     /// <para>A Standard 14 font is not embedded. While
     /// <see cref="VellumPdf.Layout.Document.Conformance"/> is not
     /// <see cref="VellumPdf.Document.PdfConformance.None"/>, each element whose style selects one

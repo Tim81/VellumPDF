@@ -320,6 +320,29 @@ public enum LayoutDiagnosticCode
     UnembeddedFont = 601,
 
     /// <summary>
+    /// A character whose glyph a font's ToUnicode map would name with a value that
+    /// ISO 19005-2, 6.2.11.7.2, and ISO 14289-1, 7.21.7, forbid, so the save wrote another value.
+    /// Each distinct character is one item, whose <see cref="LayoutDiagnostic.Count"/> is the
+    /// number of embedded fonts that took the substitution, and whose message names the character
+    /// and the value written.
+    /// </summary>
+    /// <remarks>
+    /// <b>Extraction reads the value written, not the character.</b> Under PDF/A-2u, PDF/A-2a and
+    /// PDF/UA-1 a ToUnicode value may not be U+0000, U+FEFF or U+FFFE. The save writes U+2060, the
+    /// word joiner, for U+FEFF, and U+FFFD for the other two, so text extraction returns that value
+    /// where the text held the character. The drawing is unchanged. The clause is
+    /// <c>ISO 14289-1:2014, 7.21.7</c> under PDF/UA-1 and <c>ISO 19005-2:2011, 6.2.11.7.2</c>
+    /// otherwise. A character whose glyph another character of the same font also maps keeps that
+    /// character's entry and is not reported. It is a warning, so strict mode saves, and a PDF/A-2b
+    /// or unclaimed document is not reported and keeps the font's own mapping. It is reported after
+    /// the save has written the font, so <see cref="Document.Diagnostics"/> lists it once a save
+    /// has succeeded. <b>Do not pass</b> U+FEFF, a byte order mark, as text under these claims;
+    /// remove it, or expect extraction to read U+2060. A <see cref="Elements.Preformatted"/> block
+    /// refuses the character instead.
+    /// </remarks>
+    ToUnicodeValueSubstituted = 602,
+
+    /// <summary>
     /// A link in the <see cref="Core.TextStyle.LinkUri"/> of a table cell, of
     /// <see cref="Elements.Table.TableElement.DefaultCellStyle"/> or of a running band was not
     /// written, because the document's conformance is PDF/UA-1, where an untagged link breaks ISO
